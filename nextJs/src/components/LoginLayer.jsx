@@ -118,7 +118,7 @@ const LoginLayer = () => {
       showPopup("success", "Login successful! Redirecting to dashboard...", 3000);
 
       setTimeout(() => {
-        router.replace("/");
+        router.replace("/dashboard");
         router.refresh();
       }, 1000);
     } catch (e2) {

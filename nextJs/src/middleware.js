@@ -2,10 +2,11 @@ import { NextResponse } from "next/server";
 
 export function middleware(request) {
   const token = request.cookies.get("token")?.value || null;
+  const customerToken = request.cookies.get("customer_token")?.value || null;
   const pathname = request.nextUrl.pathname;
 
   /**
-   * ✅ PUBLIC INVOICE ROUTES (CUSTOMER)
+   * Public invoice routes
    * - /invoice/:id
    * - /invoice/:id/pdf
    */
@@ -14,7 +15,7 @@ export function middleware(request) {
   }
 
   /**
-   * ✅ PUBLIC ASSETS & NEXT INTERNAL
+   * Public assets & Next internal
    */
   if (
     pathname.startsWith("/assets/") ||
@@ -28,24 +29,39 @@ export function middleware(request) {
   }
 
   /**
-   * ✅ ALLOW NEXT INTERNAL API (proxy, route handlers)
+   * Allow Next internal API (proxy, route handlers)
    */
   if (pathname.startsWith("/api/")) {
     return NextResponse.next();
   }
 
   /**
-   * ✅ AUTH PAGE LOGIC
+   * Auth page logic
    */
-  const isAuthPage = pathname.startsWith("/login");
+  const isAdminAuthPage = pathname.startsWith("/login");
+  const isCustomerAuthPage =
+    pathname.startsWith("/customer/sign-in") ||
+    pathname.startsWith("/customer/sign-up");
+  const isCustomerArea = pathname === "/order" || pathname.startsWith("/order/");
+  const isPublicPage = pathname === "/" || isCustomerAuthPage;
 
-  // Kalau sudah login, jangan masuk login lagi
-  if (isAuthPage && token) {
-    return NextResponse.redirect(new URL("/", request.url));
+  if (isAdminAuthPage && token) {
+    return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
-  // Kalau belum login dan bukan halaman public → redirect login
-  if (!isAuthPage && !token) {
+  if (isCustomerAuthPage && customerToken) {
+    return NextResponse.redirect(new URL("/order", request.url));
+  }
+
+  if (isPublicPage) {
+    return NextResponse.next();
+  }
+
+  if (isCustomerArea && !customerToken) {
+    return NextResponse.redirect(new URL("/customer/sign-in", request.url));
+  }
+
+  if (!isCustomerArea && !token) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 

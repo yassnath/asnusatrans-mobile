@@ -136,7 +136,7 @@ const MasterLayout = ({ children }) => {
 
           <div>
             <Link
-              href="/"
+              href="/dashboard"
               className="sidebar-logo"
               style={{
                 display: "flex",
@@ -165,7 +165,10 @@ const MasterLayout = ({ children }) => {
           <div className="sidebar-menu-area">
             <ul className="sidebar-menu" id="sidebar-menu">
               <li>
-                <Link href="/" className={pathname === "/" ? "active-page" : ""}>
+                <Link
+                  href="/dashboard"
+                  className={pathname === "/dashboard" ? "active-page" : ""}
+                >
                   <Icon
                     icon="solar:home-smile-angle-outline"
                     className="menu-icon"
@@ -228,6 +231,23 @@ const MasterLayout = ({ children }) => {
                     className="menu-icon"
                   />
                   <span>Calendar</span>
+                </Link>
+              </li>
+
+              <li className="sidebar-menu-group-title">Orders</li>
+
+              <li>
+                <Link
+                  href="/order-acceptance"
+                  className={
+                    pathname === "/order-acceptance" ? "active-page" : ""
+                  }
+                >
+                  <Icon
+                    icon="solar:clipboard-check-linear"
+                    className="menu-icon"
+                  />
+                  <span>Penerimaan Order</span>
                 </Link>
               </li>
 

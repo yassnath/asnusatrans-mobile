@@ -1,15 +1,10 @@
-import MasterLayout from "@/masterLayout/MasterLayout";
-import DashboardLayerOne from "@/components/DashboardLayerOne";
+import LandingPageLayer from "@/components/LandingPageLayer";
 
 export const metadata = {
-  title: "Dashboard | CV ANT",
-  description: "Main dashboard CV ANT",
+  title: "CV ANT | Logistik Terpercaya",
+  description: "Landing page CV ANT dan layanan logistik.",
 };
 
 export default function HomePage() {
-  return (
-    <MasterLayout>
-      <DashboardLayerOne />
-    </MasterLayout>
-  );
+  return <LandingPageLayer />;
 }
