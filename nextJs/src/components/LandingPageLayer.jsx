@@ -118,6 +118,24 @@ const LandingPageLayer = () => {
           --cvant-card-accent-3: rgba(139, 92, 246, 0.22);
           --cvant-card-accent-4: rgba(34, 197, 94, 0.2);
           --cvant-card-accent-5: rgba(249, 115, 22, 0.2);
+          --cvant-btn-fill: linear-gradient(
+            90deg,
+            rgba(91, 140, 255, 1),
+            rgba(168, 85, 247, 1)
+          );
+          --cvant-btn-fill-hover: linear-gradient(
+            90deg,
+            rgba(76, 126, 255, 1),
+            rgba(150, 70, 247, 1)
+          );
+          --cvant-btn-fill-active: linear-gradient(
+            90deg,
+            rgba(62, 112, 255, 1),
+            rgba(132, 54, 235, 1)
+          );
+          --cvant-btn-shadow: 0 0 0 1px rgba(91, 140, 255, 0.35),
+            0 12px 28px rgba(0, 0, 0, 0.3),
+            0 0 16px rgba(91, 140, 255, 0.2);
         }
 
         html[data-theme="light"] .cvant-landing,
@@ -128,18 +146,23 @@ const LandingPageLayer = () => {
           --cvant-border-soft: rgba(15, 23, 42, 0.1);
           --cvant-border-strong: rgba(15, 23, 42, 0.28);
           --cvant-bg: radial-gradient(
-              900px 500px at 12% 12%,
-              rgba(91, 140, 255, 0.12),
+              900px 520px at 12% 10%,
+              rgba(91, 140, 255, 0.2),
               transparent 60%
             ),
             radial-gradient(
-              800px 460px at 85% 8%,
-              rgba(34, 211, 238, 0.12),
+              820px 480px at 85% 12%,
+              rgba(34, 211, 238, 0.18),
               transparent 58%
             ),
             radial-gradient(
-              700px 480px at 60% 90%,
-              rgba(139, 92, 246, 0.12),
+              740px 520px at 60% 85%,
+              rgba(139, 92, 246, 0.16),
+              transparent 60%
+            ),
+            radial-gradient(
+              680px 420px at 18% 85%,
+              rgba(34, 197, 94, 0.12),
               transparent 60%
             ),
             linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%);
@@ -163,11 +186,14 @@ const LandingPageLayer = () => {
           --cvant-step-badge: rgba(91, 140, 255, 0.16);
           --cvant-step-text: #1e293b;
           --cvant-nav-hover: rgba(91, 140, 255, 0.18);
-          --cvant-card-accent-1: rgba(91, 140, 255, 0.12);
-          --cvant-card-accent-2: rgba(34, 211, 238, 0.12);
-          --cvant-card-accent-3: rgba(139, 92, 246, 0.12);
-          --cvant-card-accent-4: rgba(34, 197, 94, 0.12);
-          --cvant-card-accent-5: rgba(249, 115, 22, 0.12);
+          --cvant-card-accent-1: rgba(91, 140, 255, 0.2);
+          --cvant-card-accent-2: rgba(34, 211, 238, 0.18);
+          --cvant-card-accent-3: rgba(139, 92, 246, 0.18);
+          --cvant-card-accent-4: rgba(34, 197, 94, 0.18);
+          --cvant-card-accent-5: rgba(249, 115, 22, 0.18);
+          --cvant-btn-shadow: 0 0 0 1px rgba(91, 140, 255, 0.25),
+            0 12px 24px rgba(15, 23, 42, 0.12),
+            0 0 12px rgba(91, 140, 255, 0.16);
         }
 
         .cvant-landing {
@@ -291,22 +317,22 @@ const LandingPageLayer = () => {
         }
 
         .cvant-btn-primary {
-          background: var(--primary-600);
-          border-color: var(--primary-600);
+          background: var(--cvant-btn-fill);
+          border-color: transparent;
           color: #ffffff;
-          box-shadow: none;
+          box-shadow: var(--cvant-btn-shadow);
         }
 
         .cvant-btn-primary:hover {
-          background: var(--primary-700);
-          border-color: var(--primary-700);
+          background: var(--cvant-btn-fill-hover);
+          border-color: transparent;
           color: #ffffff;
         }
 
         .cvant-btn-primary:active,
         .cvant-btn-primary:focus {
-          background: var(--primary-800);
-          border-color: var(--primary-800);
+          background: var(--cvant-btn-fill-active);
+          border-color: transparent;
         }
 
         .cvant-btn-ghost {
@@ -472,6 +498,13 @@ const LandingPageLayer = () => {
         .cvant-section-center .cvant-section-desc {
           margin-left: auto;
           margin-right: auto;
+        }
+
+        .cvant-section-meta {
+          text-align: center;
+          margin-top: 10px;
+          font-size: 14px;
+          color: var(--cvant-muted);
         }
 
         .cvant-grid {
@@ -1019,11 +1052,18 @@ const LandingPageLayer = () => {
 
           <section id="armada" className="cvant-section">
             <div className="cvant-container">
-              <h2 className="cvant-section-title">Pilihan armada fleksibel</h2>
-              <p className="cvant-section-desc">
-                Dari pengiriman retail hingga project besar, armada kami siap
-                menyesuaikan kebutuhan muatan.
-              </p>
+              <div className="cvant-section-heading cvant-section-center">
+                <h2 className="cvant-section-title">Pilihan armada fleksibel</h2>
+                <p className="cvant-section-desc">
+                  Dari pengiriman retail hingga project besar, armada kami siap
+                  menyesuaikan kebutuhan muatan.
+                </p>
+                {armadaReady && armadas.length > 0 ? (
+                  <div className="cvant-section-meta">
+                    Total armada terdaftar: {armadas.length}
+                  </div>
+                ) : null}
+              </div>
               {!armadaReady ? (
                 <p className="cvant-section-desc">Memuat data armada...</p>
               ) : fleetItems.length === 0 ? (
@@ -1043,11 +1083,13 @@ const LandingPageLayer = () => {
 
           <section id="alur" className="cvant-section">
             <div className="cvant-container">
-              <h2 className="cvant-section-title">Alur order yang simple</h2>
-              <p className="cvant-section-desc">
-                Login, buat order, dan selesaikan pembayaran dalam satu alur
-                yang terstruktur.
-              </p>
+              <div className="cvant-section-heading cvant-section-center">
+                <h2 className="cvant-section-title">Alur order yang simple</h2>
+                <p className="cvant-section-desc">
+                  Login, buat order, dan selesaikan pembayaran dalam satu alur
+                  yang terstruktur.
+                </p>
+              </div>
               <div className="cvant-step-grid">
                 <div className="cvant-step">
                   <span>1</span>
@@ -1076,10 +1118,12 @@ const LandingPageLayer = () => {
 
           <section id="harga" className="cvant-section">
             <div className="cvant-container">
-              <h2 className="cvant-section-title">Paket layanan fleksibel</h2>
-              <p className="cvant-section-desc">
-                Tentukan skema layanan yang sesuai dengan ritme bisnis Anda.
-              </p>
+              <div className="cvant-section-heading cvant-section-center">
+                <h2 className="cvant-section-title">Paket layanan fleksibel</h2>
+                <p className="cvant-section-desc">
+                  Tentukan skema layanan yang sesuai dengan ritme bisnis Anda.
+                </p>
+              </div>
               <div className="cvant-price-grid">
                 <div className="cvant-price-card">
                   <h4>Reguler</h4>
@@ -1111,11 +1155,13 @@ const LandingPageLayer = () => {
 
           <section className="cvant-section">
             <div className="cvant-container">
-              <h2 className="cvant-section-title">Apa kata customer</h2>
-              <p className="cvant-section-desc">
-                Klien kami menjaga jadwal distribusi dengan bantuan monitoring
-                dan support dari tim CV ANT.
-              </p>
+              <div className="cvant-section-heading cvant-section-center">
+                <h2 className="cvant-section-title">Apa kata customer</h2>
+                <p className="cvant-section-desc">
+                  Klien kami menjaga jadwal distribusi dengan bantuan monitoring
+                  dan support dari tim CV ANT.
+                </p>
+              </div>
               <div className="cvant-testimonial-grid">
                 <div className="cvant-testimonial">
                   <p className="cvant-section-desc">
@@ -1137,7 +1183,9 @@ const LandingPageLayer = () => {
 
           <section id="faq" className="cvant-section">
             <div className="cvant-container">
-              <h2 className="cvant-section-title">FAQ singkat</h2>
+              <div className="cvant-section-heading cvant-section-center">
+                <h2 className="cvant-section-title">FAQ singkat</h2>
+              </div>
               <div className="cvant-faq">
                 <div className="cvant-faq-item">
                   <h6>Apakah bisa order untuk jadwal mingguan?</h6>

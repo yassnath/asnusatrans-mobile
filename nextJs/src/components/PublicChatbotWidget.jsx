@@ -16,6 +16,13 @@ const restrictedKeywords = [
 ];
 
 const armadaKeywords = ["armada", "truk", "truck", "cdd", "fuso", "trailer", "box"];
+const armadaCountKeywords = [
+  "total armada",
+  "jumlah armada",
+  "berapa armada",
+  "total truk",
+  "jumlah truk",
+];
 const dateKeywords = ["tanggal", "jadwal", "schedule", "pickup", "pick up", "pengiriman"];
 
 const extractDateFromText = (text) => {
@@ -63,13 +70,16 @@ const buildArmadaResponse = (armadas) => {
     return "Data armada belum tersedia. Silakan tanyakan tanggal pengiriman dulu.";
   }
 
+  const total = list.length;
   const lines = list.slice(0, 6).map((item) => {
     const name = item?.nama_truk || "Armada";
     const tonnage = formatTonnage(item?.kapasitas);
     return `- ${name} (${tonnage})`;
   });
 
-  return `Info armada tersedia:\n${lines.join("\n")}\n\nSebutkan tanggal pengiriman agar kami cek ketersediaan.`;
+  return `Total armada tersedia: ${total} unit.\nInfo armada:\n${lines.join(
+    "\n"
+  )}\n\nSebutkan tanggal pengiriman agar kami cek ketersediaan.`;
 };
 
 const buildDateResponse = (dateInfo) => {
@@ -84,6 +94,13 @@ const getReply = (text, armadas) => {
 
   if (restrictedKeywords.some((keyword) => lower.includes(keyword))) {
     return "Maaf, chatbot ini hanya melayani info armada dan tanggal pengiriman.";
+  }
+
+  if (armadaCountKeywords.some((keyword) => lower.includes(keyword))) {
+    const total = Array.isArray(armadas) ? armadas.length : 0;
+    return total > 0
+      ? `Total armada tersedia: ${total} unit.`
+      : "Data armada belum tersedia.";
   }
 
   if (armadaKeywords.some((keyword) => lower.includes(keyword))) {

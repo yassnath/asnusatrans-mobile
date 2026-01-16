@@ -2,16 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { Icon } from "@iconify/react/dist/iconify.js";
-
-const accountsKey = "cvant_customer_accounts";
+import { api } from "@/lib/api";
 
 const CustomerRegistrationsLayer = () => {
   const [customers, setCustomers] = useState([]);
 
-  const loadCustomers = () => {
+  const loadCustomers = async () => {
     try {
-      const stored = JSON.parse(localStorage.getItem(accountsKey) || "[]");
-      setCustomers(stored);
+      const data = await api.get("/customer-registrations");
+      setCustomers(Array.isArray(data) ? data : []);
     } catch {
       setCustomers([]);
     }
@@ -85,11 +84,11 @@ const CustomerRegistrationsLayer = () => {
                         <td>{customer.email || "-"}</td>
                         <td>{customer.phone || "-"}</td>
                         <td>{customer.gender || "-"}</td>
-                        <td>{formatDate(customer.birthDate)}</td>
+                        <td>{formatDate(customer.birth_date)}</td>
                         <td>{customer.address || "-"}</td>
                         <td>{customer.city || "-"}</td>
                         <td>{customer.company || "-"}</td>
-                        <td>{formatDateTime(customer.createdAt)}</td>
+                        <td>{formatDateTime(customer.created_at)}</td>
                       </tr>
                     ))}
                   </tbody>

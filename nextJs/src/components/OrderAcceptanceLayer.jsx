@@ -2,16 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { Icon } from "@iconify/react/dist/iconify.js";
-
-const ordersKey = "cvant_customer_orders";
+import { api } from "@/lib/api";
 
 const OrderAcceptanceLayer = () => {
   const [orders, setOrders] = useState([]);
 
-  const loadOrders = () => {
+  const loadOrders = async () => {
     try {
-      const stored = JSON.parse(localStorage.getItem(ordersKey) || "[]");
-      setOrders(stored);
+      const data = await api.get("/customer-orders");
+      setOrders(Array.isArray(data) ? data : []);
     } catch {
       setOrders([]);
     }
@@ -21,16 +20,20 @@ const OrderAcceptanceLayer = () => {
     loadOrders();
   }, []);
 
-  const updateStatus = (orderId, status) => {
-    const nextOrders = orders.map((order) =>
-      order.id === orderId ? { ...order, status } : order
-    );
-    setOrders(nextOrders);
-    localStorage.setItem(ordersKey, JSON.stringify(nextOrders));
+  const updateStatus = async (orderId, status) => {
+    try {
+      const updated = await api.patch(`/customer-orders/${orderId}/status`, { status });
+      setOrders((prev) =>
+        prev.map((order) => (order.id === orderId ? { ...order, ...updated } : order))
+      );
+    } catch {
+      // ignore for now
+    }
   };
 
   const formatCurrency = (value) => {
-    const safeValue = Number.isFinite(value) ? value : 0;
+    const parsed = Number(value);
+    const safeValue = Number.isFinite(parsed) ? parsed : 0;
     return `Rp ${safeValue.toLocaleString("id-ID")}`;
   };
 
@@ -84,12 +87,14 @@ const OrderAcceptanceLayer = () => {
                   <tbody>
                     {orders.map((order) => (
                       <tr key={order.id}>
-                        <td>{order.id}</td>
+                        <td>{order.order_code || order.id}</td>
                         <td>
                           <div className="d-flex flex-column">
-                            <span className="fw-semibold">{order.name || "-"}</span>
+                            <span className="fw-semibold">
+                              {order.customer?.name || "-"}
+                            </span>
                             <span className="text-secondary-light text-sm">
-                              {order.email || "-"}
+                              {order.customer?.email || "-"}
                             </span>
                           </div>
                         </td>
@@ -97,7 +102,10 @@ const OrderAcceptanceLayer = () => {
                           {order.pickup || "-"} - {order.destination || "-"}
                         </td>
                         <td>
-                          {order.date || "-"} {order.time ? `| ${order.time}` : ""}
+                          {order.pickup_date || "-"}{" "}
+                          {order.pickup_time
+                            ? `| ${String(order.pickup_time).slice(0, 5)}`
+                            : ""}
                         </td>
                         <td>{order.service || "-"}</td>
                         <td>{formatCurrency(order.total)}</td>

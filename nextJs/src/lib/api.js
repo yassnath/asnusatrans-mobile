@@ -108,6 +108,14 @@ export const api = {
     });
     return handleResponse(res);
   },
+  patch: async (url, body) => {
+    const res = await fetch(buildUrl(url), {
+      method: "PATCH",
+      headers: defaultHeaders(),
+      body: JSON.stringify(body),
+    });
+    return handleResponse(res);
+  },
 
   delete: async (url) => {
     const res = await fetch(buildUrl(url), {

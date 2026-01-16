@@ -5,9 +5,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import ThemeToggleButton from "@/helper/ThemeToggleButton";
 import PublicChatbotWidget from "@/components/PublicChatbotWidget";
+import { customerApi } from "@/lib/customerApi";
 
-const ordersKey = "cvant_customer_orders";
-const latestOrderKey = "cvant_latest_order";
 const userKey = "cvant_customer_user";
 const tokenKey = "cvant_customer_token";
 
@@ -35,20 +34,42 @@ const CustomerOrderLayer = () => {
 
   useEffect(() => {
     const stored = localStorage.getItem(userKey);
-    if (!stored) return;
-    try {
-      const user = JSON.parse(stored);
-      setCustomer(user);
-      setForm((prev) => ({
-        ...prev,
-        name: user.name || "",
-        email: user.email || "",
-        phone: user.phone || "",
-        company: user.company || "",
-      }));
-    } catch {
-      // ignore invalid storage
+    if (stored) {
+      try {
+        const user = JSON.parse(stored);
+        setCustomer(user);
+        setForm((prev) => ({
+          ...prev,
+          name: user.name || "",
+          email: user.email || "",
+          phone: user.phone || "",
+          company: user.company || "",
+        }));
+      } catch {
+        // ignore invalid storage
+      }
     }
+
+    const loadProfile = async () => {
+      try {
+        const res = await customerApi.get("/customer/me");
+        const user = res?.customer;
+        if (!user) return;
+        setCustomer(user);
+        localStorage.setItem(userKey, JSON.stringify(user));
+        setForm((prev) => ({
+          ...prev,
+          name: user.name || prev.name,
+          email: user.email || prev.email,
+          phone: user.phone || prev.phone,
+          company: user.company || prev.company,
+        }));
+      } catch {
+        // ignore api errors here
+      }
+    };
+
+    loadProfile();
   }, []);
 
   const customerInitial = useMemo(() => {
@@ -88,14 +109,13 @@ const CustomerOrderLayer = () => {
   };
 
   const handleSignOut = () => {
+    customerApi.clearToken();
     localStorage.removeItem(tokenKey);
     localStorage.removeItem(userKey);
-    document.cookie =
-      "customer_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax;";
     router.push("/customer/sign-in");
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
     setMessage(null);
 
@@ -112,35 +132,31 @@ const CustomerOrderLayer = () => {
       return;
     }
 
-    const order = {
-      id: `ORD-${Date.now().toString().slice(-6)}`,
-      name: form.name,
-      email: form.email,
-      phone: form.phone,
-      company: form.company,
-      pickup: form.pickup,
-      destination: form.destination,
-      date: form.date,
-      time: form.time,
-      service: form.service,
-      fleet: form.fleet,
-      cargo: form.cargo,
-      weight: form.weight,
-      distance: form.distance,
-      notes: form.notes,
-      insurance: form.insurance,
-      estimate: pricing.estimate,
-      insuranceFee: pricing.insuranceFee,
-      total: pricing.total,
-      status: "Pending Payment",
-      createdAt: new Date().toISOString(),
-    };
+    try {
+      await customerApi.post("/customer/orders", {
+        pickup: form.pickup,
+        destination: form.destination,
+        pickup_date: form.date,
+        pickup_time: form.time,
+        service: form.service,
+        fleet: form.fleet,
+        cargo: form.cargo,
+        weight: form.weight ? Number(form.weight) : null,
+        distance: form.distance ? Number(form.distance) : null,
+        notes: form.notes,
+        insurance: form.insurance,
+        estimate: pricing.estimate,
+        insurance_fee: pricing.insuranceFee,
+        total: pricing.total,
+      });
 
-    const currentOrders = JSON.parse(localStorage.getItem(ordersKey) || "[]");
-    const nextOrders = [order, ...currentOrders];
-    localStorage.setItem(ordersKey, JSON.stringify(nextOrders));
-    localStorage.setItem(latestOrderKey, JSON.stringify(order));
-    router.push("/order/payment");
+      router.push("/order/payment");
+    } catch (error) {
+      setMessage({
+        type: "error",
+        text: error?.message || "Gagal membuat order. Coba lagi.",
+      });
+    }
   };
 
   return (
@@ -160,6 +176,24 @@ const CustomerOrderLayer = () => {
           --cvant-order-danger-bg: rgba(239, 68, 68, 0.15);
           --cvant-order-danger-border: rgba(239, 68, 68, 0.6);
           --cvant-order-shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
+          --cvant-order-btn: linear-gradient(
+            90deg,
+            rgba(91, 140, 255, 1),
+            rgba(168, 85, 247, 1)
+          );
+          --cvant-order-btn-hover: linear-gradient(
+            90deg,
+            rgba(76, 126, 255, 1),
+            rgba(150, 70, 247, 1)
+          );
+          --cvant-order-btn-active: linear-gradient(
+            90deg,
+            rgba(62, 112, 255, 1),
+            rgba(132, 54, 235, 1)
+          );
+          --cvant-order-btn-shadow: 0 0 0 1px rgba(91, 140, 255, 0.35),
+            0 12px 26px rgba(0, 0, 0, 0.3),
+            0 0 14px rgba(91, 140, 255, 0.2);
           --cvant-order-bg: radial-gradient(
               900px 500px at 12% 12%,
               rgba(91, 140, 255, 0.16),
@@ -191,6 +225,9 @@ const CustomerOrderLayer = () => {
           --cvant-order-danger-bg: rgba(239, 68, 68, 0.12);
           --cvant-order-danger-border: rgba(239, 68, 68, 0.4);
           --cvant-order-shadow: 0 20px 40px rgba(15, 23, 42, 0.12);
+          --cvant-order-btn-shadow: 0 0 0 1px rgba(91, 140, 255, 0.25),
+            0 12px 24px rgba(15, 23, 42, 0.12),
+            0 0 12px rgba(91, 140, 255, 0.16);
           --cvant-order-bg: radial-gradient(
               900px 500px at 12% 12%,
               rgba(91, 140, 255, 0.1),
@@ -385,23 +422,24 @@ const CustomerOrderLayer = () => {
         .cvant-order-submit {
           border-radius: 999px;
           padding: 12px 16px;
-          border: 1px solid var(--primary-600);
-          background: var(--primary-600);
+          border: 1px solid transparent;
+          background: var(--cvant-order-btn);
           color: #ffffff;
           font-weight: 600;
           width: 100%;
+          box-shadow: var(--cvant-order-btn-shadow);
         }
 
         .cvant-order-submit:hover {
-          background: var(--primary-700);
-          border-color: var(--primary-700);
+          background: var(--cvant-order-btn-hover);
+          border-color: transparent;
           color: #ffffff;
         }
 
         .cvant-order-submit:active,
         .cvant-order-submit:focus {
-          background: var(--primary-800);
-          border-color: var(--primary-800);
+          background: var(--cvant-order-btn-active);
+          border-color: transparent;
         }
 
         .cvant-order-alert {
@@ -423,6 +461,51 @@ const CustomerOrderLayer = () => {
 
           .cvant-order-row {
             grid-template-columns: 1fr;
+          }
+        }
+
+        @media (max-width: 575px) {
+          .cvant-order-nav-inner {
+            padding: 10px 0;
+            gap: 8px;
+          }
+
+          .cvant-order-nav img {
+            height: 28px !important;
+          }
+
+          .cvant-order-actions {
+            gap: 6px;
+            flex-wrap: nowrap;
+          }
+
+          .cvant-order-actions [data-theme-toggle] {
+            width: 32px;
+            height: 32px;
+          }
+
+          .cvant-order-actions [data-theme-toggle]::after {
+            font-size: 1rem;
+          }
+
+          .cvant-order-user {
+            padding: 4px 8px;
+          }
+
+          .cvant-order-user > div {
+            display: none;
+          }
+
+          .cvant-order-avatar {
+            width: 28px;
+            height: 28px;
+            font-size: 12px;
+          }
+
+          .cvant-order-pill,
+          .cvant-order-logout {
+            padding: 6px 10px;
+            font-size: 12px;
           }
         }
       `}</style>

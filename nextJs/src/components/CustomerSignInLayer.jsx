@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Icon } from "@iconify/react/dist/iconify.js";
 import CustomerAuthShell from "./CustomerAuthShell";
+import { publicApi } from "@/lib/publicApi";
 
-const accountsKey = "cvant_customer_accounts";
 const tokenKey = "cvant_customer_token";
 const userKey = "cvant_customer_user";
 
@@ -35,7 +35,7 @@ const CustomerSignInLayer = () => {
       .join("; ");
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
     setMessage(null);
 
@@ -50,33 +50,31 @@ const CustomerSignInLayer = () => {
     setLoading(true);
 
     try {
-      const accounts = JSON.parse(localStorage.getItem(accountsKey) || "[]");
-      const account = accounts.find(
-        (item) => (item.email || "").toLowerCase() === email
-      );
+      const res = await publicApi.post("/customer/login", {
+        email,
+        password,
+      });
 
-      if (!account) {
-        setMessage({ type: "error", text: "Akun belum terdaftar. Silakan daftar dulu." });
-        return;
+      const token = res?.token;
+      const customer = res?.customer;
+
+      if (!token || !customer) {
+        throw new Error("Login gagal. Periksa email dan password.");
       }
-
-      if (account.password !== password) {
-        setMessage({ type: "error", text: "Password salah. Coba lagi." });
-        return;
-      }
-
-      const token = `cust_${Date.now().toString(36)}${Math.random()
-        .toString(36)
-        .slice(2, 8)}`;
 
       localStorage.setItem(tokenKey, token);
-      localStorage.setItem(userKey, JSON.stringify(account));
+      localStorage.setItem(userKey, JSON.stringify(customer));
       setCustomerCookie(token);
       setMessage({ type: "success", text: "Login berhasil. Mengarahkan ke halaman order..." });
 
       setTimeout(() => {
         router.replace("/order");
       }, 600);
+    } catch (error) {
+      setMessage({
+        type: "error",
+        text: error?.message || "Login gagal. Periksa email dan password.",
+      });
     } finally {
       setLoading(false);
     }

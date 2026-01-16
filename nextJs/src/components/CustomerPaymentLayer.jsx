@@ -1,46 +1,74 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Icon } from "@iconify/react/dist/iconify.js";
+import ThemeToggleButton from "@/helper/ThemeToggleButton";
+import { customerApi } from "@/lib/customerApi";
 
-const ordersKey = "cvant_customer_orders";
-const latestOrderKey = "cvant_latest_order";
 const tokenKey = "cvant_customer_token";
 const userKey = "cvant_customer_user";
 
 const CustomerPaymentLayer = () => {
   const router = useRouter();
   const [order, setOrder] = useState(null);
+  const [customer, setCustomer] = useState(null);
   const [method, setMethod] = useState("");
   const [message, setMessage] = useState(null);
   const [processing, setProcessing] = useState(false);
 
   useEffect(() => {
-    const stored = localStorage.getItem(latestOrderKey);
-    if (!stored) return;
-    try {
-      setOrder(JSON.parse(stored));
-    } catch {
-      setOrder(null);
+    const storedUser = localStorage.getItem(userKey);
+    if (storedUser) {
+      try {
+        setCustomer(JSON.parse(storedUser));
+      } catch {
+        setCustomer(null);
+      }
     }
+
+    const loadLatest = async () => {
+      try {
+        const latest = await customerApi.get("/customer/orders?latest=1");
+        if (latest) {
+          setOrder(latest);
+        }
+      } catch {
+        setOrder(null);
+      }
+    };
+
+    const loadProfile = async () => {
+      try {
+        const res = await customerApi.get("/customer/me");
+        const user = res?.customer;
+        if (!user) return;
+        setCustomer(user);
+        localStorage.setItem(userKey, JSON.stringify(user));
+      } catch {
+        // ignore
+      }
+    };
+
+    loadLatest();
+    loadProfile();
   }, []);
 
   const formatCurrency = (value) => {
-    const safeValue = Number.isFinite(value) ? value : 0;
+    const parsed = Number(value);
+    const safeValue = Number.isFinite(parsed) ? parsed : 0;
     return `Rp ${safeValue.toLocaleString("id-ID")}`;
   };
 
   const handleSignOut = () => {
+    customerApi.clearToken();
     localStorage.removeItem(tokenKey);
     localStorage.removeItem(userKey);
-    document.cookie =
-      "customer_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax;";
     router.push("/customer/sign-in");
   };
 
-  const handlePay = () => {
+  const handlePay = async () => {
     if (!method) {
       setMessage({ type: "error", text: "Pilih metode pembayaran terlebih dulu." });
       return;
@@ -50,26 +78,73 @@ const CustomerPaymentLayer = () => {
     setProcessing(true);
     setMessage(null);
 
-    const nextOrder = {
-      ...order,
-      status: "Paid",
-      paymentMethod: method,
-      paidAt: new Date().toISOString(),
-    };
-
-    const orders = JSON.parse(localStorage.getItem(ordersKey) || "[]");
-    const nextOrders = orders.map((item) => (item.id === order.id ? nextOrder : item));
-    localStorage.setItem(ordersKey, JSON.stringify(nextOrders));
-    localStorage.setItem(latestOrderKey, JSON.stringify(nextOrder));
-    setOrder(nextOrder);
-    setMessage({ type: "success", text: "Pembayaran berhasil. Tim kami akan segera memproses order." });
-    setProcessing(false);
+    try {
+      const updated = await customerApi.post(`/customer/orders/${order.id}/pay`, {
+        payment_method: method,
+      });
+      setOrder(updated);
+      setMessage({
+        type: "success",
+        text: "Pembayaran berhasil. Tim kami akan segera memproses order.",
+      });
+    } catch (error) {
+      setMessage({
+        type: "error",
+        text: error?.message || "Pembayaran gagal. Coba lagi.",
+      });
+    } finally {
+      setProcessing(false);
+    }
   };
+
+  const orderCode = order?.order_code || order?.id || "-";
+  const scheduleDate = order?.pickup_date || order?.date || "-";
+  const rawTime = order?.pickup_time || order?.time || "";
+  const scheduleTime = rawTime ? rawTime.slice(0, 5) : "-";
+  const customerInitial = useMemo(() => {
+    const name = customer?.name || "";
+    return name ? name.trim().charAt(0).toUpperCase() : "C";
+  }, [customer]);
+  const customerRole = customer?.role || "Customer";
 
   return (
     <>
       <style jsx global>{`
         .cvant-payment {
+          --cvant-payment-text: #e2e8f0;
+          --cvant-payment-muted: #94a3b8;
+          --cvant-payment-border: rgba(148, 163, 184, 0.16);
+          --cvant-payment-border-strong: rgba(148, 163, 184, 0.3);
+          --cvant-payment-card-bg: rgba(15, 23, 42, 0.7);
+          --cvant-payment-input-bg: rgba(15, 23, 42, 0.55);
+          --cvant-payment-nav-bg: rgba(12, 17, 27, 0.8);
+          --cvant-payment-pill-bg: rgba(15, 23, 42, 0.35);
+          --cvant-payment-user-bg: rgba(15, 23, 42, 0.35);
+          --cvant-payment-danger-text: #fecaca;
+          --cvant-payment-danger-bg: rgba(239, 68, 68, 0.15);
+          --cvant-payment-danger-border: rgba(239, 68, 68, 0.6);
+          --cvant-payment-success-text: #bbf7d0;
+          --cvant-payment-success-bg: rgba(34, 197, 94, 0.12);
+          --cvant-payment-success-border: rgba(34, 197, 94, 0.4);
+          --cvant-payment-shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
+          --cvant-payment-btn: linear-gradient(
+            90deg,
+            rgba(91, 140, 255, 1),
+            rgba(168, 85, 247, 1)
+          );
+          --cvant-payment-btn-hover: linear-gradient(
+            90deg,
+            rgba(76, 126, 255, 1),
+            rgba(150, 70, 247, 1)
+          );
+          --cvant-payment-btn-active: linear-gradient(
+            90deg,
+            rgba(62, 112, 255, 1),
+            rgba(132, 54, 235, 1)
+          );
+          --cvant-payment-btn-shadow: 0 0 0 1px rgba(91, 140, 255, 0.35),
+            0 12px 26px rgba(0, 0, 0, 0.3),
+            0 0 14px rgba(91, 140, 255, 0.2);
           min-height: 100vh;
           background: radial-gradient(
               900px 500px at 15% 10%,
@@ -82,7 +157,41 @@ const CustomerPaymentLayer = () => {
               transparent 60%
             ),
             linear-gradient(180deg, #0f172a 0%, #0b1220 100%);
-          color: #e2e8f0;
+          color: var(--cvant-payment-text);
+        }
+
+        html[data-theme="light"] .cvant-payment,
+        html[data-bs-theme="light"] .cvant-payment {
+          --cvant-payment-text: #0f172a;
+          --cvant-payment-muted: #475569;
+          --cvant-payment-border: rgba(15, 23, 42, 0.12);
+          --cvant-payment-border-strong: rgba(15, 23, 42, 0.2);
+          --cvant-payment-card-bg: rgba(255, 255, 255, 0.95);
+          --cvant-payment-input-bg: rgba(255, 255, 255, 0.9);
+          --cvant-payment-nav-bg: rgba(248, 250, 252, 0.92);
+          --cvant-payment-pill-bg: rgba(248, 250, 252, 0.9);
+          --cvant-payment-user-bg: rgba(241, 245, 249, 0.9);
+          --cvant-payment-danger-text: #b91c1c;
+          --cvant-payment-danger-bg: rgba(239, 68, 68, 0.12);
+          --cvant-payment-danger-border: rgba(239, 68, 68, 0.4);
+          --cvant-payment-success-text: #166534;
+          --cvant-payment-success-bg: rgba(34, 197, 94, 0.12);
+          --cvant-payment-success-border: rgba(34, 197, 94, 0.3);
+          --cvant-payment-shadow: 0 20px 40px rgba(15, 23, 42, 0.12);
+          --cvant-payment-btn-shadow: 0 0 0 1px rgba(91, 140, 255, 0.25),
+            0 12px 24px rgba(15, 23, 42, 0.12),
+            0 0 12px rgba(91, 140, 255, 0.16);
+          background: radial-gradient(
+              900px 500px at 15% 10%,
+              rgba(91, 140, 255, 0.12),
+              transparent 60%
+            ),
+            radial-gradient(
+              800px 520px at 85% 20%,
+              rgba(34, 211, 238, 0.12),
+              transparent 60%
+            ),
+            linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%);
         }
 
         .cvant-payment-container {
@@ -94,8 +203,8 @@ const CustomerPaymentLayer = () => {
           position: sticky;
           top: 0;
           z-index: 20;
-          background: rgba(12, 17, 27, 0.8);
-          border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+          background: var(--cvant-payment-nav-bg);
+          border-bottom: 1px solid var(--cvant-payment-border);
           backdrop-filter: blur(10px);
         }
 
@@ -112,6 +221,7 @@ const CustomerPaymentLayer = () => {
           display: flex;
           align-items: center;
           gap: 12px;
+          flex-wrap: wrap;
         }
 
         .cvant-payment-btn-outline {
@@ -123,17 +233,60 @@ const CustomerPaymentLayer = () => {
         }
 
         .cvant-payment-btn-outline:hover {
-          background: var(--primary-700);
-          border-color: var(--primary-700);
+          background: var(--primary-600);
+          border-color: var(--primary-600);
+          color: #ffffff;
+        }
+
+        .cvant-payment-btn-outline:active,
+        .cvant-payment-btn-outline:focus {
+          background: var(--primary-800);
+          border-color: var(--primary-800);
           color: #ffffff;
         }
 
         .cvant-payment-logout {
           border-radius: 999px;
           padding: 8px 14px;
-          border: 1px solid rgba(239, 68, 68, 0.6);
-          background: rgba(239, 68, 68, 0.12);
-          color: #fecaca;
+          border: 1px solid var(--cvant-payment-danger-border);
+          background: var(--cvant-payment-danger-bg);
+          color: var(--cvant-payment-danger-text);
+        }
+
+        .cvant-payment-user {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 6px 12px;
+          border-radius: 999px;
+          border: 1px solid var(--cvant-payment-border);
+          background: var(--cvant-payment-user-bg);
+          color: var(--cvant-payment-text);
+        }
+
+        .cvant-payment-avatar {
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          background: var(--primary-600);
+          color: #fff;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          font-weight: 600;
+          font-size: 14px;
+        }
+
+        .cvant-payment-user-name {
+          font-size: 13px;
+          font-weight: 600;
+          line-height: 1.2;
+        }
+
+        .cvant-payment-user-role {
+          font-size: 11px;
+          color: var(--cvant-payment-muted);
+          line-height: 1.2;
         }
 
         .cvant-payment-main {
@@ -149,9 +302,9 @@ const CustomerPaymentLayer = () => {
         .cvant-payment-card {
           border-radius: 20px;
           padding: 24px;
-          background: rgba(15, 23, 42, 0.7);
-          border: 1px solid rgba(148, 163, 184, 0.18);
-          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
+          background: var(--cvant-payment-card-bg);
+          border: 1px solid var(--cvant-payment-border);
+          box-shadow: var(--cvant-payment-shadow);
         }
 
         .cvant-payment-title {
@@ -161,7 +314,7 @@ const CustomerPaymentLayer = () => {
         }
 
         .cvant-payment-desc {
-          color: #94a3b8;
+          color: var(--cvant-payment-muted);
           font-size: 14px;
         }
 
@@ -170,12 +323,16 @@ const CustomerPaymentLayer = () => {
           align-items: center;
           justify-content: space-between;
           padding: 8px 0;
-          border-bottom: 1px dashed rgba(148, 163, 184, 0.2);
-          color: #cbd5f5;
+          border-bottom: 1px dashed var(--cvant-payment-border);
+          color: var(--cvant-payment-muted);
         }
 
         .cvant-payment-summary-item:last-child {
           border-bottom: none;
+        }
+
+        .cvant-payment-summary-item strong {
+          color: var(--cvant-payment-text);
         }
 
         .cvant-method-grid {
@@ -190,15 +347,15 @@ const CustomerPaymentLayer = () => {
           gap: 12px;
           padding: 14px;
           border-radius: 14px;
-          border: 1px solid rgba(148, 163, 184, 0.25);
-          background: rgba(15, 23, 42, 0.55);
+          border: 1px solid var(--cvant-payment-border-strong);
+          background: var(--cvant-payment-input-bg);
           cursor: pointer;
           transition: border 0.2s ease, box-shadow 0.2s ease;
         }
 
         .cvant-method-card.active {
           border-color: rgba(91, 140, 255, 0.6);
-          box-shadow: 0 0 0 1px rgba(91, 140, 255, 0.5);
+          box-shadow: 0 0 0 1px rgba(91, 140, 255, 0.4);
         }
 
         .cvant-method-card input {
@@ -208,24 +365,25 @@ const CustomerPaymentLayer = () => {
         .cvant-pay-btn {
           border-radius: 999px;
           padding: 12px 18px;
-          border: 1px solid var(--primary-600);
-          background: var(--primary-600);
+          border: 1px solid transparent;
+          background: var(--cvant-payment-btn);
           color: #ffffff;
           font-weight: 600;
           width: 100%;
           margin-top: 18px;
+          box-shadow: var(--cvant-payment-btn-shadow);
         }
 
         .cvant-pay-btn:hover {
-          background: var(--primary-700);
-          border-color: var(--primary-700);
+          background: var(--cvant-payment-btn-hover);
+          border-color: transparent;
           color: #ffffff;
         }
 
         .cvant-pay-btn:active,
         .cvant-pay-btn:focus {
-          background: var(--primary-800);
-          border-color: var(--primary-800);
+          background: var(--cvant-payment-btn-active);
+          border-color: transparent;
         }
 
         .cvant-payment-alert {
@@ -236,20 +394,65 @@ const CustomerPaymentLayer = () => {
         }
 
         .cvant-payment-alert.success {
-          background: rgba(34, 197, 94, 0.12);
-          border: 1px solid rgba(34, 197, 94, 0.4);
-          color: #bbf7d0;
+          background: var(--cvant-payment-success-bg);
+          border: 1px solid var(--cvant-payment-success-border);
+          color: var(--cvant-payment-success-text);
         }
 
         .cvant-payment-alert.error {
-          background: rgba(239, 68, 68, 0.12);
-          border: 1px solid rgba(239, 68, 68, 0.4);
-          color: #fecaca;
+          background: var(--cvant-payment-danger-bg);
+          border: 1px solid var(--cvant-payment-danger-border);
+          color: var(--cvant-payment-danger-text);
         }
 
         @media (max-width: 991px) {
           .cvant-payment-grid {
             grid-template-columns: 1fr;
+          }
+        }
+
+        @media (max-width: 575px) {
+          .cvant-payment-nav-inner {
+            padding: 10px 0;
+            gap: 8px;
+          }
+
+          .cvant-payment-nav img {
+            height: 28px !important;
+          }
+
+          .cvant-payment-actions {
+            gap: 6px;
+            flex-wrap: nowrap;
+          }
+
+          .cvant-payment-actions [data-theme-toggle] {
+            width: 32px;
+            height: 32px;
+          }
+
+          .cvant-payment-actions [data-theme-toggle]::after {
+            font-size: 1rem;
+          }
+
+          .cvant-payment-user {
+            padding: 4px 8px;
+          }
+
+          .cvant-payment-user > div {
+            display: none;
+          }
+
+          .cvant-payment-avatar {
+            width: 28px;
+            height: 28px;
+            font-size: 12px;
+          }
+
+          .cvant-payment-btn-outline,
+          .cvant-payment-logout {
+            padding: 6px 10px;
+            font-size: 12px;
           }
         }
       `}</style>
@@ -261,6 +464,18 @@ const CustomerPaymentLayer = () => {
               <img src="/assets/images/logo.webp" alt="CV ANT" style={{ height: "34px" }} />
             </Link>
             <div className="cvant-payment-actions">
+              <ThemeToggleButton />
+              {customer ? (
+                <div className="cvant-payment-user">
+                  <span className="cvant-payment-avatar">{customerInitial}</span>
+                  <div>
+                    <div className="cvant-payment-user-name">
+                      {customer.name || "Customer"}
+                    </div>
+                    <div className="cvant-payment-user-role">{customerRole}</div>
+                  </div>
+                </div>
+              ) : null}
               <Link href="/order" className="cvant-payment-btn-outline">
                 Ubah Order
               </Link>
@@ -292,7 +507,7 @@ const CustomerPaymentLayer = () => {
                   </p>
                   <div className="cvant-payment-summary-item">
                     <span>ID Order</span>
-                    <strong>{order.id}</strong>
+                    <strong>{orderCode}</strong>
                   </div>
                   <div className="cvant-payment-summary-item">
                     <span>Rute</span>
@@ -303,7 +518,7 @@ const CustomerPaymentLayer = () => {
                   <div className="cvant-payment-summary-item">
                     <span>Jadwal</span>
                     <strong>
-                      {order.date} | {order.time}
+                      {scheduleDate} | {scheduleTime}
                     </strong>
                   </div>
                   <div className="cvant-payment-summary-item">

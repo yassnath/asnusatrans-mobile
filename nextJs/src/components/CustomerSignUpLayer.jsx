@@ -5,8 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Icon } from "@iconify/react/dist/iconify.js";
 import CustomerAuthShell from "./CustomerAuthShell";
-
-const accountsKey = "cvant_customer_accounts";
+import { publicApi } from "@/lib/publicApi";
 
 const CustomerSignUpLayer = () => {
   const router = useRouter();
@@ -31,7 +30,7 @@ const CustomerSignUpLayer = () => {
     setForm((prev) => ({ ...prev, [field]: event.target.value }));
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
     setMessage(null);
 
@@ -74,37 +73,28 @@ const CustomerSignUpLayer = () => {
     setLoading(true);
 
     try {
-      const accounts = JSON.parse(localStorage.getItem(accountsKey) || "[]");
-      const exists = accounts.some(
-        (item) => (item.email || "").toLowerCase() === email
-      );
-
-      if (exists) {
-        setMessage({ type: "error", text: "Email sudah terdaftar. Silakan masuk." });
-        return;
-      }
-
-      const newAccount = {
-        id: `cust_${Date.now()}`,
+      await publicApi.post("/customer/register", {
         name,
         email,
         phone,
         gender,
-        birthDate,
+        birth_date: birthDate,
         address,
         city,
         company,
         password,
-        createdAt: new Date().toISOString(),
-      };
+      });
 
-      accounts.push(newAccount);
-      localStorage.setItem(accountsKey, JSON.stringify(accounts));
       setMessage({ type: "success", text: "Akun berhasil dibuat. Silakan login." });
 
       setTimeout(() => {
         router.push("/customer/sign-in");
       }, 700);
+    } catch (error) {
+      setMessage({
+        type: "error",
+        text: error?.message || "Gagal membuat akun. Coba lagi.",
+      });
     } finally {
       setLoading(false);
     }

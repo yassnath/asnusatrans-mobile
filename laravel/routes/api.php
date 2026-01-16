@@ -3,6 +3,10 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ArmadaController;
+use App\Http\Controllers\Api\CustomerAuthController;
+use App\Http\Controllers\Api\CustomerAdminController;
+use App\Http\Controllers\Api\CustomerOrderController;
+use App\Http\Controllers\Api\CustomerOrderAdminController;
 use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\ExpenseController;
 use App\Http\Controllers\Api\ReportController;
@@ -23,6 +27,25 @@ Route::prefix('public')->group(function () {
     // ? Public armada (nama + tonase saja)
     Route::get('/armadas', [ArmadaController::class, 'publicIndex']);
 });
+
+/*
+|--------------------------------------------------------------------------
+| ? CUSTOMER ROUTES
+|--------------------------------------------------------------------------
+*/
+Route::prefix('customer')->group(function () {
+    Route::post('/register', [CustomerAuthController::class, 'register']);
+    Route::post('/login', [CustomerAuthController::class, 'login']);
+
+    Route::middleware('auth.customer')->group(function () {
+        Route::get('/me', [CustomerAuthController::class, 'me']);
+        Route::get('/orders', [CustomerOrderController::class, 'index']);
+        Route::post('/orders', [CustomerOrderController::class, 'store']);
+        Route::get('/orders/{id}', [CustomerOrderController::class, 'show']);
+        Route::post('/orders/{id}/pay', [CustomerOrderController::class, 'pay']);
+    });
+});
+
 
 /*
 |--------------------------------------------------------------------------
@@ -68,5 +91,10 @@ Route::middleware('auth.api')->group(function () {
     Route::get('/expenses/{id}', [ExpenseController::class, 'show']);
     Route::put('/expenses/{id}', [ExpenseController::class, 'update']);
     Route::delete('/expenses/{id}', [ExpenseController::class, 'destroy']);
+
+    // CUSTOMER (ADMIN)
+    Route::get('/customer-registrations', [CustomerAdminController::class, 'index']);
+    Route::get('/customer-orders', [CustomerOrderAdminController::class, 'index']);
+    Route::patch('/customer-orders/{id}/status', [CustomerOrderAdminController::class, 'updateStatus']);
 });
 

@@ -43,25 +43,34 @@ export function middleware(request) {
     pathname.startsWith("/customer/sign-in") ||
     pathname.startsWith("/customer/sign-up");
   const isCustomerArea = pathname === "/order" || pathname.startsWith("/order/");
-  const isPublicPage = pathname === "/" || isCustomerAuthPage;
+  const isPublicPage = pathname === "/" || isAdminAuthPage || isCustomerAuthPage;
 
-  if (isAdminAuthPage && token) {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+  if (isAdminAuthPage) {
+    if (token && token !== "undefined" && token !== "null") {
+      return NextResponse.redirect(new URL("/dashboard", request.url));
+    }
+    return NextResponse.next();
   }
 
-  if (isCustomerAuthPage && customerToken) {
-    return NextResponse.redirect(new URL("/order", request.url));
+  if (isCustomerAuthPage) {
+    if (customerToken && customerToken !== "undefined" && customerToken !== "null") {
+      return NextResponse.redirect(new URL("/order", request.url));
+    }
+    return NextResponse.next();
   }
 
   if (isPublicPage) {
     return NextResponse.next();
   }
 
-  if (isCustomerArea && !customerToken) {
+  if (isCustomerArea && (!customerToken || customerToken === "undefined" || customerToken === "null")) {
     return NextResponse.redirect(new URL("/customer/sign-in", request.url));
   }
 
-  if (!isCustomerArea && !token) {
+  if (
+    !isCustomerArea &&
+    (!token || token === "undefined" || token === "null")
+  ) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 

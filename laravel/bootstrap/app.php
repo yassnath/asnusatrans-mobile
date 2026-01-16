@@ -27,6 +27,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // Alias middleware kamu tetap
         $middleware->alias([
             'auth.api' => \App\Http\Middleware\ApiTokenMiddleware::class,
+            'auth.customer' => \App\Http\Middleware\CustomerTokenMiddleware::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

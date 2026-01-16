@@ -47,6 +47,24 @@ const CustomerAuthShell = ({ title, subtitle, children, footer }) => {
             rgba(15, 23, 42, 0.78)
           );
           --cvant-auth-shadow: 0 30px 60px rgba(0, 0, 0, 0.45);
+          --cvant-auth-btn: linear-gradient(
+            90deg,
+            rgba(91, 140, 255, 1),
+            rgba(168, 85, 247, 1)
+          );
+          --cvant-auth-btn-hover: linear-gradient(
+            90deg,
+            rgba(76, 126, 255, 1),
+            rgba(150, 70, 247, 1)
+          );
+          --cvant-auth-btn-active: linear-gradient(
+            90deg,
+            rgba(62, 112, 255, 1),
+            rgba(132, 54, 235, 1)
+          );
+          --cvant-auth-btn-shadow: 0 0 0 1px rgba(91, 140, 255, 0.35),
+            0 14px 30px rgba(0, 0, 0, 0.3),
+            0 0 16px rgba(91, 140, 255, 0.2);
           --cvant-auth-left-bg: linear-gradient(
             180deg,
             rgba(30, 41, 59, 0.7),
@@ -86,6 +104,9 @@ const CustomerAuthShell = ({ title, subtitle, children, footer }) => {
             #f1f5f9 100%
           );
           --cvant-auth-shadow: 0 30px 60px rgba(15, 23, 42, 0.12);
+          --cvant-auth-btn-shadow: 0 0 0 1px rgba(91, 140, 255, 0.25),
+            0 14px 26px rgba(15, 23, 42, 0.12),
+            0 0 12px rgba(91, 140, 255, 0.16);
           --cvant-auth-left-bg: linear-gradient(
             180deg,
             rgba(255, 255, 255, 0.9),
@@ -306,11 +327,14 @@ const CustomerAuthShell = ({ title, subtitle, children, footer }) => {
         .cvant-auth-eye {
           position: absolute;
           right: 12px;
-          top: 50%;
-          transform: translateY(-50%);
+          top: 0;
+          bottom: 0;
+          display: flex;
+          align-items: center;
           background: transparent;
           border: none;
           color: var(--cvant-auth-muted);
+          padding: 0;
         }
 
         .cvant-auth-btn {
@@ -320,24 +344,24 @@ const CustomerAuthShell = ({ title, subtitle, children, footer }) => {
           gap: 8px;
           border-radius: 999px;
           padding: 12px 18px;
-          border: none;
-          background: var(--primary-600);
-          border: 1px solid var(--primary-600);
+          border: 1px solid transparent;
+          background: var(--cvant-auth-btn);
           color: #ffffff;
           font-weight: 600;
           width: 100%;
+          box-shadow: var(--cvant-auth-btn-shadow);
         }
 
         .cvant-auth-btn:hover {
-          background: var(--primary-700);
-          border-color: var(--primary-700);
+          background: var(--cvant-auth-btn-hover);
+          border-color: transparent;
           color: #ffffff;
         }
 
         .cvant-auth-btn:active,
         .cvant-auth-btn:focus {
-          background: var(--primary-800);
-          border-color: var(--primary-800);
+          background: var(--cvant-auth-btn-active);
+          border-color: transparent;
         }
 
         .cvant-auth-alert {
@@ -414,6 +438,50 @@ const CustomerAuthShell = ({ title, subtitle, children, footer }) => {
 
           .cvant-auth-grid {
             grid-template-columns: 1fr;
+          }
+        }
+
+        @media (max-width: 575px) {
+          .cvant-auth-nav-inner {
+            padding: 10px 0;
+            gap: 8px;
+          }
+
+          .cvant-auth-logo img {
+            height: 28px;
+          }
+
+          .cvant-auth-nav-actions {
+            gap: 6px;
+            flex-wrap: nowrap;
+          }
+
+          .cvant-auth-nav-link {
+            padding: 6px 10px;
+            font-size: 12px;
+          }
+
+          .cvant-auth-user {
+            padding: 4px 8px;
+          }
+
+          .cvant-auth-user > div {
+            display: none;
+          }
+
+          .cvant-auth-avatar {
+            width: 28px;
+            height: 28px;
+            font-size: 12px;
+          }
+
+          .cvant-auth-nav-actions [data-theme-toggle] {
+            width: 32px;
+            height: 32px;
+          }
+
+          .cvant-auth-nav-actions [data-theme-toggle]::after {
+            font-size: 1rem;
           }
         }
       `}</style>
