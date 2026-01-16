@@ -40,10 +40,12 @@ const ThemeToggleButton = () => {
     <button
       type='button'
       data-theme-toggle
+      aria-label={theme}
+      title='Toggle theme'
       className='w-40-px h-40-px bg-neutral-200 rounded-circle d-flex justify-content-center align-items-center'
       onClick={handleThemeToggle}
     >
-      Toggle Theme
+      <span className='visually-hidden'>Toggle theme</span>
     </button>
   );
 };

@@ -3,6 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Icon } from "@iconify/react/dist/iconify.js";
+import ThemeToggleButton from "@/helper/ThemeToggleButton";
+import PublicChatbotWidget from "@/components/PublicChatbotWidget";
 
 const LandingPageLayer = () => {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -21,23 +23,12 @@ const LandingPageLayer = () => {
     <>
       <style jsx global>{`
         :root {
-          --cvant-surface: #121a27;
-          --cvant-surface-2: #1b2636;
-          --cvant-surface-3: #233146;
+          --cvant-text: #ffffff;
+          --cvant-muted: #cbd5f5;
           --cvant-border: rgba(148, 163, 184, 0.2);
-          --cvant-text: #e2e8f0;
-          --cvant-muted: #94a3b8;
-          --cvant-blue: #5b8cff;
-          --cvant-cyan: #22d3ee;
-          --cvant-purple: #8b5cf6;
-          --cvant-green: #22c55e;
-          --cvant-orange: #f97316;
-        }
-
-        .cvant-landing {
-          min-height: 100vh;
-          color: var(--cvant-text);
-          background: radial-gradient(
+          --cvant-border-soft: rgba(148, 163, 184, 0.16);
+          --cvant-border-strong: rgba(148, 163, 184, 0.4);
+          --cvant-bg: radial-gradient(
               900px 500px at 12% 12%,
               rgba(91, 140, 255, 0.16),
               transparent 60%
@@ -53,6 +44,82 @@ const LandingPageLayer = () => {
               transparent 60%
             ),
             linear-gradient(180deg, #0c111b 0%, #0b1220 100%);
+          --cvant-nav-bg: rgba(12, 17, 27, 0.78);
+          --cvant-nav-bg-mobile: rgba(12, 17, 27, 0.95);
+          --cvant-panel: rgba(15, 23, 42, 0.6);
+          --cvant-panel-soft: rgba(15, 23, 42, 0.55);
+          --cvant-panel-alt: rgba(30, 41, 59, 0.55);
+          --cvant-card-strong: linear-gradient(
+            180deg,
+            rgba(35, 49, 70, 0.72),
+            rgba(15, 23, 42, 0.7)
+          );
+          --cvant-badge-bg: linear-gradient(
+            135deg,
+            rgba(30, 41, 59, 0.7),
+            rgba(15, 23, 42, 0.5)
+          );
+          --cvant-cta-bg: linear-gradient(120deg, #1e293b, #0f172a);
+          --cvant-btn-ghost-bg: rgba(15, 23, 42, 0.35);
+          --cvant-step-badge: rgba(91, 140, 255, 0.2);
+          --cvant-step-text: #c7d2fe;
+          --cvant-nav-hover: rgba(91, 140, 255, 0.12);
+          --cvant-blue: #5b8cff;
+          --cvant-cyan: #22d3ee;
+          --cvant-purple: #8b5cf6;
+          --cvant-green: #22c55e;
+          --cvant-orange: #f97316;
+        }
+
+        html[data-theme="light"] .cvant-landing,
+        html[data-bs-theme="light"] .cvant-landing {
+          --cvant-text: #0b1220;
+          --cvant-muted: #475569;
+          --cvant-border: rgba(15, 23, 42, 0.14);
+          --cvant-border-soft: rgba(15, 23, 42, 0.1);
+          --cvant-border-strong: rgba(15, 23, 42, 0.28);
+          --cvant-bg: radial-gradient(
+              900px 500px at 12% 12%,
+              rgba(91, 140, 255, 0.12),
+              transparent 60%
+            ),
+            radial-gradient(
+              800px 460px at 85% 8%,
+              rgba(34, 211, 238, 0.12),
+              transparent 58%
+            ),
+            radial-gradient(
+              700px 480px at 60% 90%,
+              rgba(139, 92, 246, 0.12),
+              transparent 60%
+            ),
+            linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%);
+          --cvant-nav-bg: rgba(248, 250, 252, 0.92);
+          --cvant-nav-bg-mobile: rgba(248, 250, 252, 0.96);
+          --cvant-panel: rgba(255, 255, 255, 0.85);
+          --cvant-panel-soft: rgba(248, 250, 252, 0.9);
+          --cvant-panel-alt: rgba(241, 245, 249, 0.9);
+          --cvant-card-strong: linear-gradient(
+            180deg,
+            #ffffff 0%,
+            #f1f5f9 100%
+          );
+          --cvant-badge-bg: linear-gradient(
+            135deg,
+            rgba(255, 255, 255, 0.95),
+            rgba(241, 245, 249, 0.92)
+          );
+          --cvant-cta-bg: linear-gradient(120deg, #ffffff, #e2e8f0);
+          --cvant-btn-ghost-bg: rgba(255, 255, 255, 0.7);
+          --cvant-step-badge: rgba(91, 140, 255, 0.16);
+          --cvant-step-text: #1e293b;
+          --cvant-nav-hover: rgba(91, 140, 255, 0.18);
+        }
+
+        .cvant-landing {
+          min-height: 100vh;
+          color: var(--cvant-text);
+          background: var(--cvant-bg);
           position: relative;
           overflow: hidden;
         }
@@ -66,8 +133,8 @@ const LandingPageLayer = () => {
           position: sticky;
           top: 0;
           z-index: 50;
-          border-bottom: 1px solid rgba(148, 163, 184, 0.12);
-          background: rgba(12, 17, 27, 0.78);
+          border-bottom: 1px solid var(--cvant-border-soft);
+          background: var(--cvant-nav-bg);
           backdrop-filter: blur(12px);
         }
 
@@ -114,10 +181,36 @@ const LandingPageLayer = () => {
           font-weight: 500;
           text-decoration: none;
           transition: color 0.2s ease;
+          position: relative;
+          padding: 6px 10px;
+          border-radius: 999px;
         }
 
         .cvant-nav-items a:hover {
           color: var(--cvant-text);
+          background: var(--cvant-nav-hover);
+        }
+
+        .cvant-nav-items a::after {
+          content: "";
+          position: absolute;
+          left: 50%;
+          bottom: -6px;
+          width: 0;
+          height: 2px;
+          background: linear-gradient(
+            90deg,
+            var(--cvant-blue),
+            var(--cvant-purple)
+          );
+          border-radius: 999px;
+          transition: width 0.25s ease, left 0.25s ease;
+        }
+
+        .cvant-nav-items a:hover::after,
+        .cvant-nav-items a:focus-visible::after {
+          width: 100%;
+          left: 0;
         }
 
         .cvant-nav-actions {
@@ -133,32 +226,52 @@ const LandingPageLayer = () => {
           border-radius: 999px;
           padding: 10px 18px;
           font-weight: 600;
+          line-height: 1;
+          min-height: 42px;
           text-decoration: none;
           border: 1px solid transparent;
-          transition: transform 0.2s ease, box-shadow 0.2s ease;
+          transition: background 0.2s ease, color 0.2s ease,
+            border-color 0.2s ease;
+          justify-content: center;
+          text-align: center;
         }
 
         .cvant-btn-primary {
-          background: linear-gradient(90deg, #5b8cff, #8b5cf6);
+          background: var(--primary-600);
+          border-color: var(--primary-600);
           color: #ffffff;
-          box-shadow: 0 12px 30px rgba(15, 23, 42, 0.4),
-            0 0 18px rgba(91, 140, 255, 0.24);
+          box-shadow: none;
+        }
+
+        .cvant-btn-primary:hover {
+          background: var(--primary-700);
+          border-color: var(--primary-700);
+          color: #ffffff;
+        }
+
+        .cvant-btn-primary:active,
+        .cvant-btn-primary:focus {
+          background: var(--primary-800);
+          border-color: var(--primary-800);
         }
 
         .cvant-btn-ghost {
-          color: var(--cvant-text);
-          border: 1px solid rgba(148, 163, 184, 0.4);
-          background: rgba(15, 23, 42, 0.35);
+          color: var(--primary-600);
+          border: 1px solid var(--primary-600);
+          background: transparent;
         }
 
-        .cvant-btn:hover {
-          transform: translateY(-1px);
+        .cvant-btn-ghost:hover {
+          background: var(--primary-700);
+          border-color: var(--primary-700);
+          color: #ffffff;
         }
+
 
         .cvant-nav-toggle {
           display: none;
           background: transparent;
-          border: 1px solid rgba(148, 163, 184, 0.35);
+          border: 1px solid var(--cvant-border-strong);
           color: var(--cvant-text);
           border-radius: 10px;
           padding: 8px 10px;
@@ -181,7 +294,7 @@ const LandingPageLayer = () => {
           gap: 10px;
           padding: 6px 14px;
           border-radius: 999px;
-          border: 1px solid rgba(148, 163, 184, 0.3);
+          border: 1px solid var(--cvant-border-strong);
           color: var(--cvant-muted);
           font-size: 13px;
           letter-spacing: 0.4px;
@@ -220,12 +333,8 @@ const LandingPageLayer = () => {
         .cvant-badge-card {
           border-radius: 16px;
           padding: 14px;
-          background: linear-gradient(
-            135deg,
-            rgba(30, 41, 59, 0.7),
-            rgba(15, 23, 42, 0.5)
-          );
-          border: 1px solid rgba(148, 163, 184, 0.18);
+          background: var(--cvant-badge-bg);
+          border: 1px solid var(--cvant-border);
           box-shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
         }
 
@@ -248,12 +357,8 @@ const LandingPageLayer = () => {
         .cvant-glass-card {
           border-radius: 20px;
           padding: 22px;
-          background: linear-gradient(
-            180deg,
-            rgba(35, 49, 70, 0.72),
-            rgba(15, 23, 42, 0.7)
-          );
-          border: 1px solid rgba(148, 163, 184, 0.2);
+          background: var(--cvant-card-strong);
+          border: 1px solid var(--cvant-border);
           box-shadow: 0 30px 60px rgba(0, 0, 0, 0.4);
         }
 
@@ -273,8 +378,8 @@ const LandingPageLayer = () => {
           justify-content: space-between;
           padding: 10px 12px;
           border-radius: 12px;
-          background: rgba(15, 23, 42, 0.6);
-          border: 1px solid rgba(148, 163, 184, 0.16);
+          background: var(--cvant-panel);
+          border: 1px solid var(--cvant-border-soft);
           color: var(--cvant-muted);
           font-size: 14px;
         }
@@ -305,8 +410,8 @@ const LandingPageLayer = () => {
         .cvant-feature-card {
           border-radius: 18px;
           padding: 22px;
-          background: rgba(15, 23, 42, 0.55);
-          border: 1px solid rgba(148, 163, 184, 0.18);
+          background: var(--cvant-panel-soft);
+          border: 1px solid var(--cvant-border);
           box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.2);
           transition: transform 0.2s ease, border 0.2s ease;
         }
@@ -338,8 +443,8 @@ const LandingPageLayer = () => {
         .cvant-fleet-card {
           padding: 18px;
           border-radius: 16px;
-          background: rgba(30, 41, 59, 0.55);
-          border: 1px solid rgba(148, 163, 184, 0.18);
+          background: var(--cvant-panel-alt);
+          border: 1px solid var(--cvant-border);
         }
 
         .cvant-step-grid {
@@ -352,8 +457,8 @@ const LandingPageLayer = () => {
         .cvant-step {
           padding: 22px;
           border-radius: 18px;
-          background: rgba(15, 23, 42, 0.6);
-          border: 1px solid rgba(148, 163, 184, 0.18);
+          background: var(--cvant-panel);
+          border: 1px solid var(--cvant-border);
         }
 
         .cvant-step span {
@@ -363,8 +468,8 @@ const LandingPageLayer = () => {
           height: 40px;
           width: 40px;
           border-radius: 12px;
-          background: rgba(91, 140, 255, 0.2);
-          color: #c7d2fe;
+          background: var(--cvant-step-badge);
+          color: var(--cvant-step-text);
           font-weight: 700;
         }
 
@@ -378,12 +483,8 @@ const LandingPageLayer = () => {
         .cvant-price-card {
           padding: 26px;
           border-radius: 20px;
-          background: linear-gradient(
-            180deg,
-            rgba(35, 49, 70, 0.78),
-            rgba(15, 23, 42, 0.75)
-          );
-          border: 1px solid rgba(148, 163, 184, 0.2);
+          background: var(--cvant-card-strong);
+          border: 1px solid var(--cvant-border);
         }
 
         .cvant-price-card h4 {
@@ -412,8 +513,8 @@ const LandingPageLayer = () => {
         .cvant-testimonial {
           padding: 24px;
           border-radius: 18px;
-          background: rgba(15, 23, 42, 0.6);
-          border: 1px solid rgba(148, 163, 184, 0.18);
+          background: var(--cvant-panel);
+          border: 1px solid var(--cvant-border);
         }
 
         .cvant-faq {
@@ -425,8 +526,8 @@ const LandingPageLayer = () => {
         .cvant-faq-item {
           padding: 18px 20px;
           border-radius: 16px;
-          background: rgba(15, 23, 42, 0.6);
-          border: 1px solid rgba(148, 163, 184, 0.16);
+          background: var(--cvant-panel);
+          border: 1px solid var(--cvant-border-soft);
         }
 
         .cvant-cta {
@@ -436,8 +537,8 @@ const LandingPageLayer = () => {
         .cvant-cta-card {
           border-radius: 26px;
           padding: 36px;
-          background: linear-gradient(120deg, #1e293b, #0f172a);
-          border: 1px solid rgba(148, 163, 184, 0.2);
+          background: var(--cvant-cta-bg);
+          border: 1px solid var(--cvant-border);
           display: grid;
           grid-template-columns: repeat(2, minmax(0, 1fr));
           gap: 20px;
@@ -446,7 +547,7 @@ const LandingPageLayer = () => {
 
         .cvant-footer {
           padding: 40px 0 60px;
-          border-top: 1px solid rgba(148, 163, 184, 0.12);
+          border-top: 1px solid var(--cvant-border-soft);
           color: var(--cvant-muted);
         }
 
@@ -492,8 +593,8 @@ const LandingPageLayer = () => {
             padding: 20px;
             flex-direction: column;
             align-items: stretch;
-            background: rgba(12, 17, 27, 0.95);
-            border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+            background: var(--cvant-nav-bg-mobile);
+            border-bottom: 1px solid var(--cvant-border-soft);
             display: none;
           }
 
@@ -564,6 +665,7 @@ const LandingPageLayer = () => {
                 ))}
               </div>
               <div className="cvant-nav-actions">
+                <ThemeToggleButton />
                 <Link href="/customer/sign-in" className="cvant-btn cvant-btn-ghost">
                   Masuk
                 </Link>
@@ -884,6 +986,8 @@ const LandingPageLayer = () => {
             </div>
           </div>
         </footer>
+
+        <PublicChatbotWidget />
       </div>
     </>
   );

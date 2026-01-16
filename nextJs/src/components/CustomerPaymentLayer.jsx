@@ -117,9 +117,15 @@ const CustomerPaymentLayer = () => {
         .cvant-payment-btn-outline {
           border-radius: 999px;
           padding: 8px 14px;
-          border: 1px solid rgba(148, 163, 184, 0.4);
-          color: #cbd5f5;
+          border: 1px solid var(--primary-600);
+          color: var(--primary-600);
           background: transparent;
+        }
+
+        .cvant-payment-btn-outline:hover {
+          background: var(--primary-700);
+          border-color: var(--primary-700);
+          color: #ffffff;
         }
 
         .cvant-payment-logout {
@@ -202,12 +208,24 @@ const CustomerPaymentLayer = () => {
         .cvant-pay-btn {
           border-radius: 999px;
           padding: 12px 18px;
-          border: none;
-          background: linear-gradient(90deg, #5b8cff, #8b5cf6);
+          border: 1px solid var(--primary-600);
+          background: var(--primary-600);
           color: #ffffff;
           font-weight: 600;
           width: 100%;
           margin-top: 18px;
+        }
+
+        .cvant-pay-btn:hover {
+          background: var(--primary-700);
+          border-color: var(--primary-700);
+          color: #ffffff;
+        }
+
+        .cvant-pay-btn:active,
+        .cvant-pay-btn:focus {
+          background: var(--primary-800);
+          border-color: var(--primary-800);
         }
 
         .cvant-payment-alert {

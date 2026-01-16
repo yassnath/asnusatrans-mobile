@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { Icon } from "@iconify/react/dist/iconify.js";
+import ThemeToggleButton from "@/helper/ThemeToggleButton";
+import PublicChatbotWidget from "@/components/PublicChatbotWidget";
 
 const CustomerAuthShell = ({ title, subtitle, children, footer }) => {
   return (
@@ -77,13 +79,25 @@ const CustomerAuthShell = ({ title, subtitle, children, footer }) => {
           );
           border: 1px solid rgba(148, 163, 184, 0.2);
           box-shadow: 0 30px 60px rgba(0, 0, 0, 0.45);
+          position: relative;
+        }
+
+        .cvant-auth-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          margin-bottom: 16px;
+        }
+
+        .cvant-auth-header button {
+          flex-shrink: 0;
         }
 
         .cvant-auth-logo {
           display: inline-flex;
           align-items: center;
           gap: 10px;
-          margin-bottom: 16px;
           text-decoration: none;
         }
 
@@ -151,13 +165,30 @@ const CustomerAuthShell = ({ title, subtitle, children, footer }) => {
         }
 
         .cvant-auth-btn {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
           border-radius: 999px;
           padding: 12px 18px;
           border: none;
-          background: linear-gradient(90deg, #5b8cff, #8b5cf6);
+          background: var(--primary-600);
+          border: 1px solid var(--primary-600);
           color: #ffffff;
           font-weight: 600;
           width: 100%;
+        }
+
+        .cvant-auth-btn:hover {
+          background: var(--primary-700);
+          border-color: var(--primary-700);
+          color: #ffffff;
+        }
+
+        .cvant-auth-btn:active,
+        .cvant-auth-btn:focus {
+          background: var(--primary-800);
+          border-color: var(--primary-800);
         }
 
         .cvant-auth-alert {
@@ -229,15 +260,19 @@ const CustomerAuthShell = ({ title, subtitle, children, footer }) => {
           </aside>
 
           <div className="cvant-auth-card">
-            <Link href="/" className="cvant-auth-logo">
-              <img src="/assets/images/logo.webp" alt="CV ANT" />
-            </Link>
+            <div className="cvant-auth-header">
+              <Link href="/" className="cvant-auth-logo">
+                <img src="/assets/images/logo.webp" alt="CV ANT" />
+              </Link>
+              <ThemeToggleButton />
+            </div>
             <h3 className="cvant-auth-title">{title}</h3>
             <p className="cvant-auth-subtitle">{subtitle}</p>
             {children}
             {footer ? <div className="cvant-auth-footer">{footer}</div> : null}
           </div>
         </div>
+        <PublicChatbotWidget />
       </section>
     </>
   );

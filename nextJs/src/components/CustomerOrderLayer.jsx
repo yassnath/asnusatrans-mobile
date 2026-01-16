@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import ThemeToggleButton from "@/helper/ThemeToggleButton";
+import PublicChatbotWidget from "@/components/PublicChatbotWidget";
 
 const ordersKey = "cvant_customer_orders";
 const latestOrderKey = "cvant_latest_order";
@@ -291,11 +293,23 @@ const CustomerOrderLayer = () => {
         .cvant-order-submit {
           border-radius: 999px;
           padding: 12px 16px;
-          border: none;
-          background: linear-gradient(90deg, #5b8cff, #8b5cf6);
+          border: 1px solid var(--primary-600);
+          background: var(--primary-600);
           color: #ffffff;
           font-weight: 600;
           width: 100%;
+        }
+
+        .cvant-order-submit:hover {
+          background: var(--primary-700);
+          border-color: var(--primary-700);
+          color: #ffffff;
+        }
+
+        .cvant-order-submit:active,
+        .cvant-order-submit:focus {
+          background: var(--primary-800);
+          border-color: var(--primary-800);
         }
 
         .cvant-order-alert {
@@ -328,6 +342,7 @@ const CustomerOrderLayer = () => {
               <img src="/assets/images/logo.webp" alt="CV ANT" style={{ height: "34px" }} />
             </Link>
             <div className="cvant-order-actions">
+              <ThemeToggleButton />
               <span className="cvant-order-pill">Customer Order</span>
               <button type="button" className="cvant-order-logout" onClick={handleSignOut}>
                 Keluar
@@ -572,6 +587,8 @@ const CustomerOrderLayer = () => {
           </div>
         </main>
       </div>
+
+      <PublicChatbotWidget />
     </>
   );
 };

@@ -251,6 +251,20 @@ const MasterLayout = ({ children }) => {
                 </Link>
               </li>
 
+              <li className="sidebar-menu-group-title">Customer</li>
+
+              <li>
+                <Link
+                  href="/customer-registrations"
+                  className={
+                    pathname === "/customer-registrations" ? "active-page" : ""
+                  }
+                >
+                  <Icon icon="solar:user-linear" className="menu-icon" />
+                  <span>Pendaftaran Customer</span>
+                </Link>
+              </li>
+
               <li className="dropdown">
                 <Link href="#">
                   <Icon icon="mdi:truck-outline" className="menu-icon" />

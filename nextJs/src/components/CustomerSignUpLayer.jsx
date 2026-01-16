@@ -14,6 +14,10 @@ const CustomerSignUpLayer = () => {
     name: "",
     email: "",
     phone: "",
+    gender: "",
+    birthDate: "",
+    address: "",
+    city: "",
     company: "",
     password: "",
     confirmPassword: "",
@@ -34,12 +38,26 @@ const CustomerSignUpLayer = () => {
     const name = form.name.trim();
     const email = form.email.trim().toLowerCase();
     const phone = form.phone.trim();
+    const gender = form.gender.trim();
+    const birthDate = form.birthDate.trim();
+    const address = form.address.trim();
+    const city = form.city.trim();
     const company = form.company.trim();
     const password = form.password.trim();
     const confirmPassword = form.confirmPassword.trim();
 
-    if (!name || !email || !phone || !password || !confirmPassword) {
-      setMessage({ type: "error", text: "Lengkapi semua field wajib." });
+    if (
+      !name ||
+      !email ||
+      !phone ||
+      !gender ||
+      !birthDate ||
+      !address ||
+      !city ||
+      !password ||
+      !confirmPassword
+    ) {
+      setMessage({ type: "error", text: "Lengkapi semua biodata wajib." });
       return;
     }
 
@@ -71,6 +89,10 @@ const CustomerSignUpLayer = () => {
         name,
         email,
         phone,
+        gender,
+        birthDate,
+        address,
+        city,
         company,
         password,
         createdAt: new Date().toISOString(),
@@ -150,6 +172,76 @@ const CustomerSignUpLayer = () => {
               value={form.phone}
               onChange={onChange("phone")}
               autoComplete="tel"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="cvant-auth-label">Jenis Kelamin</label>
+          <div className="cvant-auth-field">
+            <span className="cvant-auth-icon">
+              <Icon icon="solar:user-linear" />
+            </span>
+            <select
+              className="cvant-auth-input"
+              value={form.gender}
+              onChange={onChange("gender")}
+              aria-label="Jenis kelamin"
+            >
+              <option value="">Pilih jenis kelamin</option>
+              <option value="Laki-laki">Laki-laki</option>
+              <option value="Perempuan">Perempuan</option>
+              <option value="Lainnya">Lainnya</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label className="cvant-auth-label">Tanggal Lahir</label>
+          <div className="cvant-auth-field">
+            <span className="cvant-auth-icon">
+              <Icon icon="solar:calendar-outline" />
+            </span>
+            <input
+              type="date"
+              className="cvant-auth-input"
+              value={form.birthDate}
+              onChange={onChange("birthDate")}
+              autoComplete="bday"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="cvant-auth-label">Alamat</label>
+          <div className="cvant-auth-field">
+            <span className="cvant-auth-icon">
+              <Icon icon="solar:map-point-linear" />
+            </span>
+            <input
+              type="text"
+              className="cvant-auth-input"
+              placeholder="Alamat lengkap"
+              value={form.address}
+              onChange={onChange("address")}
+              autoComplete="street-address"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="cvant-auth-label">Kota</label>
+          <div className="cvant-auth-field">
+            <span className="cvant-auth-icon">
+              <Icon icon="solar:buildings-linear" />
+            </span>
+            <input
+              type="text"
+              className="cvant-auth-input"
+              placeholder="Nama kota"
+              value={form.city}
+              onChange={onChange("city")}
+              autoComplete="address-level2"
             />
           </div>
         </div>
