@@ -2,13 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "@iconify/react/dist/iconify.js";
-
-const armadaOptions = [
-  { name: "Box Medium", note: "Cocok retail, max 4 ton" },
-  { name: "CDD Long", note: "Muatan tinggi, jarak menengah" },
-  { name: "Fuso Box", note: "Muatan 6-8 ton" },
-  { name: "Trailer", note: "Project & heavy cargo" },
-];
+import { publicApi } from "@/lib/publicApi";
 
 const restrictedKeywords = [
   "income",
@@ -56,10 +50,25 @@ const extractDateFromText = (text) => {
   return null;
 };
 
-const buildArmadaResponse = () => {
-  const lines = armadaOptions.map(
-    (item) => `- ${item.name}: ${item.note}`
-  );
+const formatTonnage = (value) => {
+  if (value == null || String(value).trim() === "") return "-";
+  const raw = String(value).trim();
+  if (/ton/i.test(raw)) return raw;
+  return `${raw} ton`;
+};
+
+const buildArmadaResponse = (armadas) => {
+  const list = Array.isArray(armadas) ? armadas : [];
+  if (list.length === 0) {
+    return "Data armada belum tersedia. Silakan tanyakan tanggal pengiriman dulu.";
+  }
+
+  const lines = list.slice(0, 6).map((item) => {
+    const name = item?.nama_truk || "Armada";
+    const tonnage = formatTonnage(item?.kapasitas);
+    return `- ${name} (${tonnage})`;
+  });
+
   return `Info armada tersedia:\n${lines.join("\n")}\n\nSebutkan tanggal pengiriman agar kami cek ketersediaan.`;
 };
 
@@ -70,7 +79,7 @@ const buildDateResponse = (dateInfo) => {
   return `Baik, tanggal ${dateInfo.display} dicatat. Armada apa yang kamu butuhkan?`;
 };
 
-const getReply = (text) => {
+const getReply = (text, armadas) => {
   const lower = String(text || "").toLowerCase();
 
   if (restrictedKeywords.some((keyword) => lower.includes(keyword))) {
@@ -78,7 +87,7 @@ const getReply = (text) => {
   }
 
   if (armadaKeywords.some((keyword) => lower.includes(keyword))) {
-    return buildArmadaResponse();
+    return buildArmadaResponse(armadas);
   }
 
   if (dateKeywords.some((keyword) => lower.includes(keyword))) {
@@ -97,6 +106,7 @@ const PublicChatbotWidget = () => {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
+  const [armadas, setArmadas] = useState([]);
   const listRef = useRef(null);
 
   useEffect(() => {
@@ -107,6 +117,27 @@ const PublicChatbotWidget = () => {
           "Halo! Saya asisten CV ANT. Saya hanya melayani info armada dan tanggal pengiriman.",
       },
     ]);
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadArmadas = async () => {
+      try {
+        const data = await publicApi.get("/public/armadas");
+        if (!mounted) return;
+        setArmadas(Array.isArray(data) ? data : []);
+      } catch {
+        if (!mounted) return;
+        setArmadas([]);
+      }
+    };
+
+    loadArmadas();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -121,7 +152,7 @@ const PublicChatbotWidget = () => {
     setMessages((prev) => [...prev, { role: "user", content: trimmed }]);
     setInput("");
 
-    const reply = getReply(trimmed);
+    const reply = getReply(trimmed, armadas);
     setTimeout(() => {
       setMessages((prev) => [...prev, { role: "assistant", content: reply }]);
     }, 300);
@@ -141,50 +172,60 @@ const PublicChatbotWidget = () => {
           position: fixed;
           right: 24px;
           bottom: 24px;
-          z-index: 9999;
+          z-index: 1050;
           display: flex;
           flex-direction: column;
           align-items: flex-end;
           gap: 12px;
-          --cvant-chat-bg: #0f172a;
-          --cvant-chat-text: #e2e8f0;
-          --cvant-chat-border: rgba(148, 163, 184, 0.2);
-          --cvant-chat-header: #111827;
-          --cvant-chat-bubble: rgba(30, 41, 59, 0.7);
         }
 
         .cvant-chat-toggle {
-          height: 54px;
           width: 54px;
-          border-radius: 50%;
+          height: 54px;
+          border-radius: 999px;
           border: none;
-          background: var(--primary-600);
+          background: linear-gradient(
+            90deg,
+            rgba(91, 140, 255, 0.94),
+            rgba(168, 85, 247, 0.92)
+          );
           color: #fff;
-          display: flex;
+          display: inline-flex;
           align-items: center;
           justify-content: center;
-          box-shadow: 0 16px 32px rgba(15, 23, 42, 0.35);
+          box-shadow: 0 12px 28px rgba(17, 24, 39, 0.25);
+          cursor: pointer;
+        }
+
+        .cvant-chat-toggle :global(svg) {
+          width: 24px;
+          height: 24px;
         }
 
         .cvant-chat-panel {
-          width: min(360px, 92vw);
+          width: 360px;
           max-height: 520px;
-          background: var(--cvant-chat-bg);
-          border: 1px solid var(--cvant-chat-border);
-          border-radius: 18px;
-          box-shadow: 0 30px 60px rgba(0, 0, 0, 0.35);
           display: flex;
           flex-direction: column;
+          background: var(--white);
+          color: var(--text-primary-light);
+          border: 1px solid var(--border-color);
+          border-radius: 16px;
           overflow: hidden;
+          box-shadow: 0 18px 40px rgba(17, 24, 39, 0.18);
         }
 
         .cvant-chat-header {
-          padding: 14px 16px;
+          padding: 12px 16px;
+          background: linear-gradient(
+            90deg,
+            rgba(91, 140, 255, 0.94),
+            rgba(168, 85, 247, 0.92)
+          );
+          color: #fff;
           display: flex;
           align-items: center;
           justify-content: space-between;
-          background: var(--cvant-chat-header);
-          color: var(--cvant-chat-text);
         }
 
         .cvant-chat-title {
@@ -192,89 +233,152 @@ const PublicChatbotWidget = () => {
           font-size: 14px;
         }
 
+        .cvant-chat-subtitle {
+          font-size: 12px;
+          opacity: 0.85;
+          margin-top: 2px;
+        }
+
+        .cvant-chat-close {
+          padding: 4px 8px;
+          border-radius: 8px;
+          background: rgba(255, 255, 255, 0.18);
+          color: #fff;
+          font-size: 12px;
+          cursor: pointer;
+          border: none;
+        }
+
         .cvant-chat-body {
-          padding: 14px 16px;
+          padding: 14px;
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
           overflow-y: auto;
-          display: grid;
-          gap: 12px;
+          background: var(--bg-color);
           flex: 1;
+          scrollbar-width: thin;
+          scrollbar-color: rgba(148, 163, 184, 0.6) transparent;
+        }
+
+        .cvant-chat-body::-webkit-scrollbar {
+          width: 3px;
+        }
+
+        .cvant-chat-body::-webkit-scrollbar-thumb {
+          background: rgba(148, 163, 184, 0.6);
+          border-radius: 999px;
+        }
+
+        .cvant-chat-body::-webkit-scrollbar-track {
+          background: transparent;
         }
 
         .cvant-chat-bubble {
+          max-width: 80%;
           padding: 10px 12px;
           border-radius: 12px;
           font-size: 13px;
           line-height: 1.5;
+          background: var(--white);
+          color: var(--text-primary-light);
+          box-shadow: 0 6px 16px rgba(17, 24, 39, 0.08);
+          align-self: flex-start;
           white-space: pre-wrap;
         }
 
-        .cvant-chat-bubble.assistant {
-          background: var(--cvant-chat-bubble);
-          color: var(--cvant-chat-text);
-          border: 1px solid var(--cvant-chat-border);
-        }
-
         .cvant-chat-bubble.user {
+          align-self: flex-end;
           background: var(--primary-600);
           color: #fff;
-          justify-self: end;
         }
 
         .cvant-chat-footer {
-          border-top: 1px solid var(--cvant-chat-border);
-          padding: 12px 14px;
           display: flex;
-          gap: 10px;
-          background: var(--cvant-chat-header);
+          align-items: center;
+          gap: 8px;
+          padding: 12px;
+          border-top: 1px solid var(--border-color);
+          background: var(--white);
+          font-size: 13px;
         }
 
         .cvant-chat-input {
           flex: 1;
+          padding: 6px 10px;
           border-radius: 10px;
-          border: 1px solid var(--cvant-chat-border);
-          background: transparent;
-          color: var(--cvant-chat-text);
-          padding: 8px 10px;
+          border: 1px solid var(--border-color);
+          background: var(--bg-color);
+          color: var(--text-primary-light);
           font-size: 13px;
           resize: none;
-          min-height: 38px;
-          max-height: 84px;
+          height: 32px;
+          max-height: 52px;
+          min-height: 32px;
+          line-height: 1.3;
+          overflow-y: auto;
+          scrollbar-width: thin;
+          scrollbar-color: rgba(148, 163, 184, 0.6) transparent;
+        }
+
+        .cvant-chat-input::-webkit-scrollbar {
+          width: 3px;
+        }
+
+        .cvant-chat-input::-webkit-scrollbar-thumb {
+          background: rgba(148, 163, 184, 0.6);
+          border-radius: 999px;
+        }
+
+        .cvant-chat-input::-webkit-scrollbar-track {
+          background: transparent;
+        }
+
+        .cvant-chat-input::placeholder {
+          font-size: 13px !important;
+          line-height: 1.2;
+          opacity: 0.5;
+        }
+
+        .cvant-chat-input::-webkit-input-placeholder {
+          font-size: 13px !important;
+          line-height: 1.2;
+          opacity: 0.5;
         }
 
         .cvant-chat-send {
+          width: 38px;
           height: 38px;
-          min-width: 38px;
           border-radius: 10px;
-          border: none;
           background: var(--primary-600);
           color: #fff;
           display: inline-flex;
           align-items: center;
           justify-content: center;
-        }
-
-        .cvant-chat-close {
+          cursor: pointer;
           border: none;
-          background: transparent;
-          color: var(--cvant-chat-text);
         }
 
-        html[data-theme="light"] .cvant-public-chatbot,
-        html[data-bs-theme="light"] .cvant-public-chatbot {
-          --cvant-chat-bg: #ffffff;
-          --cvant-chat-text: #0f172a;
-          --cvant-chat-border: rgba(15, 23, 42, 0.12);
-          --cvant-chat-header: #f8fafc;
-          --cvant-chat-bubble: #f1f5f9;
+        .cvant-chat-send:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
         }
 
-        html[data-theme="dark"] .cvant-public-chatbot,
-        html[data-bs-theme="dark"] .cvant-public-chatbot {
-          --cvant-chat-bg: #0f172a;
-          --cvant-chat-text: #e2e8f0;
-          --cvant-chat-border: rgba(148, 163, 184, 0.2);
-          --cvant-chat-header: #111827;
-          --cvant-chat-bubble: rgba(30, 41, 59, 0.7);
+        .cvant-chat-send :global(svg) {
+          width: 18px;
+          height: 18px;
+        }
+
+        @media (max-width: 576px) {
+          .cvant-public-chatbot {
+            right: 16px;
+            bottom: 16px;
+          }
+
+          .cvant-chat-panel {
+            width: min(92vw, 360px);
+            max-height: 65vh;
+          }
         }
       `}</style>
 
@@ -284,9 +388,7 @@ const PublicChatbotWidget = () => {
             <div className="cvant-chat-header">
               <div>
                 <div className="cvant-chat-title">CV ANT Chatbot</div>
-                <div style={{ fontSize: "12px", color: "var(--cvant-chat-text)" }}>
-                  Info armada & tanggal
-                </div>
+                <div className="cvant-chat-subtitle">Info armada & tanggal</div>
               </div>
               <button type="button" className="cvant-chat-close" onClick={() => setOpen(false)}>
                 <Icon icon="radix-icons:cross-2" />
@@ -310,15 +412,20 @@ const PublicChatbotWidget = () => {
                 onKeyDown={handleKeyDown}
                 placeholder="Tanya armada atau tanggal..."
               />
-              <button type="button" className="cvant-chat-send" onClick={sendMessage}>
-                <Icon icon="solar:plain-linear" />
+              <button
+                type="button"
+                className="cvant-chat-send"
+                onClick={sendMessage}
+                disabled={!input.trim()}
+              >
+                <Icon icon="tabler:send" />
               </button>
             </div>
           </div>
         )}
 
         <button type="button" className="cvant-chat-toggle" onClick={() => setOpen((v) => !v)}>
-          <Icon icon="solar:chat-round-line-linear" />
+          <Icon icon={open ? "solar:close-circle-bold" : "fluent:chat-24-filled"} />
         </button>
       </div>
     </>

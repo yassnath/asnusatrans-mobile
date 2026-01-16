@@ -10,6 +10,7 @@ const ThemeToggleButton = () => {
   const updateThemeOnHtmlEl = (theme) => {
     if (typeof window !== "undefined") {
       document.documentElement.setAttribute("data-theme", theme);
+      document.documentElement.setAttribute("data-bs-theme", theme);
     }
   };
 

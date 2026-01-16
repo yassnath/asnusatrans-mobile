@@ -14,6 +14,7 @@ const tokenKey = "cvant_customer_token";
 const CustomerOrderLayer = () => {
   const router = useRouter();
   const [message, setMessage] = useState(null);
+  const [customer, setCustomer] = useState(null);
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -37,6 +38,7 @@ const CustomerOrderLayer = () => {
     if (!stored) return;
     try {
       const user = JSON.parse(stored);
+      setCustomer(user);
       setForm((prev) => ({
         ...prev,
         name: user.name || "",
@@ -48,6 +50,13 @@ const CustomerOrderLayer = () => {
       // ignore invalid storage
     }
   }, []);
+
+  const customerInitial = useMemo(() => {
+    const name = customer?.name || "";
+    return name ? name.trim().charAt(0).toUpperCase() : "C";
+  }, [customer]);
+
+  const customerRole = customer?.role || "Customer";
 
   const onChange = (field) => (event) => {
     const value =
@@ -138,8 +147,20 @@ const CustomerOrderLayer = () => {
     <>
       <style jsx global>{`
         .cvant-order {
-          min-height: 100vh;
-          background: radial-gradient(
+          --cvant-order-text: #e2e8f0;
+          --cvant-order-muted: #94a3b8;
+          --cvant-order-border: rgba(148, 163, 184, 0.16);
+          --cvant-order-border-strong: rgba(148, 163, 184, 0.3);
+          --cvant-order-card-bg: rgba(15, 23, 42, 0.7);
+          --cvant-order-input-bg: rgba(15, 23, 42, 0.7);
+          --cvant-order-nav-bg: rgba(12, 17, 27, 0.8);
+          --cvant-order-pill-bg: rgba(15, 23, 42, 0.35);
+          --cvant-order-user-bg: rgba(15, 23, 42, 0.35);
+          --cvant-order-danger-text: #fecaca;
+          --cvant-order-danger-bg: rgba(239, 68, 68, 0.15);
+          --cvant-order-danger-border: rgba(239, 68, 68, 0.6);
+          --cvant-order-shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
+          --cvant-order-bg: radial-gradient(
               900px 500px at 12% 12%,
               rgba(91, 140, 255, 0.16),
               transparent 60%
@@ -150,7 +171,37 @@ const CustomerOrderLayer = () => {
               transparent 60%
             ),
             linear-gradient(180deg, #0f172a 0%, #0b1220 100%);
-          color: #e2e8f0;
+          min-height: 100vh;
+          background: var(--cvant-order-bg);
+          color: var(--cvant-order-text);
+        }
+
+        html[data-theme="light"] .cvant-order,
+        html[data-bs-theme="light"] .cvant-order {
+          --cvant-order-text: #0f172a;
+          --cvant-order-muted: #475569;
+          --cvant-order-border: rgba(15, 23, 42, 0.12);
+          --cvant-order-border-strong: rgba(15, 23, 42, 0.2);
+          --cvant-order-card-bg: rgba(255, 255, 255, 0.95);
+          --cvant-order-input-bg: rgba(255, 255, 255, 0.95);
+          --cvant-order-nav-bg: rgba(248, 250, 252, 0.92);
+          --cvant-order-pill-bg: rgba(248, 250, 252, 0.9);
+          --cvant-order-user-bg: rgba(241, 245, 249, 0.9);
+          --cvant-order-danger-text: #b91c1c;
+          --cvant-order-danger-bg: rgba(239, 68, 68, 0.12);
+          --cvant-order-danger-border: rgba(239, 68, 68, 0.4);
+          --cvant-order-shadow: 0 20px 40px rgba(15, 23, 42, 0.12);
+          --cvant-order-bg: radial-gradient(
+              900px 500px at 12% 12%,
+              rgba(91, 140, 255, 0.1),
+              transparent 60%
+            ),
+            radial-gradient(
+              800px 520px at 85% 20%,
+              rgba(34, 211, 238, 0.1),
+              transparent 60%
+            ),
+            linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%);
         }
 
         .cvant-order-container {
@@ -162,8 +213,8 @@ const CustomerOrderLayer = () => {
           position: sticky;
           top: 0;
           z-index: 20;
-          border-bottom: 1px solid rgba(148, 163, 184, 0.12);
-          background: rgba(12, 17, 27, 0.8);
+          border-bottom: 1px solid var(--cvant-order-border);
+          background: var(--cvant-order-nav-bg);
           backdrop-filter: blur(10px);
         }
 
@@ -190,17 +241,54 @@ const CustomerOrderLayer = () => {
         .cvant-order-pill {
           padding: 6px 12px;
           border-radius: 999px;
-          border: 1px solid rgba(148, 163, 184, 0.25);
-          color: #cbd5f5;
+          border: 1px solid var(--cvant-order-border-strong);
+          color: var(--cvant-order-muted);
+          background: var(--cvant-order-pill-bg);
           font-size: 13px;
         }
 
         .cvant-order-logout {
           border-radius: 999px;
-          border: 1px solid rgba(239, 68, 68, 0.6);
-          background: rgba(239, 68, 68, 0.15);
-          color: #fecaca;
+          border: 1px solid var(--cvant-order-danger-border);
+          background: var(--cvant-order-danger-bg);
+          color: var(--cvant-order-danger-text);
           padding: 8px 14px;
+        }
+
+        .cvant-order-user {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 6px 12px;
+          border-radius: 999px;
+          border: 1px solid var(--cvant-order-border);
+          background: var(--cvant-order-user-bg);
+          color: var(--cvant-order-text);
+        }
+
+        .cvant-order-avatar {
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          background: var(--primary-600);
+          color: #fff;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          font-weight: 600;
+          font-size: 14px;
+        }
+
+        .cvant-order-user-name {
+          font-size: 13px;
+          font-weight: 600;
+          line-height: 1.2;
+        }
+
+        .cvant-order-user-role {
+          font-size: 11px;
+          color: var(--cvant-order-muted);
+          line-height: 1.2;
         }
 
         .cvant-order-main {
@@ -216,9 +304,9 @@ const CustomerOrderLayer = () => {
         .cvant-order-card {
           border-radius: 20px;
           padding: 24px;
-          background: rgba(15, 23, 42, 0.7);
-          border: 1px solid rgba(148, 163, 184, 0.18);
-          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
+          background: var(--cvant-order-card-bg);
+          border: 1px solid var(--cvant-order-border);
+          box-shadow: var(--cvant-order-shadow);
         }
 
         .cvant-order-title {
@@ -228,7 +316,7 @@ const CustomerOrderLayer = () => {
         }
 
         .cvant-order-desc {
-          color: #94a3b8;
+          color: var(--cvant-order-muted);
           font-size: 14px;
           margin-bottom: 18px;
         }
@@ -249,15 +337,15 @@ const CustomerOrderLayer = () => {
         .cvant-order-textarea {
           width: 100%;
           border-radius: 12px;
-          border: 1px solid rgba(148, 163, 184, 0.3);
-          background: rgba(15, 23, 42, 0.7);
-          color: #e2e8f0;
+          border: 1px solid var(--cvant-order-border-strong);
+          background: var(--cvant-order-input-bg);
+          color: var(--cvant-order-text);
           padding: 10px 12px;
         }
 
         .cvant-order-input::placeholder,
         .cvant-order-textarea::placeholder {
-          color: #64748b;
+          color: var(--cvant-order-muted);
         }
 
         .cvant-order-row {
@@ -276,8 +364,12 @@ const CustomerOrderLayer = () => {
           align-items: center;
           justify-content: space-between;
           padding: 10px 0;
-          border-bottom: 1px dashed rgba(148, 163, 184, 0.2);
-          color: #cbd5f5;
+          border-bottom: 1px dashed var(--cvant-order-border);
+          color: var(--cvant-order-muted);
+        }
+
+        .cvant-order-summary-item strong {
+          color: var(--cvant-order-text);
         }
 
         .cvant-order-summary-item:last-child {
@@ -319,9 +411,9 @@ const CustomerOrderLayer = () => {
         }
 
         .cvant-order-alert.error {
-          background: rgba(239, 68, 68, 0.12);
-          border: 1px solid rgba(239, 68, 68, 0.4);
-          color: #fecaca;
+          background: var(--cvant-order-danger-bg);
+          border: 1px solid var(--cvant-order-danger-border);
+          color: var(--cvant-order-danger-text);
         }
 
         @media (max-width: 991px) {
@@ -343,6 +435,17 @@ const CustomerOrderLayer = () => {
             </Link>
             <div className="cvant-order-actions">
               <ThemeToggleButton />
+              {customer ? (
+                <div className="cvant-order-user">
+                  <span className="cvant-order-avatar">{customerInitial}</span>
+                  <div>
+                    <div className="cvant-order-user-name">
+                      {customer.name || "Customer"}
+                    </div>
+                    <div className="cvant-order-user-role">{customerRole}</div>
+                  </div>
+                </div>
+              ) : null}
               <span className="cvant-order-pill">Customer Order</span>
               <button type="button" className="cvant-order-logout" onClick={handleSignOut}>
                 Keluar

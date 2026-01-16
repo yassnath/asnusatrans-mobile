@@ -38,6 +38,18 @@ class ArmadaController extends Controller
         });
     }
 
+    public function publicIndex()
+    {
+        return Armada::orderBy('nama_truk')
+            ->get(['nama_truk', 'kapasitas'])
+            ->map(function ($armada) {
+                return [
+                    'nama_truk' => $armada->nama_truk,
+                    'kapasitas' => $armada->kapasitas,
+                ];
+            });
+    }
+
     public function store(Request $request)
     {
         $data = $request->validate([

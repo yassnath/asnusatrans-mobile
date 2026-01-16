@@ -1,13 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Icon } from "@iconify/react/dist/iconify.js";
 import ThemeToggleButton from "@/helper/ThemeToggleButton";
 import PublicChatbotWidget from "@/components/PublicChatbotWidget";
+import { publicApi } from "@/lib/publicApi";
 
 const LandingPageLayer = () => {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [armadas, setArmadas] = useState([]);
+  const [armadaReady, setArmadaReady] = useState(false);
 
   const navLinks = [
     { label: "Layanan", href: "/#layanan" },
@@ -18,6 +21,47 @@ const LandingPageLayer = () => {
   ];
 
   const closeMenu = () => setMenuOpen(false);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadArmadas = async () => {
+      try {
+        const data = await publicApi.get("/public/armadas");
+        if (!mounted) return;
+        setArmadas(Array.isArray(data) ? data : []);
+      } catch {
+        if (!mounted) return;
+        setArmadas([]);
+      } finally {
+        if (mounted) setArmadaReady(true);
+      }
+    };
+
+    loadArmadas();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const formatTonnage = (value) => {
+    if (value == null || String(value).trim() === "") return "-";
+    const raw = String(value).trim();
+    if (/ton/i.test(raw)) return raw;
+    return `${raw} ton`;
+  };
+
+  const fleetItems = useMemo(() => {
+    return (Array.isArray(armadas) ? armadas : [])
+      .map((item) => ({
+        name: item?.nama_truk || "Armada",
+        tonnage: formatTonnage(item?.kapasitas),
+      }))
+      .slice(0, 4);
+  }, [armadas]);
+
+  const armadaCountLabel = armadaReady ? `${armadas.length} Armada` : "Memuat armada";
 
   return (
     <>
@@ -69,6 +113,11 @@ const LandingPageLayer = () => {
           --cvant-purple: #8b5cf6;
           --cvant-green: #22c55e;
           --cvant-orange: #f97316;
+          --cvant-card-accent-1: rgba(91, 140, 255, 0.22);
+          --cvant-card-accent-2: rgba(34, 211, 238, 0.22);
+          --cvant-card-accent-3: rgba(139, 92, 246, 0.22);
+          --cvant-card-accent-4: rgba(34, 197, 94, 0.2);
+          --cvant-card-accent-5: rgba(249, 115, 22, 0.2);
         }
 
         html[data-theme="light"] .cvant-landing,
@@ -114,6 +163,11 @@ const LandingPageLayer = () => {
           --cvant-step-badge: rgba(91, 140, 255, 0.16);
           --cvant-step-text: #1e293b;
           --cvant-nav-hover: rgba(91, 140, 255, 0.18);
+          --cvant-card-accent-1: rgba(91, 140, 255, 0.12);
+          --cvant-card-accent-2: rgba(34, 211, 238, 0.12);
+          --cvant-card-accent-3: rgba(139, 92, 246, 0.12);
+          --cvant-card-accent-4: rgba(34, 197, 94, 0.12);
+          --cvant-card-accent-5: rgba(249, 115, 22, 0.12);
         }
 
         .cvant-landing {
@@ -262,8 +316,15 @@ const LandingPageLayer = () => {
         }
 
         .cvant-btn-ghost:hover {
-          background: var(--primary-700);
-          border-color: var(--primary-700);
+          background: var(--primary-600);
+          border-color: var(--primary-600);
+          color: #ffffff;
+        }
+
+        .cvant-btn-ghost:active,
+        .cvant-btn-ghost:focus {
+          background: var(--primary-800);
+          border-color: var(--primary-800);
           color: #ffffff;
         }
 
@@ -400,11 +461,152 @@ const LandingPageLayer = () => {
           line-height: 1.6;
         }
 
+        .cvant-section-heading {
+          margin-bottom: 24px;
+        }
+
+        .cvant-section-center {
+          text-align: center;
+        }
+
+        .cvant-section-center .cvant-section-desc {
+          margin-left: auto;
+          margin-right: auto;
+        }
+
         .cvant-grid {
           display: grid;
           grid-template-columns: repeat(3, minmax(0, 1fr));
           gap: 24px;
           margin-top: 36px;
+        }
+
+        .cvant-feature-card,
+        .cvant-fleet-card,
+        .cvant-step,
+        .cvant-price-card,
+        .cvant-testimonial,
+        .cvant-faq-item,
+        .cvant-badge-card,
+        .cvant-glass-card {
+          position: relative;
+          overflow: hidden;
+        }
+
+        .cvant-feature-card::before,
+        .cvant-fleet-card::before,
+        .cvant-step::before,
+        .cvant-price-card::before,
+        .cvant-testimonial::before,
+        .cvant-faq-item::before,
+        .cvant-badge-card::before,
+        .cvant-glass-card::before {
+          content: "";
+          position: absolute;
+          inset: 0;
+          background: radial-gradient(
+            140px 140px at 90% 10%,
+            var(--cvant-card-accent),
+            transparent 65%
+          );
+          opacity: 0.9;
+          pointer-events: none;
+        }
+
+        .cvant-feature-card > *,
+        .cvant-fleet-card > *,
+        .cvant-step > *,
+        .cvant-price-card > *,
+        .cvant-testimonial > *,
+        .cvant-faq-item > *,
+        .cvant-badge-card > *,
+        .cvant-glass-card > * {
+          position: relative;
+          z-index: 1;
+        }
+
+        .cvant-feature-card {
+          --cvant-card-accent: var(--cvant-card-accent-1);
+        }
+
+        .cvant-feature-card:nth-child(2) {
+          --cvant-card-accent: var(--cvant-card-accent-3);
+        }
+
+        .cvant-feature-card:nth-child(3) {
+          --cvant-card-accent: var(--cvant-card-accent-2);
+        }
+
+        .cvant-fleet-card {
+          --cvant-card-accent: var(--cvant-card-accent-2);
+        }
+
+        .cvant-fleet-card:nth-child(2n) {
+          --cvant-card-accent: var(--cvant-card-accent-1);
+        }
+
+        .cvant-fleet-card:nth-child(3n) {
+          --cvant-card-accent: var(--cvant-card-accent-3);
+        }
+
+        .cvant-step {
+          --cvant-card-accent: var(--cvant-card-accent-1);
+        }
+
+        .cvant-step:nth-child(2) {
+          --cvant-card-accent: var(--cvant-card-accent-4);
+        }
+
+        .cvant-step:nth-child(3) {
+          --cvant-card-accent: var(--cvant-card-accent-5);
+        }
+
+        .cvant-price-card {
+          --cvant-card-accent: var(--cvant-card-accent-3);
+        }
+
+        .cvant-price-card:nth-child(2) {
+          --cvant-card-accent: var(--cvant-card-accent-1);
+        }
+
+        .cvant-price-card:nth-child(3) {
+          --cvant-card-accent: var(--cvant-card-accent-2);
+        }
+
+        .cvant-testimonial {
+          --cvant-card-accent: var(--cvant-card-accent-4);
+        }
+
+        .cvant-testimonial:nth-child(2) {
+          --cvant-card-accent: var(--cvant-card-accent-5);
+        }
+
+        .cvant-faq-item {
+          --cvant-card-accent: var(--cvant-card-accent-2);
+        }
+
+        .cvant-faq-item:nth-child(2) {
+          --cvant-card-accent: var(--cvant-card-accent-3);
+        }
+
+        .cvant-faq-item:nth-child(3) {
+          --cvant-card-accent: var(--cvant-card-accent-1);
+        }
+
+        .cvant-badge-card {
+          --cvant-card-accent: var(--cvant-card-accent-1);
+        }
+
+        .cvant-badge-card:nth-child(2) {
+          --cvant-card-accent: var(--cvant-card-accent-2);
+        }
+
+        .cvant-badge-card:nth-child(3) {
+          --cvant-card-accent: var(--cvant-card-accent-3);
+        }
+
+        .cvant-glass-card {
+          --cvant-card-accent: var(--cvant-card-accent-2);
         }
 
         .cvant-feature-card {
@@ -546,9 +748,19 @@ const LandingPageLayer = () => {
         }
 
         .cvant-footer {
-          padding: 40px 0 60px;
+          padding: 24px 0 32px;
           border-top: 1px solid var(--cvant-border-soft);
           color: var(--cvant-muted);
+          font-size: 14px;
+        }
+
+        .cvant-footer strong {
+          font-size: 14px;
+          letter-spacing: 0.2px;
+        }
+
+        .cvant-footer p {
+          margin-top: 4px;
         }
 
         .cvant-animate-up {
@@ -716,10 +928,10 @@ const LandingPageLayer = () => {
                     <h4>98% On-time</h4>
                     <p>Pengiriman sesuai SLA</p>
                   </div>
-                  <div className="cvant-badge-card">
-                    <h4>80+ Armada</h4>
-                    <p>Truk box, CDD, fuso, trailer</p>
-                  </div>
+                <div className="cvant-badge-card">
+                  <h4>{armadaCountLabel}</h4>
+                  <p>Armada terdaftar di dashboard</p>
+                </div>
                   <div className="cvant-badge-card">
                     <h4>24 Kota</h4>
                     <p>Jaringan operasional utama</p>
@@ -776,11 +988,15 @@ const LandingPageLayer = () => {
 
           <section id="layanan" className="cvant-section">
             <div className="cvant-container">
-              <h2 className="cvant-section-title">Layanan yang siap tumbuh bersama bisnis Anda</h2>
-              <p className="cvant-section-desc">
-                Kami bantu operasional logistik lebih stabil dengan proses yang
-                transparan, armada siap, dan komunikasi yang cepat.
-              </p>
+              <div className="cvant-section-heading cvant-section-center">
+                <h2 className="cvant-section-title">
+                  Layanan yang siap tumbuh bersama bisnis Anda
+                </h2>
+                <p className="cvant-section-desc">
+                  Kami bantu operasional logistik lebih stabil dengan proses yang
+                  transparan, armada siap, dan komunikasi yang cepat.
+                </p>
+              </div>
               <div className="cvant-grid">
                 <div className="cvant-feature-card cvant-animate-up">
                   <Icon icon="solar:map-point-linear" style={{ fontSize: "26px" }} />
@@ -808,24 +1024,20 @@ const LandingPageLayer = () => {
                 Dari pengiriman retail hingga project besar, armada kami siap
                 menyesuaikan kebutuhan muatan.
               </p>
-              <div className="cvant-fleet-grid">
-                <div className="cvant-fleet-card">
-                  <h5>Box Medium</h5>
-                  <p className="cvant-section-desc">Max 4 ton, cocok retail</p>
+              {!armadaReady ? (
+                <p className="cvant-section-desc">Memuat data armada...</p>
+              ) : fleetItems.length === 0 ? (
+                <p className="cvant-section-desc">Data armada belum tersedia.</p>
+              ) : (
+                <div className="cvant-fleet-grid">
+                  {fleetItems.map((item, index) => (
+                    <div className="cvant-fleet-card" key={`${item.name}-${index}`}>
+                      <h5>{item.name}</h5>
+                      <p className="cvant-section-desc">{item.tonnage}</p>
+                    </div>
+                  ))}
                 </div>
-                <div className="cvant-fleet-card">
-                  <h5>CDD Long</h5>
-                  <p className="cvant-section-desc">Muatan tinggi, jarak menengah</p>
-                </div>
-                <div className="cvant-fleet-card">
-                  <h5>Fuso Box</h5>
-                  <p className="cvant-section-desc">Muatan 6-8 ton</p>
-                </div>
-                <div className="cvant-fleet-card">
-                  <h5>Trailer</h5>
-                  <p className="cvant-section-desc">Project dan heavy cargo</p>
-                </div>
-              </div>
+              )}
             </div>
           </section>
 

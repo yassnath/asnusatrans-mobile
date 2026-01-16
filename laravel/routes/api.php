@@ -19,6 +19,9 @@ Route::prefix('public')->group(function () {
 
     // ✅ Public invoice PDF
     Route::get('/invoices/{id}/pdf', [InvoiceController::class, 'publicPdf']);
+
+    // ? Public armada (nama + tonase saja)
+    Route::get('/armadas', [ArmadaController::class, 'publicIndex']);
 });
 
 /*
@@ -66,3 +69,4 @@ Route::middleware('auth.api')->group(function () {
     Route::put('/expenses/{id}', [ExpenseController::class, 'update']);
     Route::delete('/expenses/{id}', [ExpenseController::class, 'destroy']);
 });
+

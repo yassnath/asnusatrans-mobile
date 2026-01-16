@@ -124,7 +124,7 @@ const CustomerSignUpLayer = () => {
         <div className={`cvant-auth-alert ${message.type}`}>{message.text}</div>
       )}
 
-      <form onSubmit={handleSubmit} className="cvant-auth-form">
+      <form onSubmit={handleSubmit} className="cvant-auth-form cvant-auth-grid">
         <div>
           <label className="cvant-auth-label">Nama Lengkap</label>
           <div className="cvant-auth-field">
@@ -307,9 +307,11 @@ const CustomerSignUpLayer = () => {
           </div>
         </div>
 
-        <button type="submit" className="cvant-auth-btn" disabled={loading}>
-          {loading ? "Mendaftar..." : "Daftar"}
-        </button>
+        <div className="cvant-auth-full">
+          <button type="submit" className="cvant-auth-btn" disabled={loading}>
+            {loading ? "Mendaftar..." : "Daftar"}
+          </button>
+        </div>
       </form>
     </CustomerAuthShell>
   );

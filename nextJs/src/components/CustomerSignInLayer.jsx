@@ -144,11 +144,8 @@ const CustomerSignInLayer = () => {
           {loading ? "Memproses..." : "Masuk"}
         </button>
 
-        <div className="text-center" style={{ color: "#94a3b8", fontSize: "13px" }}>
-          Lupa password?{" "}
-          <Link href="https://wa.me/+6285771753354" style={{ color: "#c7d2fe" }}>
-            Hubungi admin
-          </Link>
+        <div className="cvant-auth-helper">
+          Lupa password? <Link href="https://wa.me/+6285771753354">Hubungi admin</Link>
         </div>
       </form>
     </CustomerAuthShell>
