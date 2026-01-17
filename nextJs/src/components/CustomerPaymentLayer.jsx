@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Icon } from "@iconify/react/dist/iconify.js";
@@ -17,6 +17,8 @@ const CustomerPaymentLayer = () => {
   const [method, setMethod] = useState("");
   const [message, setMessage] = useState(null);
   const [processing, setProcessing] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef(null);
 
   useEffect(() => {
     const storedUser = localStorage.getItem(userKey);
@@ -54,6 +56,16 @@ const CustomerPaymentLayer = () => {
     loadLatest();
     loadProfile();
   }, []);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handleClick = (event) => {
+      if (!menuRef.current || menuRef.current.contains(event.target)) return;
+      setMenuOpen(false);
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [menuOpen]);
 
   const formatCurrency = (value) => {
     const parsed = Number(value);
@@ -224,6 +236,84 @@ const CustomerPaymentLayer = () => {
           flex-wrap: wrap;
         }
 
+        .cvant-payment-profile {
+          position: relative;
+        }
+
+        .cvant-payment-avatar-btn {
+          width: 38px;
+          height: 38px;
+          border-radius: 999px;
+          border: 1px solid var(--cvant-payment-border);
+          background: rgba(15, 23, 42, 0.2);
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0;
+        }
+
+        html[data-theme="light"] .cvant-payment-avatar-btn,
+        html[data-bs-theme="light"] .cvant-payment-avatar-btn {
+          background: rgba(241, 245, 249, 0.9);
+        }
+
+        .cvant-payment-menu {
+          position: absolute;
+          top: calc(100% + 12px);
+          right: 0;
+          min-width: 200px;
+          padding: 12px;
+          border-radius: 14px;
+          background: var(--cvant-payment-card-bg);
+          border: 1px solid var(--cvant-payment-border);
+          box-shadow: var(--cvant-payment-shadow);
+          z-index: 20;
+        }
+
+        .cvant-payment-menu-header {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 10px 12px;
+          border-radius: 12px;
+          background: var(--cvant-payment-pill-bg);
+          margin-bottom: 10px;
+        }
+
+        .cvant-payment-menu-name {
+          font-weight: 600;
+          font-size: 14px;
+          margin-bottom: 2px;
+        }
+
+        .cvant-payment-menu-role {
+          font-size: 12px;
+          color: var(--cvant-payment-muted);
+        }
+
+        .cvant-payment-menu-close {
+          border: none;
+          background: transparent;
+          color: var(--cvant-payment-muted);
+          padding: 0;
+          line-height: 1;
+        }
+
+        .cvant-payment-menu-logout {
+          width: 100%;
+          border: none;
+          border-radius: 10px;
+          padding: 8px 10px;
+          background: var(--cvant-payment-danger-bg);
+          color: var(--cvant-payment-danger-text);
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          font-weight: 600;
+        }
+
         .cvant-payment-btn-outline {
           border-radius: 999px;
           padding: 8px 14px;
@@ -243,14 +333,6 @@ const CustomerPaymentLayer = () => {
           background: var(--primary-800);
           border-color: var(--primary-800);
           color: #ffffff;
-        }
-
-        .cvant-payment-logout {
-          border-radius: 999px;
-          padding: 8px 14px;
-          border: 1px solid var(--cvant-payment-danger-border);
-          background: var(--cvant-payment-danger-bg);
-          color: var(--cvant-payment-danger-text);
         }
 
         .cvant-payment-user {
@@ -435,22 +517,13 @@ const CustomerPaymentLayer = () => {
             font-size: 1rem;
           }
 
-          .cvant-payment-user {
-            padding: 4px 8px;
-          }
-
-          .cvant-payment-user > div {
-            display: none;
-          }
-
           .cvant-payment-avatar {
             width: 28px;
             height: 28px;
             font-size: 12px;
           }
 
-          .cvant-payment-btn-outline,
-          .cvant-payment-logout {
+          .cvant-payment-btn-outline {
             padding: 6px 10px;
             font-size: 12px;
           }
@@ -465,23 +538,50 @@ const CustomerPaymentLayer = () => {
             </Link>
             <div className="cvant-payment-actions">
               <ThemeToggleButton />
-              {customer ? (
-                <div className="cvant-payment-user">
-                  <span className="cvant-payment-avatar">{customerInitial}</span>
-                  <div>
-                    <div className="cvant-payment-user-name">
-                      {customer.name || "Customer"}
-                    </div>
-                    <div className="cvant-payment-user-role">{customerRole}</div>
-                  </div>
-                </div>
-              ) : null}
               <Link href="/order" className="cvant-payment-btn-outline">
                 Ubah Order
               </Link>
-              <button type="button" className="cvant-payment-logout" onClick={handleSignOut}>
-                Keluar
-              </button>
+              {customer ? (
+                <div className="cvant-payment-profile" ref={menuRef}>
+                  <button
+                    type="button"
+                    className="cvant-payment-avatar-btn"
+                    onClick={() => setMenuOpen((value) => !value)}
+                    aria-label="Buka menu profil"
+                    aria-expanded={menuOpen}
+                  >
+                    <span className="cvant-payment-avatar">{customerInitial}</span>
+                  </button>
+                  {menuOpen ? (
+                    <div className="cvant-payment-menu">
+                      <div className="cvant-payment-menu-header">
+                        <div>
+                          <div className="cvant-payment-menu-name">
+                            {customer.name || "Customer"}
+                          </div>
+                          <div className="cvant-payment-menu-role">{customerRole}</div>
+                        </div>
+                        <button
+                          type="button"
+                          className="cvant-payment-menu-close"
+                          onClick={() => setMenuOpen(false)}
+                          aria-label="Tutup menu"
+                        >
+                          <Icon icon="radix-icons:cross-1" />
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        className="cvant-payment-menu-logout"
+                        onClick={handleSignOut}
+                      >
+                        <Icon icon="lucide:power" />
+                        Log Out
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           </div>
         </header>

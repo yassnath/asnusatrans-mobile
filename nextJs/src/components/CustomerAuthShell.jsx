@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Icon } from "@iconify/react/dist/iconify.js";
 import ThemeToggleButton from "@/helper/ThemeToggleButton";
@@ -8,6 +8,8 @@ import PublicChatbotWidget from "@/components/PublicChatbotWidget";
 
 const CustomerAuthShell = ({ title, subtitle, children, footer }) => {
   const [customer, setCustomer] = useState(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -26,12 +28,33 @@ const CustomerAuthShell = ({ title, subtitle, children, footer }) => {
     }
   }, []);
 
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handleClick = (event) => {
+      if (!menuRef.current || menuRef.current.contains(event.target)) return;
+      setMenuOpen(false);
+    };
+
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [menuOpen]);
+
   const customerInitial = useMemo(() => {
     const name = customer?.name || "";
     return name ? name.trim().charAt(0).toUpperCase() : "C";
   }, [customer]);
 
   const customerRole = customer?.role || "Customer";
+
+  const handleSignOut = () => {
+    if (typeof window === "undefined") return;
+    localStorage.removeItem("cvant_customer_token");
+    localStorage.removeItem("cvant_customer_user");
+    document.cookie =
+      "customer_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax;";
+    window.location.href = "/customer/sign-in";
+  };
+
   return (
     <>
       <style jsx global>{`
@@ -164,19 +187,24 @@ const CustomerAuthShell = ({ title, subtitle, children, footer }) => {
           font-size: 13px;
         }
 
-        .cvant-auth-user {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          padding: 6px 12px;
-          border-radius: 999px;
-          border: 1px solid var(--cvant-auth-border);
-          background: rgba(15, 23, 42, 0.12);
-          color: var(--cvant-auth-text);
+        .cvant-auth-profile {
+          position: relative;
         }
 
-        html[data-theme="light"] .cvant-auth-user,
-        html[data-bs-theme="light"] .cvant-auth-user {
+        .cvant-auth-avatar-btn {
+          width: 38px;
+          height: 38px;
+          border-radius: 999px;
+          border: 1px solid var(--cvant-auth-border);
+          background: rgba(15, 23, 42, 0.2);
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0;
+        }
+
+        html[data-theme="light"] .cvant-auth-avatar-btn,
+        html[data-bs-theme="light"] .cvant-auth-avatar-btn {
           background: rgba(241, 245, 249, 0.9);
         }
 
@@ -191,6 +219,89 @@ const CustomerAuthShell = ({ title, subtitle, children, footer }) => {
           justify-content: center;
           font-weight: 600;
           font-size: 14px;
+        }
+
+        .cvant-auth-menu {
+          position: absolute;
+          top: calc(100% + 12px);
+          right: 0;
+          min-width: 200px;
+          padding: 12px;
+          border-radius: 14px;
+          background: var(--cvant-auth-card-bg);
+          border: 1px solid var(--cvant-auth-border);
+          box-shadow: var(--cvant-auth-shadow);
+          z-index: 20;
+        }
+
+        .cvant-auth-menu-header {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 10px 12px;
+          border-radius: 12px;
+          background: rgba(15, 23, 42, 0.2);
+          margin-bottom: 10px;
+        }
+
+        html[data-theme="light"] .cvant-auth-menu-header,
+        html[data-bs-theme="light"] .cvant-auth-menu-header {
+          background: rgba(241, 245, 249, 0.9);
+        }
+
+        .cvant-auth-menu-name {
+          font-weight: 600;
+          font-size: 14px;
+          margin-bottom: 2px;
+        }
+
+        .cvant-auth-menu-role {
+          font-size: 12px;
+          color: var(--cvant-auth-muted);
+        }
+
+        .cvant-auth-menu-close {
+          border: none;
+          background: transparent;
+          color: var(--cvant-auth-muted);
+          padding: 0;
+          line-height: 1;
+        }
+
+        .cvant-auth-menu-logout {
+          width: 100%;
+          border: none;
+          border-radius: 10px;
+          padding: 8px 10px;
+          background: rgba(239, 68, 68, 0.15);
+          color: #fecaca;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          font-weight: 600;
+        }
+
+        html[data-theme="light"] .cvant-auth-menu-logout,
+        html[data-bs-theme="light"] .cvant-auth-menu-logout {
+          color: #b91c1c;
+        }
+
+        .cvant-auth-user {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 6px 12px;
+          border-radius: 999px;
+          border: 1px solid var(--cvant-auth-border);
+          background: rgba(15, 23, 42, 0.12);
+          color: var(--cvant-auth-text);
+        }
+
+        html[data-theme="light"] .cvant-auth-user,
+        html[data-bs-theme="light"] .cvant-auth-user {
+          background: rgba(241, 245, 249, 0.9);
         }
 
         .cvant-auth-user-name {
@@ -461,14 +572,6 @@ const CustomerAuthShell = ({ title, subtitle, children, footer }) => {
             font-size: 12px;
           }
 
-          .cvant-auth-user {
-            padding: 4px 8px;
-          }
-
-          .cvant-auth-user > div {
-            display: none;
-          }
-
           .cvant-auth-avatar {
             width: 28px;
             height: 28px;
@@ -495,12 +598,40 @@ const CustomerAuthShell = ({ title, subtitle, children, footer }) => {
             <div className="cvant-auth-nav-actions">
               <ThemeToggleButton />
               {customer ? (
-                <div className="cvant-auth-user">
-                  <span className="cvant-auth-avatar">{customerInitial}</span>
-                  <div>
-                    <div className="cvant-auth-user-name">{customer.name || "Customer"}</div>
-                    <div className="cvant-auth-user-role">{customerRole}</div>
-                  </div>
+                <div className="cvant-auth-profile" ref={menuRef}>
+                  <button
+                    type="button"
+                    className="cvant-auth-avatar-btn"
+                    onClick={() => setMenuOpen((value) => !value)}
+                    aria-label="Buka menu profil"
+                    aria-expanded={menuOpen}
+                  >
+                    <span className="cvant-auth-avatar">{customerInitial}</span>
+                  </button>
+                  {menuOpen ? (
+                    <div className="cvant-auth-menu">
+                      <div className="cvant-auth-menu-header">
+                        <div>
+                          <div className="cvant-auth-menu-name">
+                            {customer.name || "Customer"}
+                          </div>
+                          <div className="cvant-auth-menu-role">{customerRole}</div>
+                        </div>
+                        <button
+                          type="button"
+                          className="cvant-auth-menu-close"
+                          onClick={() => setMenuOpen(false)}
+                          aria-label="Tutup menu"
+                        >
+                          <Icon icon="radix-icons:cross-1" />
+                        </button>
+                      </div>
+                      <button type="button" className="cvant-auth-menu-logout" onClick={handleSignOut}>
+                        <Icon icon="lucide:power" />
+                        Log Out
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               ) : (
                 <>

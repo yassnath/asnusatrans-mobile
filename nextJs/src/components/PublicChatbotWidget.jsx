@@ -120,21 +120,18 @@ const getReply = (text, armadas) => {
 };
 
 const PublicChatbotWidget = () => {
+  const defaultMessage =
+    "Halo! Saya asisten CV ANT. Saya hanya melayani info armada dan tanggal pengiriman.";
   const [open, setOpen] = useState(false);
-  const [messages, setMessages] = useState([]);
+  const [messages, setMessages] = useState([
+    {
+      role: "assistant",
+      content: defaultMessage,
+    },
+  ]);
   const [input, setInput] = useState("");
   const [armadas, setArmadas] = useState([]);
   const listRef = useRef(null);
-
-  useEffect(() => {
-    setMessages([
-      {
-        role: "assistant",
-        content:
-          "Halo! Saya asisten CV ANT. Saya hanya melayani info armada dan tanggal pengiriman.",
-      },
-    ]);
-  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -175,6 +172,21 @@ const PublicChatbotWidget = () => {
     }, 300);
   };
 
+  const resetChat = () => {
+    setMessages([
+      {
+        role: "assistant",
+        content: defaultMessage,
+      },
+    ]);
+    setInput("");
+  };
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    sendMessage();
+  };
+
   const handleKeyDown = (event) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
@@ -183,9 +195,56 @@ const PublicChatbotWidget = () => {
   };
 
   return (
-    <>
-      <style jsx global>{`
-        .cvant-public-chatbot {
+    <div className={`cvant-chatbot ${open ? "open" : ""}`}>
+      <button
+        type="button"
+        className="cvant-chatbot__toggle"
+        onClick={() => setOpen((prev) => !prev)}
+        aria-label={open ? "Tutup chatbot" : "Buka chatbot"}
+      >
+        <Icon icon={open ? "solar:close-circle-bold" : "fluent:chat-24-filled"} />
+      </button>
+
+      {open && (
+        <div className="cvant-chatbot__panel">
+          <div className="cvant-chatbot__header">
+            <div>
+              <div className="cvant-chatbot__title">Asisten CV ANT</div>
+              <div className="cvant-chatbot__subtitle">Info armada & tanggal</div>
+            </div>
+            <button type="button" className="cvant-chatbot__clear" onClick={resetChat}>
+              Reset Chat
+            </button>
+          </div>
+
+          <div className="cvant-chatbot__messages" ref={listRef}>
+            {messages.map((message, index) => (
+              <div
+                key={`${message.role}-${index}`}
+                className={`cvant-chatbot__bubble ${message.role}`}
+              >
+                {message.content}
+              </div>
+            ))}
+          </div>
+
+          <form className="cvant-chatbot__input" onSubmit={handleSubmit}>
+            <textarea
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Tanya armada atau tanggal..."
+              aria-label="Tulis pesan"
+            />
+            <button type="submit" disabled={!input.trim()}>
+              <Icon icon="tabler:send" />
+            </button>
+          </form>
+        </div>
+      )}
+
+      <style jsx>{`
+        .cvant-chatbot {
           position: fixed;
           right: 24px;
           bottom: 24px;
@@ -196,11 +255,10 @@ const PublicChatbotWidget = () => {
           gap: 12px;
         }
 
-        .cvant-chat-toggle {
+        .cvant-chatbot__toggle {
           width: 54px;
           height: 54px;
           border-radius: 999px;
-          border: none;
           background: linear-gradient(
             90deg,
             rgba(91, 140, 255, 0.94),
@@ -214,12 +272,12 @@ const PublicChatbotWidget = () => {
           cursor: pointer;
         }
 
-        .cvant-chat-toggle :global(svg) {
+        .cvant-chatbot__toggle :global(svg) {
           width: 24px;
           height: 24px;
         }
 
-        .cvant-chat-panel {
+        .cvant-chatbot__panel {
           width: 360px;
           max-height: 520px;
           display: flex;
@@ -232,7 +290,7 @@ const PublicChatbotWidget = () => {
           box-shadow: 0 18px 40px rgba(17, 24, 39, 0.18);
         }
 
-        .cvant-chat-header {
+        .cvant-chatbot__header {
           padding: 12px 16px;
           background: linear-gradient(
             90deg,
@@ -245,28 +303,28 @@ const PublicChatbotWidget = () => {
           justify-content: space-between;
         }
 
-        .cvant-chat-title {
+        .cvant-chatbot__title {
           font-weight: 600;
           font-size: 14px;
         }
 
-        .cvant-chat-subtitle {
+        .cvant-chatbot__subtitle {
           font-size: 12px;
           opacity: 0.85;
           margin-top: 2px;
         }
 
-        .cvant-chat-close {
+        .cvant-chatbot__clear {
           padding: 4px 8px;
           border-radius: 8px;
+          border: none;
           background: rgba(255, 255, 255, 0.18);
           color: #fff;
           font-size: 12px;
           cursor: pointer;
-          border: none;
         }
 
-        .cvant-chat-body {
+        .cvant-chatbot__messages {
           padding: 14px;
           display: flex;
           flex-direction: column;
@@ -278,20 +336,20 @@ const PublicChatbotWidget = () => {
           scrollbar-color: rgba(148, 163, 184, 0.6) transparent;
         }
 
-        .cvant-chat-body::-webkit-scrollbar {
+        .cvant-chatbot__messages::-webkit-scrollbar {
           width: 3px;
         }
 
-        .cvant-chat-body::-webkit-scrollbar-thumb {
+        .cvant-chatbot__messages::-webkit-scrollbar-thumb {
           background: rgba(148, 163, 184, 0.6);
           border-radius: 999px;
         }
 
-        .cvant-chat-body::-webkit-scrollbar-track {
+        .cvant-chatbot__messages::-webkit-scrollbar-track {
           background: transparent;
         }
 
-        .cvant-chat-bubble {
+        .cvant-chatbot__bubble {
           max-width: 80%;
           padding: 10px 12px;
           border-radius: 12px;
@@ -304,13 +362,13 @@ const PublicChatbotWidget = () => {
           white-space: pre-wrap;
         }
 
-        .cvant-chat-bubble.user {
+        .cvant-chatbot__bubble.user {
           align-self: flex-end;
           background: var(--primary-600);
           color: #fff;
         }
 
-        .cvant-chat-footer {
+        .cvant-chatbot__input {
           display: flex;
           align-items: center;
           gap: 8px;
@@ -320,7 +378,7 @@ const PublicChatbotWidget = () => {
           font-size: 13px;
         }
 
-        .cvant-chat-input {
+        .cvant-chatbot__input textarea {
           flex: 1;
           padding: 6px 10px;
           border-radius: 10px;
@@ -338,114 +396,67 @@ const PublicChatbotWidget = () => {
           scrollbar-color: rgba(148, 163, 184, 0.6) transparent;
         }
 
-        .cvant-chat-input::-webkit-scrollbar {
+        .cvant-chatbot__input textarea::-webkit-scrollbar {
           width: 3px;
         }
 
-        .cvant-chat-input::-webkit-scrollbar-thumb {
+        .cvant-chatbot__input textarea::-webkit-scrollbar-thumb {
           background: rgba(148, 163, 184, 0.6);
           border-radius: 999px;
         }
 
-        .cvant-chat-input::-webkit-scrollbar-track {
+        .cvant-chatbot__input textarea::-webkit-scrollbar-track {
           background: transparent;
         }
 
-        .cvant-chat-input::placeholder {
+        .cvant-chatbot__input textarea::placeholder {
           font-size: 13px !important;
           line-height: 1.2;
           opacity: 0.5;
         }
 
-        .cvant-chat-input::-webkit-input-placeholder {
+        .cvant-chatbot__input textarea::-webkit-input-placeholder {
           font-size: 13px !important;
           line-height: 1.2;
           opacity: 0.5;
         }
 
-        .cvant-chat-send {
+        .cvant-chatbot__input button {
           width: 38px;
           height: 38px;
           border-radius: 10px;
+          border: none;
           background: var(--primary-600);
           color: #fff;
           display: inline-flex;
           align-items: center;
           justify-content: center;
           cursor: pointer;
-          border: none;
         }
 
-        .cvant-chat-send:disabled {
+        .cvant-chatbot__input button:disabled {
           opacity: 0.6;
           cursor: not-allowed;
         }
 
-        .cvant-chat-send :global(svg) {
+        .cvant-chatbot__input :global(svg) {
           width: 18px;
           height: 18px;
         }
 
         @media (max-width: 576px) {
-          .cvant-public-chatbot {
+          .cvant-chatbot {
             right: 16px;
             bottom: 16px;
           }
 
-          .cvant-chat-panel {
+          .cvant-chatbot__panel {
             width: min(92vw, 360px);
             max-height: 65vh;
           }
         }
       `}</style>
-
-      <div className="cvant-public-chatbot">
-        {open && (
-          <div className="cvant-chat-panel">
-            <div className="cvant-chat-header">
-              <div>
-                <div className="cvant-chat-title">CV ANT Chatbot</div>
-                <div className="cvant-chat-subtitle">Info armada & tanggal</div>
-              </div>
-              <button type="button" className="cvant-chat-close" onClick={() => setOpen(false)}>
-                <Icon icon="radix-icons:cross-2" />
-              </button>
-            </div>
-            <div className="cvant-chat-body" ref={listRef}>
-              {messages.map((message, index) => (
-                <div
-                  key={`${message.role}-${index}`}
-                  className={`cvant-chat-bubble ${message.role}`}
-                >
-                  {message.content}
-                </div>
-              ))}
-            </div>
-            <div className="cvant-chat-footer">
-              <textarea
-                className="cvant-chat-input"
-                value={input}
-                onChange={(event) => setInput(event.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Tanya armada atau tanggal..."
-              />
-              <button
-                type="button"
-                className="cvant-chat-send"
-                onClick={sendMessage}
-                disabled={!input.trim()}
-              >
-                <Icon icon="tabler:send" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        <button type="button" className="cvant-chat-toggle" onClick={() => setOpen((v) => !v)}>
-          <Icon icon={open ? "solar:close-circle-bold" : "fluent:chat-24-filled"} />
-        </button>
-      </div>
-    </>
+    </div>
   );
 };
 

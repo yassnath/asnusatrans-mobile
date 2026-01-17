@@ -16,6 +16,9 @@ WORKDIR /var/www/html
 # Copy source
 COPY . .
 
+# Ensure cache/storage exists before composer scripts run
+RUN mkdir -p storage bootstrap/cache
+
 # Install PHP dependencies
 RUN composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev
 

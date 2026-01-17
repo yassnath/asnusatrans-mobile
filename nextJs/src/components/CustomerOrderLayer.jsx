@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { Icon } from "@iconify/react/dist/iconify.js";
 import ThemeToggleButton from "@/helper/ThemeToggleButton";
 import PublicChatbotWidget from "@/components/PublicChatbotWidget";
 import { customerApi } from "@/lib/customerApi";
@@ -14,6 +15,8 @@ const CustomerOrderLayer = () => {
   const router = useRouter();
   const [message, setMessage] = useState(null);
   const [customer, setCustomer] = useState(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef(null);
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -71,6 +74,16 @@ const CustomerOrderLayer = () => {
 
     loadProfile();
   }, []);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handleClick = (event) => {
+      if (!menuRef.current || menuRef.current.contains(event.target)) return;
+      setMenuOpen(false);
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [menuOpen]);
 
   const customerInitial = useMemo(() => {
     const name = customer?.name || "";
@@ -284,12 +297,82 @@ const CustomerOrderLayer = () => {
           font-size: 13px;
         }
 
-        .cvant-order-logout {
+        .cvant-order-profile {
+          position: relative;
+        }
+
+        .cvant-order-avatar-btn {
+          width: 38px;
+          height: 38px;
           border-radius: 999px;
-          border: 1px solid var(--cvant-order-danger-border);
+          border: 1px solid var(--cvant-order-border);
+          background: rgba(15, 23, 42, 0.2);
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0;
+        }
+
+        html[data-theme="light"] .cvant-order-avatar-btn,
+        html[data-bs-theme="light"] .cvant-order-avatar-btn {
+          background: rgba(241, 245, 249, 0.9);
+        }
+
+        .cvant-order-menu {
+          position: absolute;
+          top: calc(100% + 12px);
+          right: 0;
+          min-width: 200px;
+          padding: 12px;
+          border-radius: 14px;
+          background: var(--cvant-order-card-bg);
+          border: 1px solid var(--cvant-order-border);
+          box-shadow: var(--cvant-order-shadow);
+          z-index: 20;
+        }
+
+        .cvant-order-menu-header {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 10px 12px;
+          border-radius: 12px;
+          background: var(--cvant-order-pill-bg);
+          margin-bottom: 10px;
+        }
+
+        .cvant-order-menu-name {
+          font-weight: 600;
+          font-size: 14px;
+          margin-bottom: 2px;
+        }
+
+        .cvant-order-menu-role {
+          font-size: 12px;
+          color: var(--cvant-order-muted);
+        }
+
+        .cvant-order-menu-close {
+          border: none;
+          background: transparent;
+          color: var(--cvant-order-muted);
+          padding: 0;
+          line-height: 1;
+        }
+
+        .cvant-order-menu-logout {
+          width: 100%;
+          border: none;
+          border-radius: 10px;
+          padding: 8px 10px;
           background: var(--cvant-order-danger-bg);
           color: var(--cvant-order-danger-text);
-          padding: 8px 14px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          font-weight: 600;
         }
 
         .cvant-order-user {
@@ -488,22 +571,13 @@ const CustomerOrderLayer = () => {
             font-size: 1rem;
           }
 
-          .cvant-order-user {
-            padding: 4px 8px;
-          }
-
-          .cvant-order-user > div {
-            display: none;
-          }
-
           .cvant-order-avatar {
             width: 28px;
             height: 28px;
             font-size: 12px;
           }
 
-          .cvant-order-pill,
-          .cvant-order-logout {
+          .cvant-order-pill {
             padding: 6px 10px;
             font-size: 12px;
           }
@@ -518,21 +592,48 @@ const CustomerOrderLayer = () => {
             </Link>
             <div className="cvant-order-actions">
               <ThemeToggleButton />
+              <span className="cvant-order-pill">Customer Order</span>
               {customer ? (
-                <div className="cvant-order-user">
-                  <span className="cvant-order-avatar">{customerInitial}</span>
-                  <div>
-                    <div className="cvant-order-user-name">
-                      {customer.name || "Customer"}
+                <div className="cvant-order-profile" ref={menuRef}>
+                  <button
+                    type="button"
+                    className="cvant-order-avatar-btn"
+                    onClick={() => setMenuOpen((value) => !value)}
+                    aria-label="Buka menu profil"
+                    aria-expanded={menuOpen}
+                  >
+                    <span className="cvant-order-avatar">{customerInitial}</span>
+                  </button>
+                  {menuOpen ? (
+                    <div className="cvant-order-menu">
+                      <div className="cvant-order-menu-header">
+                        <div>
+                          <div className="cvant-order-menu-name">
+                            {customer.name || "Customer"}
+                          </div>
+                          <div className="cvant-order-menu-role">{customerRole}</div>
+                        </div>
+                        <button
+                          type="button"
+                          className="cvant-order-menu-close"
+                          onClick={() => setMenuOpen(false)}
+                          aria-label="Tutup menu"
+                        >
+                          <Icon icon="radix-icons:cross-1" />
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        className="cvant-order-menu-logout"
+                        onClick={handleSignOut}
+                      >
+                        <Icon icon="lucide:power" />
+                        Log Out
+                      </button>
                     </div>
-                    <div className="cvant-order-user-role">{customerRole}</div>
-                  </div>
+                  ) : null}
                 </div>
               ) : null}
-              <span className="cvant-order-pill">Customer Order</span>
-              <button type="button" className="cvant-order-logout" onClick={handleSignOut}>
-                Keluar
-              </button>
             </div>
           </div>
         </header>
