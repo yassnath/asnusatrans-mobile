@@ -1,12 +1,7 @@
-import LoginLayer from "@/components/LoginLayer";
-
-export const metadata = {
-  title: "Login | CV ANT",
-  description: "Login to Website",
-};
+import { redirect } from "next/navigation";
 
 const Page = () => {
-  return <LoginLayer />;
+  redirect("/sign-in");
 };
 
 export default Page;

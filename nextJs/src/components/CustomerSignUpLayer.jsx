@@ -4,13 +4,14 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Icon } from "@iconify/react/dist/iconify.js";
-import CustomerAuthShell from "./CustomerAuthShell";
 import { publicApi } from "@/lib/publicApi";
+import AuthShell from "@/components/AuthShell";
 
 const CustomerSignUpLayer = () => {
   const router = useRouter();
   const [form, setForm] = useState({
     name: "",
+    username: "",
     email: "",
     phone: "",
     gender: "",
@@ -22,19 +23,36 @@ const CustomerSignUpLayer = () => {
     confirmPassword: "",
   });
   const [showPassword, setShowPassword] = useState(false);
-  const [message, setMessage] = useState(null);
+  const [popup, setPopup] = useState({
+    show: false,
+    type: "success",
+    message: "",
+  });
   const [loading, setLoading] = useState(false);
 
   const onChange = (field) => (event) => {
-    setMessage(null);
+    setPopup((p) => ({ ...p, show: false }));
     setForm((prev) => ({ ...prev, [field]: event.target.value }));
+  };
+
+  const showPopup = (type, message, autoCloseMs = 0) => {
+    setPopup({ show: true, type, message });
+
+    if (showPopup._t) window.clearTimeout(showPopup._t);
+
+    if (autoCloseMs > 0) {
+      showPopup._t = window.setTimeout(() => {
+        setPopup((p) => ({ ...p, show: false }));
+      }, autoCloseMs);
+    }
   };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    setMessage(null);
+    setPopup((p) => ({ ...p, show: false }));
 
     const name = form.name.trim();
+    const username = form.username.trim();
     const email = form.email.trim().toLowerCase();
     const phone = form.phone.trim();
     const gender = form.gender.trim();
@@ -47,6 +65,7 @@ const CustomerSignUpLayer = () => {
 
     if (
       !name ||
+      !username ||
       !email ||
       !phone ||
       !gender ||
@@ -56,17 +75,17 @@ const CustomerSignUpLayer = () => {
       !password ||
       !confirmPassword
     ) {
-      setMessage({ type: "error", text: "Lengkapi semua biodata wajib." });
+      showPopup("danger", "Lengkapi semua biodata wajib.", 0);
       return;
     }
 
     if (password.length < 6) {
-      setMessage({ type: "error", text: "Password minimal 6 karakter." });
+      showPopup("danger", "Password minimal 6 karakter.", 0);
       return;
     }
 
     if (password !== confirmPassword) {
-      setMessage({ type: "error", text: "Konfirmasi password tidak sama." });
+      showPopup("danger", "Konfirmasi password tidak sama.", 0);
       return;
     }
 
@@ -75,6 +94,7 @@ const CustomerSignUpLayer = () => {
     try {
       await publicApi.post("/customer/register", {
         name,
+        username,
         email,
         phone,
         gender,
@@ -85,95 +105,177 @@ const CustomerSignUpLayer = () => {
         password,
       });
 
-      setMessage({ type: "success", text: "Akun berhasil dibuat. Silakan login." });
+      showPopup("success", "Akun berhasil dibuat. Silakan login.", 3000);
 
       setTimeout(() => {
-        router.push("/customer/sign-in");
-      }, 700);
+        router.push("/sign-in");
+      }, 900);
     } catch (error) {
-      setMessage({
-        type: "error",
-        text: error?.message || "Gagal membuat akun. Coba lagi.",
-      });
+      showPopup("danger", error?.message || "Gagal membuat akun. Coba lagi.", 0);
     } finally {
       setLoading(false);
     }
   };
 
+  const popupAccent = popup.type === "success" ? "#22c55e" : "#ef4444";
+
   return (
-    <CustomerAuthShell
-      title="Daftar Customer"
-      subtitle="Buat akun untuk akses order dan pembayaran."
-      footer={
-        <>
-          Sudah punya akun? <Link href="/customer/sign-in">Masuk</Link>
-        </>
-      }
-    >
-      {message && (
-        <div className={`cvant-auth-alert ${message.type}`}>{message.text}</div>
+    <>
+      {popup.show && (
+        <div
+          className="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center"
+          style={{
+            zIndex: 9999,
+            background: "rgba(0,0,0,0.55)",
+            padding: "16px",
+          }}
+          onClick={() => setPopup((p) => ({ ...p, show: false }))}
+        >
+          <div
+            className="radius-12 shadow-sm p-24"
+            style={{
+              width: "100%",
+              maxWidth: "600px",
+              backgroundColor: "#1b2431",
+              border: `2px solid ${popupAccent}`,
+              boxShadow: "0 22px 55px rgba(0,0,0,0.55)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="d-flex align-items-start justify-content-between gap-2">
+              <div className="d-flex align-items-start gap-12">
+                <span style={{ marginTop: "2px" }}>
+                  <Icon
+                    icon={
+                      popup.type === "success"
+                        ? "solar:check-circle-linear"
+                        : "solar:danger-triangle-linear"
+                    }
+                    style={{
+                      fontSize: "28px",
+                      color: popupAccent,
+                    }}
+                  />
+                </span>
+
+                <div>
+                  <h5 className="mb-8 fw-bold" style={{ color: "#ffffff" }}>
+                    {popup.type === "success"
+                      ? "Registrasi Berhasil"
+                      : "Registrasi Gagal"}
+                  </h5>
+                  <p
+                    className="mb-0"
+                    style={{ color: "#cbd5e1", fontSize: "15px" }}
+                  >
+                    {popup.message}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className="btn p-0"
+                aria-label="Close"
+                onClick={() => setPopup((p) => ({ ...p, show: false }))}
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  lineHeight: 1,
+                }}
+              >
+                <Icon
+                  icon="solar:close-circle-linear"
+                  style={{ fontSize: 24, color: "#94a3b8" }}
+                />
+              </button>
+            </div>
+
+            <div className="d-flex justify-content-end mt-20">
+              <button
+                type="button"
+                className={`btn btn-${
+                  popup.type === "success" ? "primary" : "danger"
+                } radius-12 px-16`}
+                onClick={() => setPopup((p) => ({ ...p, show: false }))}
+                style={{
+                  border: `2px solid ${popupAccent}`,
+                }}
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
-      <form onSubmit={handleSubmit} className="cvant-auth-form cvant-auth-grid">
-        <div>
-          <label className="cvant-auth-label">Nama Lengkap</label>
-          <div className="cvant-auth-field">
-            <span className="cvant-auth-icon">
-              <Icon icon="solar:user-linear" />
+      <AuthShell
+        title="Daftar Customer"
+        subtitle="Buat akun customer untuk akses order dan pembayaran."
+      >
+        <form onSubmit={handleSubmit}>
+          <div className="cvant-field mb-16">
+            <span className="cvant-icon-wrap">
+              <Icon icon="solar:user-linear" fontSize={20} />
             </span>
             <input
               type="text"
-              className="cvant-auth-input"
+              className="form-control bg-neutral-50 radius-12 cvant-input"
               placeholder="Nama lengkap"
               value={form.name}
               onChange={onChange("name")}
               autoComplete="name"
             />
           </div>
-        </div>
 
-        <div>
-          <label className="cvant-auth-label">Email</label>
-          <div className="cvant-auth-field">
-            <span className="cvant-auth-icon">
-              <Icon icon="solar:mailbox-linear" />
+          <div className="cvant-field mb-16">
+            <span className="cvant-icon-wrap">
+              <Icon icon="solar:user-linear" fontSize={20} />
+            </span>
+            <input
+              type="text"
+              className="form-control bg-neutral-50 radius-12 cvant-input"
+              placeholder="Username"
+              value={form.username}
+              onChange={onChange("username")}
+              autoComplete="username"
+            />
+          </div>
+
+          <div className="cvant-field mb-16">
+            <span className="cvant-icon-wrap">
+              <Icon icon="solar:mailbox-linear" fontSize={20} />
             </span>
             <input
               type="email"
-              className="cvant-auth-input"
+              className="form-control bg-neutral-50 radius-12 cvant-input"
               placeholder="nama@email.com"
               value={form.email}
               onChange={onChange("email")}
               autoComplete="email"
             />
           </div>
-        </div>
 
-        <div>
-          <label className="cvant-auth-label">Nomor HP</label>
-          <div className="cvant-auth-field">
-            <span className="cvant-auth-icon">
-              <Icon icon="solar:phone-calling-linear" />
+          <div className="cvant-field mb-16">
+            <span className="cvant-icon-wrap">
+              <Icon icon="solar:phone-calling-linear" fontSize={20} />
             </span>
             <input
               type="tel"
-              className="cvant-auth-input"
+              className="form-control bg-neutral-50 radius-12 cvant-input"
               placeholder="08xxxxxxxxxx"
               value={form.phone}
               onChange={onChange("phone")}
               autoComplete="tel"
             />
           </div>
-        </div>
 
-        <div>
-          <label className="cvant-auth-label">Jenis Kelamin</label>
-          <div className="cvant-auth-field">
-            <span className="cvant-auth-icon">
-              <Icon icon="solar:user-linear" />
+          <div className="cvant-field mb-16">
+            <span className="cvant-icon-wrap">
+              <Icon icon="solar:user-linear" fontSize={20} />
             </span>
             <select
-              className="cvant-auth-input"
+              className="form-select bg-neutral-50 radius-12 cvant-input"
               value={form.gender}
               onChange={onChange("gender")}
               aria-label="Jenis kelamin"
@@ -184,126 +286,125 @@ const CustomerSignUpLayer = () => {
               <option value="Lainnya">Lainnya</option>
             </select>
           </div>
-        </div>
 
-        <div>
-          <label className="cvant-auth-label">Tanggal Lahir</label>
-          <div className="cvant-auth-field">
-            <span className="cvant-auth-icon">
-              <Icon icon="solar:calendar-outline" />
+          <div className="cvant-field mb-16">
+            <span className="cvant-icon-wrap">
+              <Icon icon="solar:calendar-outline" fontSize={20} />
             </span>
             <input
               type="date"
-              className="cvant-auth-input"
+              className="form-control bg-neutral-50 radius-12 cvant-input"
               value={form.birthDate}
               onChange={onChange("birthDate")}
               autoComplete="bday"
             />
           </div>
-        </div>
 
-        <div>
-          <label className="cvant-auth-label">Alamat</label>
-          <div className="cvant-auth-field">
-            <span className="cvant-auth-icon">
-              <Icon icon="solar:map-point-linear" />
+          <div className="cvant-field mb-16">
+            <span className="cvant-icon-wrap">
+              <Icon icon="solar:map-point-linear" fontSize={20} />
             </span>
             <input
               type="text"
-              className="cvant-auth-input"
+              className="form-control bg-neutral-50 radius-12 cvant-input"
               placeholder="Alamat lengkap"
               value={form.address}
               onChange={onChange("address")}
               autoComplete="street-address"
             />
           </div>
-        </div>
 
-        <div>
-          <label className="cvant-auth-label">Kota</label>
-          <div className="cvant-auth-field">
-            <span className="cvant-auth-icon">
-              <Icon icon="solar:buildings-linear" />
+          <div className="cvant-field mb-16">
+            <span className="cvant-icon-wrap">
+              <Icon icon="solar:buildings-linear" fontSize={20} />
             </span>
             <input
               type="text"
-              className="cvant-auth-input"
+              className="form-control bg-neutral-50 radius-12 cvant-input"
               placeholder="Nama kota"
               value={form.city}
               onChange={onChange("city")}
               autoComplete="address-level2"
             />
           </div>
-        </div>
 
-        <div>
-          <label className="cvant-auth-label">Perusahaan (opsional)</label>
-          <div className="cvant-auth-field">
-            <span className="cvant-auth-icon">
-              <Icon icon="solar:buildings-linear" />
+          <div className="cvant-field mb-16">
+            <span className="cvant-icon-wrap">
+              <Icon icon="solar:buildings-linear" fontSize={20} />
             </span>
             <input
               type="text"
-              className="cvant-auth-input"
+              className="form-control bg-neutral-50 radius-12 cvant-input"
               placeholder="Nama perusahaan"
               value={form.company}
               onChange={onChange("company")}
               autoComplete="organization"
             />
           </div>
-        </div>
 
-        <div>
-          <label className="cvant-auth-label">Password</label>
-          <div className="cvant-auth-field">
-            <span className="cvant-auth-icon">
-              <Icon icon="solar:lock-password-outline" />
+          <div className="cvant-field mb-16">
+            <span className="cvant-icon-wrap">
+              <Icon icon="solar:lock-password-outline" fontSize={20} />
             </span>
             <input
               type={showPassword ? "text" : "password"}
-              className="cvant-auth-input"
+              className="form-control bg-neutral-50 radius-12 cvant-input"
               placeholder="Password"
               value={form.password}
               onChange={onChange("password")}
               autoComplete="new-password"
-              style={{ paddingRight: "44px" }}
+              style={{ paddingRight: "58px" }}
             />
             <button
               type="button"
-              className="cvant-auth-eye"
+              className="cvant-eye-btn"
               onClick={() => setShowPassword((value) => !value)}
               aria-label={showPassword ? "Hide password" : "Show password"}
             >
-              <Icon icon={showPassword ? "solar:eye-closed-linear" : "solar:eye-linear"} />
+              <Icon
+                icon={
+                  showPassword ? "solar:eye-closed-linear" : "solar:eye-linear"
+                }
+                fontSize={20}
+                style={{ color: "#6b7280" }}
+              />
             </button>
           </div>
-        </div>
 
-        <div>
-          <label className="cvant-auth-label">Konfirmasi Password</label>
-          <div className="cvant-auth-field">
-            <span className="cvant-auth-icon">
-              <Icon icon="solar:lock-password-outline" />
+          <div className="cvant-field mb-18">
+            <span className="cvant-icon-wrap">
+              <Icon icon="solar:lock-password-outline" fontSize={20} />
             </span>
             <input
               type={showPassword ? "text" : "password"}
-              className="cvant-auth-input"
+              className="form-control bg-neutral-50 radius-12 cvant-input"
               placeholder="Konfirmasi password"
               value={form.confirmPassword}
               onChange={onChange("confirmPassword")}
               autoComplete="new-password"
-              style={{ paddingRight: "44px" }}
+              style={{ paddingRight: "58px" }}
             />
           </div>
-        </div>
 
-        <div className="cvant-auth-full">
-          <button type="submit" className="cvant-auth-btn" disabled={loading}>
+          <button
+            type="submit"
+            className="btn text-sm btn-sm px-12 py-16 w-100 radius-12 mt-5 cvant-login-btn"
+            disabled={loading}
+          >
             {loading ? "Mendaftar..." : "Daftar"}
           </button>
-        </div>
-      </form>
-    </CustomerAuthShell>
+
+          <div className="mt-3 text-center text-m">
+            <p className="mb-0 text-neutral-400">
+              Sudah punya akun?{" "}
+              <Link href="/sign-in" className="text-primary-600 fw-semibold">
+                Masuk di sini
+              </Link>
+            </p>
+          </div>
+        </form>
+      </AuthShell>
+    </>
   );
 };
 

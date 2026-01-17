@@ -47,7 +47,7 @@ const handleResponse = async (res) => {
   if (res.status === 401) {
     clearToken();
     if (typeof window !== "undefined") {
-      window.location.href = "/customer/sign-in";
+      window.location.href = "/sign-in";
     }
     throw new Error("Unauthorized. Please login again.");
   }
@@ -74,6 +74,14 @@ export const customerApi = {
   post: async (url, body) => {
     const res = await fetch(buildUrl(url), {
       method: "POST",
+      headers: defaultHeaders(),
+      body: JSON.stringify(body),
+    });
+    return handleResponse(res);
+  },
+  put: async (url, body) => {
+    const res = await fetch(buildUrl(url), {
+      method: "PUT",
       headers: defaultHeaders(),
       body: JSON.stringify(body),
     });

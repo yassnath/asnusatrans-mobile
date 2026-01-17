@@ -1,10 +1,7 @@
-import CustomerSignInLayer from "@/components/CustomerSignInLayer";
+import { redirect } from "next/navigation";
 
-export const metadata = {
-  title: "Customer Sign In | CV ANT",
-  description: "Login customer CV ANT.",
+const CustomerSignInPage = () => {
+  redirect("/sign-in");
 };
 
-export default function CustomerSignInPage() {
-  return <CustomerSignInLayer />;
-}
+export default CustomerSignInPage;

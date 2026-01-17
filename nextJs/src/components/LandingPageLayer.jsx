@@ -90,6 +90,7 @@ const LandingPageLayer = () => {
             linear-gradient(180deg, #0c111b 0%, #0b1220 100%);
           --cvant-nav-bg: rgba(12, 17, 27, 0.78);
           --cvant-nav-bg-mobile: rgba(12, 17, 27, 0.95);
+          --cvant-nav-height: 72px;
           --cvant-panel: rgba(15, 23, 42, 0.6);
           --cvant-panel-soft: rgba(15, 23, 42, 0.55);
           --cvant-panel-alt: rgba(30, 41, 59, 0.55);
@@ -202,6 +203,7 @@ const LandingPageLayer = () => {
           background: var(--cvant-bg);
           position: relative;
           overflow: hidden;
+          padding-top: var(--cvant-nav-height);
         }
 
         .cvant-container {
@@ -210,8 +212,11 @@ const LandingPageLayer = () => {
         }
 
         .cvant-nav {
-          position: sticky;
+          position: fixed;
           top: 0;
+          left: 0;
+          right: 0;
+          width: 100%;
           z-index: 50;
           border-bottom: 1px solid var(--cvant-border-soft);
           background: var(--cvant-nav-bg);
@@ -832,7 +837,7 @@ const LandingPageLayer = () => {
         @media (max-width: 991px) {
           .cvant-nav-links {
             position: absolute;
-            top: 68px;
+            top: var(--cvant-nav-height);
             right: 0;
             left: 0;
             padding: 20px;
@@ -911,7 +916,7 @@ const LandingPageLayer = () => {
               </div>
               <div className="cvant-nav-actions">
                 <ThemeToggleButton />
-                <Link href="/customer/sign-in" className="cvant-btn cvant-btn-ghost">
+                <Link href="/sign-in" className="cvant-btn cvant-btn-ghost">
                   Masuk
                 </Link>
                 <Link href="/order" className="cvant-btn cvant-btn-primary">
@@ -1126,27 +1131,27 @@ const LandingPageLayer = () => {
               </div>
               <div className="cvant-price-grid">
                 <div className="cvant-price-card">
-                  <h4>Reguler</h4>
-                  <p>Pengiriman harian dengan SLA stabil</p>
-                  <div className="cvant-price">Mulai Rp 350k</div>
+                  <h4>Harian</h4>
+                  <p>Distribusi rutin untuk rute kota ke kota</p>
+                  <div className="cvant-price">Mulai Rp 320k</div>
                   <Link href="/order" className="cvant-btn cvant-btn-ghost">
-                    Coba Reguler
+                    Pilih Harian
                   </Link>
                 </div>
                 <div className="cvant-price-card">
-                  <h4>Express</h4>
-                  <p>Prioritas jadwal, rute dipercepat</p>
-                  <div className="cvant-price">Mulai Rp 520k</div>
+                  <h4>Priority</h4>
+                  <p>Slot pickup prioritas dan monitoring intensif</p>
+                  <div className="cvant-price">Mulai Rp 480k</div>
                   <Link href="/order" className="cvant-btn cvant-btn-primary">
-                    Pilih Express
+                    Pilih Priority
                   </Link>
                 </div>
                 <div className="cvant-price-card">
-                  <h4>Charter</h4>
-                  <p>Armada dedicated untuk project</p>
+                  <h4>Project Charter</h4>
+                  <p>Armada dedicated untuk kontrak dan proyek besar</p>
                   <div className="cvant-price">Custom</div>
                   <Link href="/order" className="cvant-btn cvant-btn-ghost">
-                    Konsultasi
+                    Konsultasi Project
                   </Link>
                 </div>
               </div>

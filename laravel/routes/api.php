@@ -39,6 +39,8 @@ Route::prefix('customer')->group(function () {
 
     Route::middleware('auth.customer')->group(function () {
         Route::get('/me', [CustomerAuthController::class, 'me']);
+        Route::put('/profile', [CustomerAuthController::class, 'updateProfile']);
+        Route::put('/password', [CustomerAuthController::class, 'updatePassword']);
         Route::get('/orders', [CustomerOrderController::class, 'index']);
         Route::post('/orders', [CustomerOrderController::class, 'store']);
         Route::get('/orders/{id}', [CustomerOrderController::class, 'show']);

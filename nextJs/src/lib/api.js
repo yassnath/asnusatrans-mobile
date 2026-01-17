@@ -63,7 +63,7 @@ async function handleResponse(res) {
   if (res.status === 401) {
     clearToken();
     if (typeof window !== "undefined") {
-      window.location.href = "/login";
+      window.location.href = "/sign-in";
     }
     throw new Error("Unauthorized. Please login again.");
   }

@@ -1,4 +1,5 @@
 import CustomerOrderLayer from "@/components/CustomerOrderLayer";
+import CustomerLayout from "@/masterLayout/CustomerLayout";
 
 export const metadata = {
   title: "Order | CV ANT",
@@ -6,5 +7,9 @@ export const metadata = {
 };
 
 export default function OrderPage() {
-  return <CustomerOrderLayer />;
+  return (
+    <CustomerLayout>
+      <CustomerOrderLayer />
+    </CustomerLayout>
+  );
 }

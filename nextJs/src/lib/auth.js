@@ -37,6 +37,6 @@ export async function logoutRequest() {
     // ignore error
   } finally {
     api.clearToken();
-    window.location.href = "/login";
+    window.location.href = "/sign-in";
   }
 }

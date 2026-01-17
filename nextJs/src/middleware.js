@@ -38,23 +38,50 @@ export function middleware(request) {
   /**
    * Auth page logic
    */
-  const isAdminAuthPage = pathname.startsWith("/login");
-  const isCustomerAuthPage =
-    pathname.startsWith("/customer/sign-in") ||
-    pathname.startsWith("/customer/sign-up");
-  const isCustomerArea = pathname === "/order" || pathname.startsWith("/order/");
-  const isPublicPage = pathname === "/" || isAdminAuthPage || isCustomerAuthPage;
+  const isAdminAuthPage = pathname === "/sign-in";
+  const isLegacyLoginPage = pathname.startsWith("/login");
+  const isLegacyCustomerSignIn = pathname.startsWith("/customer/sign-in");
+  const isCustomerAuthPage = pathname.startsWith("/customer/sign-up");
+  const isCustomerArea =
+    pathname === "/order" ||
+    pathname.startsWith("/order/") ||
+    (pathname.startsWith("/customer/") &&
+      !isCustomerAuthPage &&
+      !isLegacyCustomerSignIn);
+  const isPublicPage =
+    pathname === "/" ||
+    isAdminAuthPage ||
+    isCustomerAuthPage ||
+    isLegacyLoginPage ||
+    isLegacyCustomerSignIn;
+
+  if (isLegacyLoginPage) {
+    if (token && token !== "undefined" && token !== "null") {
+      return NextResponse.redirect(new URL("/dashboard", request.url));
+    }
+    return NextResponse.redirect(new URL("/sign-in", request.url));
+  }
+
+  if (isLegacyCustomerSignIn) {
+    if (customerToken && customerToken !== "undefined" && customerToken !== "null") {
+      return NextResponse.redirect(new URL("/customer/dashboard", request.url));
+    }
+    return NextResponse.redirect(new URL("/sign-in", request.url));
+  }
 
   if (isAdminAuthPage) {
     if (token && token !== "undefined" && token !== "null") {
       return NextResponse.redirect(new URL("/dashboard", request.url));
+    }
+    if (customerToken && customerToken !== "undefined" && customerToken !== "null") {
+      return NextResponse.redirect(new URL("/customer/dashboard", request.url));
     }
     return NextResponse.next();
   }
 
   if (isCustomerAuthPage) {
     if (customerToken && customerToken !== "undefined" && customerToken !== "null") {
-      return NextResponse.redirect(new URL("/order", request.url));
+      return NextResponse.redirect(new URL("/customer/dashboard", request.url));
     }
     return NextResponse.next();
   }
@@ -63,15 +90,18 @@ export function middleware(request) {
     return NextResponse.next();
   }
 
-  if (isCustomerArea && (!customerToken || customerToken === "undefined" || customerToken === "null")) {
-    return NextResponse.redirect(new URL("/customer/sign-in", request.url));
+  if (
+    isCustomerArea &&
+    (!customerToken || customerToken === "undefined" || customerToken === "null")
+  ) {
+    return NextResponse.redirect(new URL("/sign-in", request.url));
   }
 
   if (
     !isCustomerArea &&
     (!token || token === "undefined" || token === "null")
   ) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    return NextResponse.redirect(new URL("/sign-in", request.url));
   }
 
   return NextResponse.next();

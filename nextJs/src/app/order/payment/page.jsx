@@ -1,4 +1,5 @@
 import CustomerPaymentLayer from "@/components/CustomerPaymentLayer";
+import CustomerLayout from "@/masterLayout/CustomerLayout";
 
 export const metadata = {
   title: "Payment | CV ANT",
@@ -6,5 +7,9 @@ export const metadata = {
 };
 
 export default function PaymentPage() {
-  return <CustomerPaymentLayer />;
+  return (
+    <CustomerLayout>
+      <CustomerPaymentLayer />
+    </CustomerLayout>
+  );
 }
