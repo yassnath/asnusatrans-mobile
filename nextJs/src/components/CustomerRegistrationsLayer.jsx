@@ -179,31 +179,29 @@ const CustomerRegistrationsLayer = () => {
     <div className="row">
       <div className="col-12">
         <div className="card h-100">
-          <div className="card-body p-24">
-            <div className="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-20">
-              <div>
-                <h6 className="mb-4 fw-bold">Pendaftaran Customer</h6>
-                <p className="text-secondary-light mb-0">
-                  Data biodata customer yang sudah mendaftar.
-                </p>
-              </div>
-              <button
-                className="btn btn-primary radius-8 d-inline-flex align-items-center w-100 w-md-auto"
-                onClick={loadCustomers}
-              >
-                <Icon
-                  icon="solar:refresh-linear"
-                  className="me-6"
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    lineHeight: 1,
-                    transform: "translateY(1px)",
-                  }}
-                />
-                Refresh
-              </button>
+          <div className="card-header d-flex flex-wrap align-items-center justify-content-between gap-3 cvant-data-header">
+            <div>
+              <h6 className="mb-4 fw-bold">Pendaftaran Customer</h6>
+              <p className="text-secondary-light mb-0">
+                Data biodata customer yang sudah mendaftar.
+              </p>
             </div>
+            <button
+              className="btn btn-sm btn-primary radius-8 d-inline-flex align-items-center cvant-refresh-btn"
+              onClick={loadCustomers}
+            >
+              <Icon
+                icon="solar:refresh-linear"
+                className="me-6"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  lineHeight: 1,
+                  transform: "translateY(1px)",
+                }}
+              />
+              Refresh
+            </button>
           </div>
 
           <div className="card-body p-0">
@@ -253,6 +251,25 @@ const CustomerRegistrationsLayer = () => {
           </div>
         </div>
       </div>
+      <style jsx global>{`
+        @media (max-width: 767.98px) {
+          .cvant-data-header {
+            flex-wrap: nowrap !important;
+            align-items: flex-start !important;
+            gap: 8px !important;
+          }
+
+          .cvant-data-header > div {
+            min-width: 0 !important;
+          }
+
+          .cvant-refresh-btn {
+            padding: 4px 10px !important;
+            height: 32px !important;
+            font-size: 12px !important;
+          }
+        }
+      `}</style>
     </div>
   );
 };
