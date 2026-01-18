@@ -195,11 +195,8 @@ const OrderAcceptanceLayer = () => {
       <div className="col-12">
         <div className="card h-100">
           <div className="card-header d-flex flex-wrap align-items-center justify-content-between gap-3 cvant-data-header">
-            <div>
-              <h6 className="mb-4 fw-bold">Penerimaan Order Customer</h6>
-              <p className="text-secondary-light mb-0">
-                Kelola order masuk sebelum diteruskan ke operasional.
-              </p>
+            <div className="d-flex flex-column justify-content-center">
+              <h6 className="mb-0 fw-bold">Customer Order</h6>
             </div>
             <button
               className="btn btn-sm btn-primary radius-8 d-inline-flex align-items-center cvant-refresh-btn"
@@ -309,7 +306,7 @@ const OrderAcceptanceLayer = () => {
         @media (max-width: 767.98px) {
           .cvant-data-header {
             flex-wrap: nowrap !important;
-            align-items: flex-start !important;
+            align-items: center !important;
             gap: 8px !important;
           }
 

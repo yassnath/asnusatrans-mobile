@@ -66,18 +66,14 @@ const CustomerRegistrationsLayer = () => {
     return () => obs.disconnect();
   }, []);
 
-  const formatDate = (value) => {
-    if (!value) return "-";
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return value;
-    return date.toLocaleDateString("id-ID");
-  };
-
   const formatDateTime = (value) => {
     if (!value) return "-";
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return value;
-    const datePart = date.toLocaleDateString("id-ID");
+    const day = String(date.getDate()).padStart(2, "0");
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const year = date.getFullYear();
+    const datePart = `${day}-${month}-${year}`;
     const hours = String(date.getHours()).padStart(2, "0");
     const minutes = String(date.getMinutes()).padStart(2, "0");
     return `${datePart}, ${hours}:${minutes}`;
@@ -133,23 +129,21 @@ const CustomerRegistrationsLayer = () => {
                 {customer.phone || "-"}
               </span>
             </div>
-            <div className="d-flex justify-content-between">
-              <span style={{ color: textSub }}>Tgl Lahir</span>
-              <span style={{ color: textMain, fontWeight: 600 }}>
-                {formatDate(customer.birth_date)}
-              </span>
-            </div>
-            <div>
-              <div style={{ color: textSub }}>Alamat</div>
-              <div
+            <div className="d-flex justify-content-between align-items-start">
+              <span style={{ color: textSub, flex: "0 0 auto" }}>Alamat</span>
+              <span
                 style={{
                   color: textMain,
                   fontWeight: 600,
+                  textAlign: "right",
+                  marginLeft: "12px",
+                  minWidth: 0,
+                  flex: "1 1 auto",
                   wordBreak: "break-word",
                 }}
               >
                 {customer.address || "-"}
-              </div>
+              </span>
             </div>
             <div className="d-flex justify-content-between">
               <span style={{ color: textSub }}>Kota</span>
@@ -180,11 +174,8 @@ const CustomerRegistrationsLayer = () => {
       <div className="col-12">
         <div className="card h-100">
           <div className="card-header d-flex flex-wrap align-items-center justify-content-between gap-3 cvant-data-header">
-            <div>
-              <h6 className="mb-4 fw-bold">Pendaftaran Customer</h6>
-              <p className="text-secondary-light mb-0">
-                Data biodata customer yang sudah mendaftar.
-              </p>
+            <div className="d-flex flex-column justify-content-center">
+              <h6 className="mb-0 fw-bold cvant-data-title">Data Customer</h6>
             </div>
             <button
               className="btn btn-sm btn-primary radius-8 d-inline-flex align-items-center cvant-refresh-btn"
@@ -222,7 +213,6 @@ const CustomerRegistrationsLayer = () => {
                         <th>Nama</th>
                         <th>Email</th>
                         <th>HP</th>
-                        <th>Tgl Lahir</th>
                         <th>Alamat</th>
                         <th>Kota</th>
                         <th>Perusahaan</th>
@@ -236,7 +226,6 @@ const CustomerRegistrationsLayer = () => {
                           <td>{customer.name || "-"}</td>
                           <td>{customer.email || "-"}</td>
                           <td>{customer.phone || "-"}</td>
-                          <td>{formatDate(customer.birth_date)}</td>
                           <td>{customer.address || "-"}</td>
                           <td>{customer.city || "-"}</td>
                           <td>{customer.company || "-"}</td>
@@ -255,12 +244,16 @@ const CustomerRegistrationsLayer = () => {
         @media (max-width: 767.98px) {
           .cvant-data-header {
             flex-wrap: nowrap !important;
-            align-items: flex-start !important;
+            align-items: center !important;
             gap: 8px !important;
           }
 
           .cvant-data-header > div {
             min-width: 0 !important;
+          }
+
+          .cvant-data-title {
+            line-height: 1.2 !important;
           }
 
           .cvant-refresh-btn {

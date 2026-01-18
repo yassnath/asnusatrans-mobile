@@ -13,7 +13,7 @@ const LandingPageLayer = () => {
   const [armadaReady, setArmadaReady] = useState(false);
 
   const navLinks = [
-    { label: "Layanan", href: "/#layanan" },
+    { label: "Keunggulan", href: "/#keunggulan" },
     { label: "Armada", href: "/#armada" },
     { label: "Alur", href: "/#alur" },
     { label: "Harga", href: "/#harga" },
@@ -45,11 +45,41 @@ const LandingPageLayer = () => {
     };
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const sections = Array.from(document.querySelectorAll(".cvant-reveal"));
+    if (sections.length === 0) return;
+
+    if (!("IntersectionObserver" in window)) {
+      sections.forEach((section) => section.classList.add("is-visible"));
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          entry.target.classList.add("is-visible");
+          observer.unobserve(entry.target);
+        });
+      },
+      {
+        threshold: 0.2,
+        rootMargin: "0px 0px -10% 0px",
+      }
+    );
+
+    sections.forEach((section) => observer.observe(section));
+
+    return () => observer.disconnect();
+  }, []);
+
   const formatTonnage = (value) => {
     if (value == null || String(value).trim() === "") return "-";
     const raw = String(value).trim();
     if (/ton/i.test(raw)) return raw;
-    return `${raw} ton`;
+    return `${raw}`;
   };
 
   const fleetItems = useMemo(() => {
@@ -57,11 +87,17 @@ const LandingPageLayer = () => {
       .map((item) => ({
         name: item?.nama_truk || "Armada",
         tonnage: formatTonnage(item?.kapasitas),
-      }))
-      .slice(0, 4);
+      }));
   }, [armadas]);
 
+  const fleetShouldLoop = fleetItems.length > 4;
+  const fleetLoopItems = fleetShouldLoop
+    ? [...fleetItems, ...fleetItems]
+    : fleetItems;
+  const fleetSpeed = Math.max(fleetItems.length * 9, 55);
+
   const armadaCountLabel = armadaReady ? `${armadas.length} Armada` : "Memuat armada";
+  const currentYear = new Date().getFullYear();
 
   return (
     <>
@@ -204,6 +240,26 @@ const LandingPageLayer = () => {
           position: relative;
           overflow: hidden;
           padding-top: var(--cvant-nav-height);
+        }
+
+        .cvant-reveal {
+          opacity: 0;
+          transform: translateY(24px);
+          transition: opacity 0.7s ease, transform 0.7s ease;
+          will-change: opacity, transform;
+        }
+
+        .cvant-reveal.is-visible {
+          opacity: 1;
+          transform: translateY(0);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .cvant-reveal {
+            opacity: 1;
+            transform: none;
+            transition: none;
+          }
         }
 
         .cvant-container {
@@ -442,8 +498,10 @@ const LandingPageLayer = () => {
         }
 
         .cvant-hero-panel {
-          display: grid;
-          gap: 20px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          align-self: flex-start;
         }
 
         .cvant-glass-card {
@@ -452,6 +510,176 @@ const LandingPageLayer = () => {
           background: var(--cvant-card-strong);
           border: 1px solid var(--cvant-border);
           box-shadow: 0 30px 60px rgba(0, 0, 0, 0.4);
+        }
+
+        .cvant-hero-icon-wrap {
+          position: relative;
+          width: clamp(300px, 44vw, 600px);
+          height: auto;
+          aspect-ratio: 1 / 1;
+          max-width: 100%;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .cvant-hero-icon-wrap::before {
+          content: "";
+          position: absolute;
+          inset: -4%;
+          border-radius: 999px;
+          background: radial-gradient(
+              circle at 30% 30%,
+              rgba(91, 140, 255, 0.18),
+              transparent 60%
+            ),
+            radial-gradient(
+              circle at 70% 50%,
+              rgba(168, 85, 247, 0.14),
+              transparent 62%
+            ),
+            radial-gradient(
+              circle at 60% 80%,
+              rgba(34, 211, 238, 0.12),
+              transparent 65%
+            );
+          filter: blur(6px);
+          opacity: 0.9;
+          pointer-events: none;
+        }
+
+        .cvant-hero-icon-wrap .cvant-hero-ring {
+          position: absolute;
+          inset: 8px;
+          border-radius: 999px;
+          border: 1px solid rgba(255, 255, 255, 0.07);
+          box-shadow: 0 0 0 1px rgba(91, 140, 255, 0.12),
+            0 0 12px rgba(91, 140, 255, 0.07),
+            0 0 10px rgba(34, 211, 238, 0.06);
+          pointer-events: none;
+        }
+
+        .cvant-hero-icon-wrap .cvant-hero-orbit {
+          position: absolute;
+          inset: 10px;
+          border-radius: 999px;
+          border: 1px dashed rgba(255, 255, 255, 0.045);
+          pointer-events: none;
+          animation: cvantHeroOrbitSpin 14s linear infinite;
+        }
+
+        .cvant-hero-icon-wrap .cvant-hero-orbit::after {
+          content: "";
+          position: absolute;
+          top: 50%;
+          left: -3px;
+          width: 7px;
+          height: 7px;
+          border-radius: 999px;
+          background: radial-gradient(
+            circle,
+            rgba(34, 211, 238, 0.55),
+            rgba(34, 211, 238, 0)
+          );
+          box-shadow: 0 0 10px rgba(34, 211, 238, 0.2),
+            0 0 8px rgba(91, 140, 255, 0.12);
+          filter: blur(0.25px);
+          opacity: 0.68;
+          transform: translateY(-50%);
+        }
+
+        .cvant-hero-icon-wrap .cvant-hero-orbit2 {
+          position: absolute;
+          inset: 16px;
+          border-radius: 999px;
+          border: 1px dashed rgba(255, 255, 255, 0.035);
+          pointer-events: none;
+          animation: cvantHeroOrbitSpin2 9.5s linear infinite reverse;
+        }
+
+        .cvant-hero-icon-wrap .cvant-hero-orbit2::after {
+          content: "";
+          position: absolute;
+          top: 50%;
+          right: -2px;
+          width: 5px;
+          height: 5px;
+          border-radius: 999px;
+          background: radial-gradient(
+            circle,
+            rgba(168, 85, 247, 0.42),
+            rgba(168, 85, 247, 0)
+          );
+          box-shadow: 0 0 10px rgba(168, 85, 247, 0.18),
+            0 0 8px rgba(91, 140, 255, 0.1);
+          filter: blur(0.3px);
+          opacity: 0.6;
+          transform: translateY(-50%);
+        }
+
+        .cvant-hero-icon-wrap::after {
+          content: "";
+          position: absolute;
+          inset: -3%;
+          background: linear-gradient(
+            120deg,
+            transparent 22%,
+            rgba(91, 140, 255, 0.1) 45%,
+            rgba(34, 211, 238, 0.08) 55%,
+            transparent 78%
+          );
+          transform: translateX(-130%);
+          animation: cvantHeroShimmer 7s ease-in-out infinite;
+          pointer-events: none;
+          mix-blend-mode: screen;
+          border-radius: 999px;
+          z-index: 1;
+          opacity: 0.8;
+        }
+
+        .cvant-hero-icon {
+          width: min(90%, 520px);
+          height: auto;
+          max-width: 100%;
+          z-index: 2;
+          filter: drop-shadow(0 18px 24px rgba(0, 0, 0, 0.35))
+            drop-shadow(0 0 14px rgba(34, 211, 238, 0.1))
+            drop-shadow(0 0 16px rgba(91, 140, 255, 0.12));
+        }
+
+        @keyframes cvantHeroOrbitSpin {
+          from {
+            transform: rotate(0deg);
+          }
+          to {
+            transform: rotate(360deg);
+          }
+        }
+
+        @keyframes cvantHeroOrbitSpin2 {
+          from {
+            transform: rotate(0deg);
+          }
+          to {
+            transform: rotate(360deg);
+          }
+        }
+
+        @keyframes cvantHeroShimmer {
+          0% {
+            transform: translateX(-130%);
+            opacity: 0.3;
+          }
+          35% {
+            opacity: 0.55;
+          }
+          60% {
+            opacity: 0.45;
+          }
+          100% {
+            transform: translateX(130%);
+            opacity: 0.3;
+          }
         }
 
         .cvant-hero-panel h5 {
@@ -673,11 +901,29 @@ const LandingPageLayer = () => {
           margin: 0;
         }
 
-        .cvant-fleet-grid {
-          display: grid;
-          grid-template-columns: repeat(4, minmax(0, 1fr));
-          gap: 18px;
+        .cvant-fleet-slider {
           margin-top: 32px;
+          overflow: hidden;
+          position: relative;
+          --fleet-gap: 18px;
+          --fleet-gap-half: 9px;
+        }
+
+        .cvant-fleet-track {
+          display: flex;
+          gap: var(--fleet-gap);
+          align-items: stretch;
+          width: max-content;
+        }
+
+        .cvant-fleet-track.is-looping {
+          animation: cvantFleetScroll var(--fleet-speed, 28s) linear infinite;
+        }
+
+        .cvant-fleet-track:not(.is-looping) {
+          flex-wrap: wrap;
+          justify-content: center;
+          width: 100%;
         }
 
         .cvant-fleet-card {
@@ -685,6 +931,17 @@ const LandingPageLayer = () => {
           border-radius: 16px;
           background: var(--cvant-panel-alt);
           border: 1px solid var(--cvant-border);
+          flex: 0 0 auto;
+          min-width: 220px;
+        }
+
+        @keyframes cvantFleetScroll {
+          from {
+            transform: translateX(0);
+          }
+          to {
+            transform: translateX(calc(-50% + var(--fleet-gap-half)));
+          }
         }
 
         .cvant-step-grid {
@@ -792,6 +1049,13 @@ const LandingPageLayer = () => {
           font-size: 14px;
         }
 
+        .cvant-footer-note {
+          margin-top: 14px;
+          font-size: 12px;
+          text-align: center;
+          color: var(--cvant-muted);
+        }
+
         .cvant-footer strong {
           font-size: 14px;
           letter-spacing: 0.2px;
@@ -873,6 +1137,10 @@ const LandingPageLayer = () => {
             grid-template-columns: 1fr;
           }
 
+          .cvant-hero-icon-wrap {
+            width: clamp(240px, 70vw, 380px);
+          }
+
           .cvant-hero-badges {
             grid-template-columns: 1fr;
           }
@@ -883,8 +1151,8 @@ const LandingPageLayer = () => {
             grid-template-columns: 1fr;
           }
 
-          .cvant-fleet-grid {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+          .cvant-fleet-card {
+            min-width: 200px;
           }
 
           .cvant-testimonial-grid {
@@ -893,8 +1161,29 @@ const LandingPageLayer = () => {
         }
 
         @media (max-width: 575px) {
-          .cvant-fleet-grid {
-            grid-template-columns: 1fr;
+          .cvant-hero-icon-wrap {
+            width: clamp(220px, 80vw, 330px);
+          }
+
+          .cvant-fleet-slider {
+            --fleet-gap: 14px;
+            --fleet-gap-half: 7px;
+          }
+
+          .cvant-fleet-card {
+            min-width: 180px;
+          }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .cvant-hero-icon-wrap::after,
+          .cvant-hero-icon-wrap .cvant-hero-orbit,
+          .cvant-hero-icon-wrap .cvant-hero-orbit2 {
+            animation: none;
+          }
+
+          .cvant-fleet-track.is-looping {
+            animation: none;
           }
         }
       `}</style>
@@ -937,7 +1226,7 @@ const LandingPageLayer = () => {
         </header>
 
         <main>
-          <section className="cvant-hero">
+          <section className="cvant-hero cvant-reveal">
             <div className="cvant-container cvant-hero-grid">
               <div className="cvant-animate-up">
                 <span className="cvant-eyebrow">
@@ -945,10 +1234,10 @@ const LandingPageLayer = () => {
                   Logistik terpercaya untuk bisnis Anda
                 </span>
                 <h1 className="cvant-hero-title">
-                  Kirim barang lebih cepat, aman, dan terukur bersama CV ANT
+                  Kirim barang lebih cepat dan aman bersama CV ANT
                 </h1>
                 <p className="cvant-hero-desc">
-                  Dari pengiriman harian sampai charter project, kami siapkan
+                  Dari pengiriman harian, kami siapkan
                   armada dan monitoring end-to-end untuk menjaga jadwal dan
                   kualitas layanan Anda.
                 </p>
@@ -977,58 +1266,29 @@ const LandingPageLayer = () => {
                 </div>
               </div>
 
-              <div className="cvant-hero-panel cvant-animate-up cvant-delay-1">
-                <div className="cvant-glass-card">
-                  <h5>Order Snapshot</h5>
-                  <div className="cvant-hero-list">
-                    <div>
-                      <span>Rute</span>
-                      <strong>Surabaya - Jakarta</strong>
-                    </div>
-                    <div>
-                      <span>Armada</span>
-                      <strong>Fuso Box 6T</strong>
-                    </div>
-                    <div>
-                      <span>Estimasi</span>
-                      <strong>24 - 30 jam</strong>
-                    </div>
-                    <div>
-                      <span>Status</span>
-                      <strong>Dalam perjalanan</strong>
-                    </div>
-                  </div>
-                </div>
-                <div className="cvant-glass-card">
-                  <h5>Highlight Layanan</h5>
-                  <p className="cvant-section-desc" style={{ marginBottom: "14px" }}>
-                    Pemantauan GPS, laporan harian, hingga invoice digital untuk
-                    memudahkan tim operasional Anda.
-                  </p>
-                  <div className="cvant-hero-list">
-                    <div>
-                      <span>Monitoring</span>
-                      <strong>Real-time</strong>
-                    </div>
-                    <div>
-                      <span>Support</span>
-                      <strong>24/7</strong>
-                    </div>
-                    <div>
-                      <span>Payment</span>
-                      <strong>Gateway siap</strong>
-                    </div>
-                  </div>
+              <div
+                className="cvant-hero-panel cvant-animate-up cvant-delay-1"
+                aria-hidden="true"
+              >
+                <div className="cvant-hero-icon-wrap">
+                  <div className="cvant-hero-orbit" />
+                  <div className="cvant-hero-orbit2" />
+                  <div className="cvant-hero-ring" />
+                  <img
+                    src="/assets/images/big-icon.webp"
+                    alt=""
+                    className="cvant-hero-icon"
+                  />
                 </div>
               </div>
             </div>
           </section>
 
-          <section id="layanan" className="cvant-section">
+          <section id="keunggulan" className="cvant-section cvant-reveal">
             <div className="cvant-container">
               <div className="cvant-section-heading cvant-section-center">
                 <h2 className="cvant-section-title">
-                  Layanan yang siap tumbuh bersama bisnis Anda
+                  Keunggulan yang siap tumbuh bersama bisnis Anda
                 </h2>
                 <p className="cvant-section-desc">
                   Kami bantu operasional logistik lebih stabil dengan proses yang
@@ -1055,7 +1315,7 @@ const LandingPageLayer = () => {
             </div>
           </section>
 
-          <section id="armada" className="cvant-section">
+          <section id="armada" className="cvant-section cvant-reveal">
             <div className="cvant-container">
               <div className="cvant-section-heading cvant-section-center">
                 <h2 className="cvant-section-title">Pilihan armada fleksibel</h2>
@@ -1074,19 +1334,33 @@ const LandingPageLayer = () => {
               ) : fleetItems.length === 0 ? (
                 <p className="cvant-section-desc">Data armada belum tersedia.</p>
               ) : (
-                <div className="cvant-fleet-grid">
-                  {fleetItems.map((item, index) => (
-                    <div className="cvant-fleet-card" key={`${item.name}-${index}`}>
-                      <h5>{item.name}</h5>
-                      <p className="cvant-section-desc">{item.tonnage}</p>
-                    </div>
-                  ))}
+                <div className="cvant-fleet-slider">
+                  <div
+                    className={`cvant-fleet-track ${
+                      fleetShouldLoop ? "is-looping" : ""
+                    }`}
+                    style={{ "--fleet-speed": `${fleetSpeed}s` }}
+                  >
+                    {fleetLoopItems.map((item, index) => {
+                      const isDuplicate = fleetShouldLoop && index >= fleetItems.length;
+                      return (
+                        <div
+                          className="cvant-fleet-card"
+                          key={`${item.name}-${index}`}
+                          aria-hidden={isDuplicate ? "true" : undefined}
+                        >
+                          <h5>{item.name}</h5>
+                          <p className="cvant-section-desc">Kapasitas (Tonase): {item.tonnage}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>
           </section>
 
-          <section id="alur" className="cvant-section">
+          <section id="alur" className="cvant-section cvant-reveal">
             <div className="cvant-container">
               <div className="cvant-section-heading cvant-section-center">
                 <h2 className="cvant-section-title">Alur order yang simple</h2>
@@ -1121,7 +1395,7 @@ const LandingPageLayer = () => {
             </div>
           </section>
 
-          <section id="harga" className="cvant-section">
+          <section id="harga" className="cvant-section cvant-reveal">
             <div className="cvant-container">
               <div className="cvant-section-heading cvant-section-center">
                 <h2 className="cvant-section-title">Paket layanan fleksibel</h2>
@@ -1158,7 +1432,7 @@ const LandingPageLayer = () => {
             </div>
           </section>
 
-          <section className="cvant-section">
+          <section className="cvant-section cvant-reveal">
             <div className="cvant-container">
               <div className="cvant-section-heading cvant-section-center">
                 <h2 className="cvant-section-title">Apa kata customer</h2>
@@ -1186,7 +1460,7 @@ const LandingPageLayer = () => {
             </div>
           </section>
 
-          <section id="faq" className="cvant-section">
+          <section id="faq" className="cvant-section cvant-reveal">
             <div className="cvant-container">
               <div className="cvant-section-heading cvant-section-center">
                 <h2 className="cvant-section-title">FAQ singkat</h2>
@@ -1214,7 +1488,7 @@ const LandingPageLayer = () => {
             </div>
           </section>
 
-          <section className="cvant-cta">
+          <section className="cvant-cta cvant-reveal">
             <div className="cvant-container">
               <div className="cvant-cta-card">
                 <div>
@@ -1237,7 +1511,7 @@ const LandingPageLayer = () => {
           </section>
         </main>
 
-        <footer className="cvant-footer">
+        <footer className="cvant-footer cvant-reveal">
           <div className="cvant-container">
             <div className="d-flex flex-wrap justify-content-between gap-3">
               <div>
@@ -1248,6 +1522,9 @@ const LandingPageLayer = () => {
                 <p className="mb-0">Jl. Logistik Raya No. 12, Surabaya</p>
                 <p className="mb-0">cs@cvant.co.id | 031-000-2211</p>
               </div>
+            </div>
+            <div className="cvant-footer-note">
+              Copyright {currentYear} CV ANT. All rights reserved.
             </div>
           </div>
         </footer>

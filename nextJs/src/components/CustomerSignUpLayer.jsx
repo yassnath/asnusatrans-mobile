@@ -209,12 +209,10 @@ const CustomerSignUpLayer = () => {
         </div>
       )}
 
-      <AuthShell
-        title="Daftar Customer"
-        subtitle="Buat akun customer untuk akses order dan pembayaran."
-      >
-        <form onSubmit={handleSubmit}>
-          <div className="cvant-field mb-16">
+      <AuthShell title="Sign Up Customer">
+        <form onSubmit={handleSubmit} className="cvant-signup-form">
+          <div className="cvant-signup-grid">
+            <div className="cvant-field mb-16">
             <span className="cvant-icon-wrap">
               <Icon icon="solar:user-linear" fontSize={20} />
             </span>
@@ -228,7 +226,7 @@ const CustomerSignUpLayer = () => {
             />
           </div>
 
-          <div className="cvant-field mb-16">
+            <div className="cvant-field mb-16">
             <span className="cvant-icon-wrap">
               <Icon icon="solar:user-linear" fontSize={20} />
             </span>
@@ -242,7 +240,7 @@ const CustomerSignUpLayer = () => {
             />
           </div>
 
-          <div className="cvant-field mb-16">
+            <div className="cvant-field mb-16">
             <span className="cvant-icon-wrap">
               <Icon icon="solar:mailbox-linear" fontSize={20} />
             </span>
@@ -256,7 +254,7 @@ const CustomerSignUpLayer = () => {
             />
           </div>
 
-          <div className="cvant-field mb-16">
+            <div className="cvant-field mb-16">
             <span className="cvant-icon-wrap">
               <Icon icon="solar:phone-calling-linear" fontSize={20} />
             </span>
@@ -270,12 +268,14 @@ const CustomerSignUpLayer = () => {
             />
           </div>
 
-          <div className="cvant-field mb-16">
+            <div className="cvant-field mb-16">
             <span className="cvant-icon-wrap">
               <Icon icon="solar:user-linear" fontSize={20} />
             </span>
             <select
-              className="form-select bg-neutral-50 radius-12 cvant-input cvant-select"
+              className={`form-select bg-neutral-50 radius-12 cvant-input cvant-select ${
+                form.gender ? "cvant-select-filled" : "cvant-select-empty"
+              }`}
               value={form.gender}
               onChange={onChange("gender")}
               aria-label="Jenis kelamin"
@@ -290,7 +290,7 @@ const CustomerSignUpLayer = () => {
             </span>
           </div>
 
-          <div className="cvant-field mb-16">
+            <div className="cvant-field mb-16">
             <span className="cvant-icon-wrap">
               <Icon icon="solar:calendar-outline" fontSize={20} />
             </span>
@@ -303,7 +303,7 @@ const CustomerSignUpLayer = () => {
             />
           </div>
 
-          <div className="cvant-field mb-16">
+            <div className="cvant-field mb-16">
             <span className="cvant-icon-wrap">
               <Icon icon="solar:map-point-linear" fontSize={20} />
             </span>
@@ -317,7 +317,7 @@ const CustomerSignUpLayer = () => {
             />
           </div>
 
-          <div className="cvant-field mb-16">
+            <div className="cvant-field mb-16">
             <span className="cvant-icon-wrap">
               <Icon icon="solar:buildings-linear" fontSize={20} />
             </span>
@@ -331,7 +331,7 @@ const CustomerSignUpLayer = () => {
             />
           </div>
 
-          <div className="cvant-field mb-16">
+            <div className="cvant-field mb-16">
             <span className="cvant-icon-wrap">
               <Icon icon="solar:buildings-linear" fontSize={20} />
             </span>
@@ -345,7 +345,7 @@ const CustomerSignUpLayer = () => {
             />
           </div>
 
-          <div className="cvant-field mb-16">
+            <div className="cvant-field mb-16">
             <span className="cvant-icon-wrap">
               <Icon icon="solar:lock-password-outline" fontSize={20} />
             </span>
@@ -374,7 +374,7 @@ const CustomerSignUpLayer = () => {
             </button>
           </div>
 
-          <div className="cvant-field mb-18">
+            <div className="cvant-field mb-18">
             <span className="cvant-icon-wrap">
               <Icon icon="solar:lock-password-outline" fontSize={20} />
             </span>
@@ -387,6 +387,7 @@ const CustomerSignUpLayer = () => {
               autoComplete="new-password"
               style={{ paddingRight: "58px" }}
             />
+          </div>
           </div>
 
           <button
@@ -406,6 +407,89 @@ const CustomerSignUpLayer = () => {
             </p>
           </div>
         </form>
+
+        <style jsx global>{`
+          .cvant-signup-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px 14px;
+            margin-bottom: 12px;
+          }
+
+          .cvant-signup-grid .cvant-field {
+            margin-bottom: 0 !important;
+          }
+
+          .cvant-signup-form .cvant-input {
+            height: 50px !important;
+            padding-left: 48px !important;
+          }
+
+          .cvant-signup-form .cvant-icon-wrap,
+          .cvant-signup-form .cvant-eye-btn,
+          .cvant-signup-form .cvant-select-caret {
+            height: 50px !important;
+          }
+
+          .cvant-signup-form .cvant-input::placeholder {
+            color: rgba(148, 163, 184, 0.55);
+            opacity: 1;
+          }
+
+          .cvant-signup-form .cvant-select {
+            line-height: 50px;
+            padding-top: 0;
+            padding-bottom: 0;
+          }
+
+          .cvant-signup-form .cvant-select-empty {
+            color: rgba(148, 163, 184, 0.55) !important;
+          }
+
+          .cvant-signup-form input[type="date"] {
+            color: #e2e8f0;
+          }
+
+          .cvant-signup-form input[type="date"][value=""] {
+            color: rgba(148, 163, 184, 0.55);
+          }
+
+          .cvant-signup-form input[type="date"]::-webkit-datetime-edit {
+            color: inherit;
+          }
+
+          .cvant-signup-form
+            input[type="date"][value=""]::-webkit-datetime-edit {
+            color: rgba(148, 163, 184, 0.55);
+          }
+
+          .cvant-signup-form
+            input[type="date"]::-webkit-calendar-picker-indicator {
+            opacity: 0.7;
+          }
+
+          @media (max-width: 991.98px) {
+            .cvant-signup-grid {
+              grid-template-columns: 1fr;
+              gap: 10px;
+            }
+
+            .cvant-signup-form .cvant-input {
+              height: 46px !important;
+              padding-left: 44px !important;
+            }
+
+            .cvant-signup-form .cvant-icon-wrap,
+            .cvant-signup-form .cvant-eye-btn,
+            .cvant-signup-form .cvant-select-caret {
+              height: 46px !important;
+            }
+
+            .cvant-signup-form .cvant-select {
+              line-height: 46px;
+            }
+          }
+        `}</style>
       </AuthShell>
     </>
   );

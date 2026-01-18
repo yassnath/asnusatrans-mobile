@@ -3,14 +3,14 @@ import Breadcrumb from "@/components/Breadcrumb";
 import CustomerRegistrationsLayer from "@/components/CustomerRegistrationsLayer";
 
 export const metadata = {
-  title: "Pendaftaran Customer | CV ANT",
-  description: "Daftar pendaftaran customer.",
+  title: "Data Customer | CV ANT",
+  description: "Data customer.",
 };
 
 export default function CustomerRegistrationsPage() {
   return (
     <MasterLayout>
-      <Breadcrumb title="Pendaftaran Customer" subtitle="Customer" />
+      <Breadcrumb title="Data Customer" subtitle="Customer" />
       <CustomerRegistrationsLayer />
     </MasterLayout>
   );
