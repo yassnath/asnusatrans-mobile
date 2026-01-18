@@ -56,8 +56,20 @@ const OrderAcceptanceLayer = () => {
                   Kelola order masuk sebelum diteruskan ke operasional.
                 </p>
               </div>
-              <button className="btn btn-primary radius-8" onClick={loadOrders}>
-                <Icon icon="solar:refresh-linear" className="me-6" />
+              <button
+                className="btn btn-primary radius-8 d-inline-flex align-items-center"
+                onClick={loadOrders}
+              >
+                <Icon
+                  icon="solar:refresh-linear"
+                  className="me-6"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    lineHeight: 1,
+                    transform: "translateY(1px)",
+                  }}
+                />
                 Refresh
               </button>
             </div>

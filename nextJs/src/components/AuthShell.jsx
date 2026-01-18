@@ -83,6 +83,28 @@ const AuthShell = ({ title, subtitle, children }) => {
           z-index: 6 !important;
         }
 
+        .cvant-select {
+          appearance: none !important;
+          -webkit-appearance: none !important;
+          -moz-appearance: none !important;
+          background-image: none !important;
+          padding-right: 52px !important;
+        }
+
+        .cvant-select-caret {
+          position: absolute !important;
+          right: 14px !important;
+          top: 0 !important;
+          height: 56px !important;
+          width: 24px !important;
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          z-index: 6 !important;
+          color: #6b7280 !important;
+          pointer-events: none !important;
+        }
+
         .cvant-auth-bg {
           position: relative;
           overflow: hidden;
@@ -330,6 +352,10 @@ const AuthShell = ({ title, subtitle, children }) => {
           }
 
           .cvant-eye-btn {
+            height: 52px !important;
+          }
+
+          .cvant-select-caret {
             height: 52px !important;
           }
         }

@@ -305,6 +305,33 @@ const MasterLayout = ({ children }) => {
                 </Link>
               </li>
 
+              <li className="dropdown">
+                <Link href="#">
+                  <Icon icon="mdi:truck-outline" className="menu-icon" />
+                  <span>Fleet</span>
+                </Link>
+                <ul className="sidebar-submenu">
+                  <li>
+                    <Link
+                      href="/armada-list"
+                      className={pathname === "/armada-list" ? "active-page" : ""}
+                    >
+                      <i className="ri-circle-fill circle-icon text-primary-600 w-auto" />{" "}
+                      List
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      href="/armada-add"
+                      className={pathname === "/armada-add" ? "active-page" : ""}
+                    >
+                      <i className="ri-circle-fill circle-icon text-success-main w-auto" />{" "}
+                      Add New
+                    </Link>
+                  </li>
+                </ul>
+              </li>
+
               <li className="sidebar-menu-group-title">Orders</li>
 
               <li>
@@ -334,33 +361,6 @@ const MasterLayout = ({ children }) => {
                   <Icon icon="solar:user-linear" className="menu-icon" />
                   <span>Pendaftaran Customer</span>
                 </Link>
-              </li>
-
-              <li className="dropdown">
-                <Link href="#">
-                  <Icon icon="mdi:truck-outline" className="menu-icon" />
-                  <span>Fleet</span>
-                </Link>
-                <ul className="sidebar-submenu">
-                  <li>
-                    <Link
-                      href="/armada-list"
-                      className={pathname === "/armada-list" ? "active-page" : ""}
-                    >
-                      <i className="ri-circle-fill circle-icon text-primary-600 w-auto" />{" "}
-                      List
-                    </Link>
-                  </li>
-                  <li>
-                    <Link
-                      href="/armada-add"
-                      className={pathname === "/armada-add" ? "active-page" : ""}
-                    >
-                      <i className="ri-circle-fill circle-icon text-success-main w-auto" />{" "}
-                      Add New
-                    </Link>
-                  </li>
-                </ul>
               </li>
             </ul>
           </div>

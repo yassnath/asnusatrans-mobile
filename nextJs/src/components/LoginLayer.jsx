@@ -79,7 +79,7 @@ const LoginLayer = () => {
   };
 
   const loginAdmin = async (login, password) => {
-    const res = await api.post("/login", {
+    const res = await publicApi.post("/login", {
       username: login,
       password,
     });
@@ -90,6 +90,7 @@ const LoginLayer = () => {
       throw new Error("Login gagal. Periksa email/username dan password.");
     }
 
+    api.clearToken();
     clearCustomerSession();
 
     localStorage.setItem("token", token);
@@ -151,7 +152,7 @@ const LoginLayer = () => {
     setPopup((p) => ({ ...p, show: false }));
 
     const rawLogin = (form.login || "").trim();
-    const login = rawLogin.includes("@") ? rawLogin.toLowerCase() : rawLogin;
+    const login = rawLogin.toLowerCase();
     const password = (form.password || "").trim();
 
     if (!login && !password) {
@@ -288,8 +289,8 @@ const LoginLayer = () => {
 
       {/* PAGE */}
       <AuthShell
-        title="Login Admin / Owner / Customer"
-        subtitle="Masuk sebagai admin, owner, atau customer dengan email/username dan password Anda."
+        title="Sign In"
+        subtitle="Masukkan email atau username dan password Anda."
       >
         <form onSubmit={handleSubmit}>
           <div className="cvant-field mb-16">
@@ -355,6 +356,12 @@ const LoginLayer = () => {
                 className="text-primary-600 fw-semibold"
               >
                 Click here!
+              </Link>
+            </p>
+            <p className="mb-0 text-neutral-400 mt-1">
+              Belum punya akun?{" "}
+              <Link href="/customer/sign-up" className="text-primary-600 fw-semibold">
+                Daftar sekarang
               </Link>
             </p>
           </div>

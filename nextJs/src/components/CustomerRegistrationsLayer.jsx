@@ -31,7 +31,10 @@ const CustomerRegistrationsLayer = () => {
     if (!value) return "-";
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return value;
-    return date.toLocaleString("id-ID");
+    const datePart = date.toLocaleDateString("id-ID");
+    const hours = String(date.getHours()).padStart(2, "0");
+    const minutes = String(date.getMinutes()).padStart(2, "0");
+    return `${datePart}, ${hours}:${minutes}`;
   };
 
   return (
@@ -46,8 +49,20 @@ const CustomerRegistrationsLayer = () => {
                   Data biodata customer yang sudah mendaftar.
                 </p>
               </div>
-              <button className="btn btn-primary radius-8" onClick={loadCustomers}>
-                <Icon icon="solar:refresh-linear" className="me-6" />
+              <button
+                className="btn btn-primary radius-8 d-inline-flex align-items-center"
+                onClick={loadCustomers}
+              >
+                <Icon
+                  icon="solar:refresh-linear"
+                  className="me-6"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    lineHeight: 1,
+                    transform: "translateY(1px)",
+                  }}
+                />
                 Refresh
               </button>
             </div>
@@ -61,14 +76,13 @@ const CustomerRegistrationsLayer = () => {
               </div>
             ) : (
               <div className="table-responsive scroll-sm">
-                <table className="table bordered-table align-middle mb-0">
+                <table className="table bordered-table align-middle text-center mb-0">
                   <thead>
                     <tr>
                       <th>No</th>
                       <th>Nama</th>
                       <th>Email</th>
                       <th>HP</th>
-                      <th>Gender</th>
                       <th>Tgl Lahir</th>
                       <th>Alamat</th>
                       <th>Kota</th>
@@ -83,7 +97,6 @@ const CustomerRegistrationsLayer = () => {
                         <td>{customer.name || "-"}</td>
                         <td>{customer.email || "-"}</td>
                         <td>{customer.phone || "-"}</td>
-                        <td>{customer.gender || "-"}</td>
                         <td>{formatDate(customer.birth_date)}</td>
                         <td>{customer.address || "-"}</td>
                         <td>{customer.city || "-"}</td>

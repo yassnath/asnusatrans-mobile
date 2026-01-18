@@ -275,7 +275,7 @@ const CustomerSignUpLayer = () => {
               <Icon icon="solar:user-linear" fontSize={20} />
             </span>
             <select
-              className="form-select bg-neutral-50 radius-12 cvant-input"
+              className="form-select bg-neutral-50 radius-12 cvant-input cvant-select"
               value={form.gender}
               onChange={onChange("gender")}
               aria-label="Jenis kelamin"
@@ -285,6 +285,9 @@ const CustomerSignUpLayer = () => {
               <option value="Perempuan">Perempuan</option>
               <option value="Lainnya">Lainnya</option>
             </select>
+            <span className="cvant-select-caret" aria-hidden="true">
+              <Icon icon="solar:alt-arrow-down-linear" fontSize={18} />
+            </span>
           </div>
 
           <div className="cvant-field mb-16">
