@@ -374,7 +374,7 @@ const CustomerSignUpLayer = () => {
             </button>
           </div>
 
-            <div className="cvant-field mb-18">
+            <div className="cvant-field mb-12 cvant-span-2">
             <span className="cvant-icon-wrap">
               <Icon icon="solar:lock-password-outline" fontSize={20} />
             </span>
@@ -392,7 +392,7 @@ const CustomerSignUpLayer = () => {
 
           <button
             type="submit"
-            className="btn text-sm btn-sm px-12 py-16 w-100 radius-12 mt-5 cvant-login-btn"
+            className="btn text-sm btn-sm px-12 py-16 w-100 radius-12 mt-3 cvant-login-btn"
             disabled={loading}
           >
             {loading ? "Mendaftar..." : "Daftar"}
@@ -412,23 +412,30 @@ const CustomerSignUpLayer = () => {
           .cvant-signup-grid {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 10px 14px;
-            margin-bottom: 12px;
+            gap: 8px 12px;
+            margin-bottom: 10px;
           }
 
           .cvant-signup-grid .cvant-field {
             margin-bottom: 0 !important;
+            min-width: 0;
+          }
+
+          .cvant-signup-grid .cvant-span-2 {
+            grid-column: 1 / -1;
           }
 
           .cvant-signup-form .cvant-input {
-            height: 50px !important;
-            padding-left: 48px !important;
+            height: 46px !important;
+            padding-left: 44px !important;
+            font-size: 14px;
+            font-weight: 500;
           }
 
           .cvant-signup-form .cvant-icon-wrap,
           .cvant-signup-form .cvant-eye-btn,
           .cvant-signup-form .cvant-select-caret {
-            height: 50px !important;
+            height: 46px !important;
           }
 
           .cvant-signup-form .cvant-input::placeholder {
@@ -437,7 +444,7 @@ const CustomerSignUpLayer = () => {
           }
 
           .cvant-signup-form .cvant-select {
-            line-height: 50px;
+            line-height: 46px;
             padding-top: 0;
             padding-bottom: 0;
           }
@@ -475,18 +482,19 @@ const CustomerSignUpLayer = () => {
             }
 
             .cvant-signup-form .cvant-input {
-              height: 46px !important;
-              padding-left: 44px !important;
+              height: 42px !important;
+              padding-left: 40px !important;
+              font-size: 13px;
             }
 
             .cvant-signup-form .cvant-icon-wrap,
             .cvant-signup-form .cvant-eye-btn,
             .cvant-signup-form .cvant-select-caret {
-              height: 46px !important;
+              height: 42px !important;
             }
 
             .cvant-signup-form .cvant-select {
-              line-height: 46px;
+              line-height: 42px;
             }
           }
         `}</style>

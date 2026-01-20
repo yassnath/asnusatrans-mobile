@@ -5,7 +5,6 @@ import { Icon } from "@iconify/react/dist/iconify.js";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import ThemeToggleButton from "@/helper/ThemeToggleButton";
-import PublicChatbotWidget from "@/components/PublicChatbotWidget";
 import { customerApi } from "@/lib/customerApi";
 import {
   buildCustomerNotifications,
@@ -417,7 +416,6 @@ const CustomerLayout = ({ children }) => {
             </div>
           </footer>
 
-          <PublicChatbotWidget />
         </main>
       </section>
 

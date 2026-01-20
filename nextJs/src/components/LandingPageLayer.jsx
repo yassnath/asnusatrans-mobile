@@ -4,8 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Icon } from "@iconify/react/dist/iconify.js";
 import ThemeToggleButton from "@/helper/ThemeToggleButton";
-import PublicChatbotWidget from "@/components/PublicChatbotWidget";
 import { publicApi } from "@/lib/publicApi";
+import PublicChatbotWidget from "@/components/PublicChatbotWidget";
 
 const LandingPageLayer = () => {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -13,10 +13,10 @@ const LandingPageLayer = () => {
   const [armadaReady, setArmadaReady] = useState(false);
 
   const navLinks = [
+    { label: "Tentang", href: "/#tentang" },
     { label: "Keunggulan", href: "/#keunggulan" },
     { label: "Armada", href: "/#armada" },
     { label: "Alur", href: "/#alur" },
-    { label: "Harga", href: "/#harga" },
     { label: "FAQ", href: "/#faq" },
   ];
 
@@ -97,7 +97,77 @@ const LandingPageLayer = () => {
   const fleetSpeed = Math.max(fleetItems.length * 9, 55);
 
   const armadaCountLabel = armadaReady ? `${armadas.length} Armada` : "Memuat armada";
-  const currentYear = new Date().getFullYear();
+  const testimonials = useMemo(
+    () => [
+      {
+        quote:
+          "ETA jelas dan update statusnya konsisten. Tim gudang kami lebih tenang.",
+        name: "Rina W. - FMCG Distributor",
+      },
+      {
+        quote:
+          "Koordinasi cepat dan dokumen pengiriman rapi. Cocok untuk project besar.",
+        name: "Arif H. - Project Logistics",
+      },
+      {
+        quote:
+          "Armada selalu siap, schedule pickup fleksibel, dan CS responsif.",
+        name: "Dimas S. - Retail Chain",
+      },
+      {
+        quote:
+          "Pelaporan rute membantu tim kami memantau delivery tanpa bolak-balik tanya.",
+        name: "Nadia K. - Distribution Lead",
+      },
+      {
+        quote:
+          "Status pembayaran jelas, proses order tidak ribet, dan transparan.",
+        name: "Bagus R. - Procurement",
+      },
+      {
+        quote:
+          "Driver profesional dan SOP loading rapi, barang sampai aman.",
+        name: "Yuli P. - Food Supplier",
+      },
+      {
+        quote:
+          "Komunikasi cepat saat ada perubahan jadwal. Sangat membantu.",
+        name: "Hendra T. - Manufacturing",
+      },
+      {
+        quote:
+          "Sistemnya mudah dipakai, update order langsung masuk dashboard.",
+        name: "Vina A. - Operations",
+      },
+      {
+        quote:
+          "Customer service sigap, dokumen POD lengkap, dan proses jelas.",
+        name: "Fajar M. - Project Coordinator",
+      },
+      {
+        quote:
+          "Kapasitas armada sesuai kebutuhan dan konsisten on-time.",
+        name: "Sari L. - Distribution Manager",
+      },
+    ],
+    []
+  );
+  const testimonialSlides = useMemo(() => {
+    const slides = [];
+    for (let i = 0; i < testimonials.length; i += 2) {
+      slides.push(testimonials.slice(i, i + 2));
+    }
+    return slides;
+  }, [testimonials]);
+  const [testimonialIndex, setTestimonialIndex] = useState(0);
+
+  useEffect(() => {
+    if (testimonialSlides.length <= 1) return undefined;
+    const timer = window.setInterval(() => {
+      setTestimonialIndex((prev) => (prev + 1) % testimonialSlides.length);
+    }, 6000);
+    return () => window.clearInterval(timer);
+  }, [testimonialSlides.length]);
 
   return (
     <>
@@ -308,13 +378,13 @@ const LandingPageLayer = () => {
         .cvant-nav-links {
           display: flex;
           align-items: center;
-          gap: 28px;
+          gap: 22px;
         }
 
         .cvant-nav-items {
           display: flex;
           align-items: center;
-          gap: 24px;
+          gap: 20px;
         }
 
         .cvant-nav-items a {
@@ -358,6 +428,20 @@ const LandingPageLayer = () => {
           display: flex;
           align-items: center;
           gap: 12px;
+        }
+
+        .cvant-nav-tools {
+          display: none;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .cvant-theme-mobile {
+          display: none;
+        }
+
+        .cvant-theme-desktop {
+          display: inline-flex;
         }
 
         .cvant-btn {
@@ -426,14 +510,19 @@ const LandingPageLayer = () => {
         }
 
         .cvant-hero {
-          padding: 90px 0 70px;
+          padding: 48px 0 70px;
         }
 
         .cvant-hero-grid {
           display: grid;
           grid-template-columns: repeat(2, minmax(0, 1fr));
-          gap: 56px;
+          gap: 44px;
           align-items: center;
+          grid-template-areas: "content visual";
+        }
+
+        .cvant-hero-content {
+          grid-area: content;
         }
 
         .cvant-eyebrow {
@@ -502,6 +591,7 @@ const LandingPageLayer = () => {
           align-items: center;
           justify-content: center;
           align-self: flex-start;
+          grid-area: visual;
         }
 
         .cvant-glass-card {
@@ -738,6 +828,31 @@ const LandingPageLayer = () => {
           margin-top: 10px;
           font-size: 14px;
           color: var(--cvant-muted);
+        }
+
+        .cvant-about-grid {
+          display: grid;
+          grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+          gap: 24px;
+          align-items: stretch;
+        }
+
+        .cvant-about-main {
+          padding: 30px;
+        }
+
+        .cvant-about-main p {
+          font-size: 16px;
+          line-height: 1.75;
+        }
+
+        .cvant-about-main p + p {
+          margin-top: 16px;
+        }
+
+        .cvant-about-stack {
+          display: grid;
+          gap: 24px;
         }
 
         .cvant-grid {
@@ -1000,11 +1115,22 @@ const LandingPageLayer = () => {
           margin-bottom: 16px;
         }
 
-        .cvant-testimonial-grid {
+        .cvant-testimonial-slider {
+          overflow: hidden;
+          margin-top: 28px;
+        }
+
+        .cvant-testimonial-track {
+          display: flex;
+          transition: transform 0.6s ease;
+          will-change: transform;
+        }
+
+        .cvant-testimonial-slide {
+          flex: 0 0 100%;
           display: grid;
           grid-template-columns: repeat(2, minmax(0, 1fr));
           gap: 24px;
-          margin-top: 28px;
         }
 
         .cvant-testimonial {
@@ -1050,7 +1176,7 @@ const LandingPageLayer = () => {
         }
 
         .cvant-footer-note {
-          margin-top: 14px;
+          margin-top: 0;
           font-size: 12px;
           text-align: center;
           color: var(--cvant-muted);
@@ -1118,14 +1244,31 @@ const LandingPageLayer = () => {
 
           .cvant-nav-items {
             flex-direction: column;
-            align-items: flex-start;
+            align-items: center;
             gap: 16px;
+          }
+
+          .cvant-nav-items a {
+            width: 100%;
+            text-align: center;
           }
 
           .cvant-nav-actions {
             flex-direction: column;
             align-items: stretch;
             width: 100%;
+          }
+
+          .cvant-nav-tools {
+            display: flex;
+          }
+
+          .cvant-theme-mobile {
+            display: inline-flex;
+          }
+
+          .cvant-theme-desktop {
+            display: none;
           }
 
           .cvant-nav-toggle {
@@ -1137,12 +1280,66 @@ const LandingPageLayer = () => {
             grid-template-columns: 1fr;
           }
 
+          .cvant-hero {
+            padding: 24px 0 56px;
+            text-align: center;
+          }
+
+          .cvant-hero-grid {
+            grid-template-areas: "visual" "content";
+            gap: 24px;
+          }
+
+          .cvant-hero-content {
+            text-align: center;
+          }
+
+          .cvant-hero-panel {
+            margin: 0;
+          }
+
+          .cvant-eyebrow {
+            margin-left: auto;
+            margin-right: auto;
+          }
+
+          .cvant-hero-desc {
+            margin-left: auto;
+            margin-right: auto;
+          }
+
+          .cvant-hero-cta {
+            justify-content: center;
+          }
+
           .cvant-hero-icon-wrap {
             width: clamp(240px, 70vw, 380px);
           }
 
           .cvant-hero-badges {
             grid-template-columns: 1fr;
+            justify-items: center;
+          }
+
+          .cvant-section,
+          .cvant-cta,
+          .cvant-footer {
+            text-align: center;
+          }
+
+          .cvant-about-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .cvant-about-main {
+            padding: 26px;
+          }
+
+          .cvant-about-main p {
+            font-size: 14px;
+            line-height: 1.65;
+            text-align: justify;
+            text-align-last: left;
           }
 
           .cvant-grid,
@@ -1155,7 +1352,7 @@ const LandingPageLayer = () => {
             min-width: 200px;
           }
 
-          .cvant-testimonial-grid {
+          .cvant-testimonial-slide {
             grid-template-columns: 1fr;
           }
         }
@@ -1182,6 +1379,10 @@ const LandingPageLayer = () => {
             animation: none;
           }
 
+          .cvant-testimonial-track {
+            transition: none;
+          }
+
           .cvant-fleet-track.is-looping {
             animation: none;
           }
@@ -1204,7 +1405,9 @@ const LandingPageLayer = () => {
                 ))}
               </div>
               <div className="cvant-nav-actions">
-                <ThemeToggleButton />
+                <span className="cvant-theme-desktop">
+                  <ThemeToggleButton />
+                </span>
                 <Link href="/sign-in" className="cvant-btn cvant-btn-ghost">
                   Masuk
                 </Link>
@@ -1214,21 +1417,26 @@ const LandingPageLayer = () => {
               </div>
             </nav>
 
-            <button
-              type="button"
-              className="cvant-nav-toggle"
-              onClick={() => setMenuOpen((v) => !v)}
-              aria-label="Toggle navigation"
-            >
-              <Icon icon="heroicons:bars-3-solid" />
-            </button>
+            <div className="cvant-nav-tools">
+              <span className="cvant-theme-mobile">
+                <ThemeToggleButton />
+              </span>
+              <button
+                type="button"
+                className="cvant-nav-toggle"
+                onClick={() => setMenuOpen((v) => !v)}
+                aria-label="Toggle navigation"
+              >
+                <Icon icon="heroicons:bars-3-solid" />
+              </button>
+            </div>
           </div>
         </header>
 
         <main>
           <section className="cvant-hero cvant-reveal">
             <div className="cvant-container cvant-hero-grid">
-              <div className="cvant-animate-up">
+              <div className="cvant-animate-up cvant-hero-content">
                 <span className="cvant-eyebrow">
                   <Icon icon="solar:shield-check-linear" />
                   Logistik terpercaya untuk bisnis Anda
@@ -1279,6 +1487,60 @@ const LandingPageLayer = () => {
                     alt=""
                     className="cvant-hero-icon"
                   />
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section id="tentang" className="cvant-section cvant-reveal">
+            <div className="cvant-container">
+              <div className="cvant-section-heading cvant-section-center">
+                <h2 className="cvant-section-title">Tentang CV ANT</h2>
+                <p className="cvant-section-desc">
+                  CV AS Nusa Trans (CV ANT) siap menjadi mitra logistik
+                  terpercaya untuk kebutuhan bisnis Anda.
+                </p>
+              </div>
+              <div className="cvant-about-grid">
+                <div className="cvant-price-card cvant-about-main">
+                  <h4>Profil Singkat</h4>
+                  <p>
+                    CV AS Nusa Trans (CV ANT) merupakan perusahaan yang bergerak
+                    di bidang jasa angkutan darat dan telah berpengalaman
+                    melayani kebutuhan transportasi selama lebih dari sepuluh
+                    tahun. Sejak resmi berbadan hukum sebagai Commanditaire
+                    Vennootschap (CV), CV ANT berkomitmen memberikan layanan
+                    pengiriman yang aman, tepat waktu, dan dapat diandalkan bagi
+                    berbagai mitra bisnis. Didukung oleh armada yang terkelola
+                    dengan baik serta tim operasional yang berpengalaman, kami
+                    terus berfokus pada efisiensi proses kerja dan peningkatan
+                    kualitas layanan. Seiring perkembangan kebutuhan bisnis dan
+                    teknologi, CV ANT menerapkan sistem operasional berbasis
+                    website untuk mengelola data armada, transaksi, pelanggan,
+                    serta jadwal pengiriman secara terintegrasi dalam satu
+                    platform, sehingga memungkinkan pemantauan operasional
+                    secara real-time, meminimalkan kesalahan pencatatan, dan
+                    mempercepat pengambilan keputusan. Dengan mengedepankan
+                    profesionalisme, transparansi, dan inovasi berkelanjutan, CV
+                    ANT siap menjadi mitra transportasi darat yang terpercaya
+                    dan terus berkembang mengikuti kebutuhan industri.
+                  </p>
+                </div>
+                <div className="cvant-about-stack">
+                  <div className="cvant-price-card">
+                    <h4>Fokus Layanan</h4>
+                    <p>
+                      Ketepatan jadwal, keamanan barang, dan komunikasi responsif
+                      untuk menjaga kelancaran operasional klien.
+                    </p>
+                  </div>
+                  <div className="cvant-price-card">
+                    <h4>Nilai Kami</h4>
+                    <p>
+                      Kolaborasi jangka panjang, kualitas armada, dan laporan yang
+                      jelas untuk setiap perjalanan.
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1395,43 +1657,6 @@ const LandingPageLayer = () => {
             </div>
           </section>
 
-          <section id="harga" className="cvant-section cvant-reveal">
-            <div className="cvant-container">
-              <div className="cvant-section-heading cvant-section-center">
-                <h2 className="cvant-section-title">Paket layanan fleksibel</h2>
-                <p className="cvant-section-desc">
-                  Tentukan skema layanan yang sesuai dengan ritme bisnis Anda.
-                </p>
-              </div>
-              <div className="cvant-price-grid">
-                <div className="cvant-price-card">
-                  <h4>Harian</h4>
-                  <p>Distribusi rutin untuk rute kota ke kota</p>
-                  <div className="cvant-price">Mulai Rp 320k</div>
-                  <Link href="/order" className="cvant-btn cvant-btn-ghost">
-                    Pilih Harian
-                  </Link>
-                </div>
-                <div className="cvant-price-card">
-                  <h4>Priority</h4>
-                  <p>Slot pickup prioritas dan monitoring intensif</p>
-                  <div className="cvant-price">Mulai Rp 480k</div>
-                  <Link href="/order" className="cvant-btn cvant-btn-primary">
-                    Pilih Priority
-                  </Link>
-                </div>
-                <div className="cvant-price-card">
-                  <h4>Project Charter</h4>
-                  <p>Armada dedicated untuk kontrak dan proyek besar</p>
-                  <div className="cvant-price">Custom</div>
-                  <Link href="/order" className="cvant-btn cvant-btn-ghost">
-                    Konsultasi Project
-                  </Link>
-                </div>
-              </div>
-            </div>
-          </section>
-
           <section className="cvant-section cvant-reveal">
             <div className="cvant-container">
               <div className="cvant-section-heading cvant-section-center">
@@ -1441,20 +1666,23 @@ const LandingPageLayer = () => {
                   dan support dari tim CV ANT.
                 </p>
               </div>
-              <div className="cvant-testimonial-grid">
-                <div className="cvant-testimonial">
-                  <p className="cvant-section-desc">
-                    "ETA jelas, driver on-time, dan laporan lengkap. Tim gudang
-                    kami jadi lebih tenang."
-                  </p>
-                  <strong>Rina W. - FMCG Distributor</strong>
-                </div>
-                <div className="cvant-testimonial">
-                  <p className="cvant-section-desc">
-                    "Kami pakai charter untuk project besar, koordinasinya rapi
-                    dan cepat."
-                  </p>
-                  <strong>Arif H. - Project Logistics</strong>
+              <div className="cvant-testimonial-slider">
+                <div
+                  className="cvant-testimonial-track"
+                  style={{
+                    transform: `translateX(-${testimonialIndex * 100}%)`,
+                  }}
+                >
+                  {testimonialSlides.map((slide, index) => (
+                    <div className="cvant-testimonial-slide" key={`slide-${index}`}>
+                      {slide.map((item) => (
+                        <div className="cvant-testimonial" key={item.name}>
+                          <p className="cvant-section-desc">"{item.quote}"</p>
+                          <strong>{item.name}</strong>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
@@ -1511,20 +1739,10 @@ const LandingPageLayer = () => {
           </section>
         </main>
 
-        <footer className="cvant-footer cvant-reveal">
+        <footer className="cvant-footer">
           <div className="cvant-container">
-            <div className="d-flex flex-wrap justify-content-between gap-3">
-              <div>
-                <strong>CV ANT</strong>
-                <p className="mb-0">Logistik aman dan terukur.</p>
-              </div>
-              <div>
-                <p className="mb-0">Jl. Logistik Raya No. 12, Surabaya</p>
-                <p className="mb-0">cs@cvant.co.id | 031-000-2211</p>
-              </div>
-            </div>
             <div className="cvant-footer-note">
-              Copyright {currentYear} CV ANT. All rights reserved.
+              c 2025 CV ANT. All Rights Reserved.
             </div>
           </div>
         </footer>

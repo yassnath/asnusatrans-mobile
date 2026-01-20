@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import PublicChatbotWidget from "@/components/PublicChatbotWidget";
 
 const CustomerAuthShell = ({ title, subtitle, children, footer, wide = false }) => {
   return (
@@ -548,7 +547,6 @@ const CustomerAuthShell = ({ title, subtitle, children, footer, wide = false }) 
             {footer ? <div className="cvant-auth-footer">{footer}</div> : null}
           </div>
         </div>
-        <PublicChatbotWidget />
       </section>
     </>
   );

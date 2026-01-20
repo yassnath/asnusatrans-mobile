@@ -15,6 +15,64 @@ const restrictedKeywords = [
   "pemasukan",
 ];
 
+const aboutKeywords = [
+  "tentang",
+  "about",
+  "profil",
+  "perusahaan",
+  "website",
+  "web",
+  "situs",
+  "site",
+  "ini website apa",
+  "website apa",
+  "situs apa",
+  "web apa",
+  "cv ant",
+  "cvant",
+  "as nusa trans",
+  "nama perusahaan",
+  "alamat",
+  "kontak",
+  "contact",
+  "lokasi",
+  "telepon",
+  "telp",
+  "email",
+];
+
+const signupKeywords = [
+  "daftar",
+  "registrasi",
+  "register",
+  "sign up",
+  "signup",
+  "buat akun",
+  "mendaftar",
+  "pendaftaran",
+  "akun customer",
+];
+
+const orderKeywords = [
+  "cara order",
+  "buat order",
+  "order sekarang",
+  "pemesanan",
+  "pesan order",
+  "cara pesan",
+];
+
+const infoKeywords = [
+  "info",
+  "informasi",
+  "layanan",
+  "keunggulan",
+  "alur",
+  "faq",
+  "harga",
+  "service",
+];
+
 const armadaKeywords = ["armada", "truk", "truck", "cdd", "fuso", "trailer", "box"];
 const armadaCountKeywords = [
   "total armada",
@@ -64,6 +122,29 @@ const formatTonnage = (value) => {
   return `${raw} ton`;
 };
 
+const companyProfile = {
+  name: "CV AS Nusa Trans (CV ANT)",
+};
+
+const buildAboutResponse = () =>
+  `Website ini adalah website resmi ${companyProfile.name}.\n\nKami fokus pada pengiriman logistik yang aman, terukur, dan transparan untuk kebutuhan bisnis.`;
+
+const buildSignupResponse = () =>
+  "Langkah daftar akun customer:\n1) Buka landing page lalu klik Daftar Customer.\n2) Isi biodata (nama, username, email, HP, gender, tanggal lahir, alamat, kota, perusahaan, password).\n3) Klik Daftar.\n4) Login lewat menu Sign In.";
+
+const buildOrderResponse = () =>
+  "Cara order:\n1) Login terlebih dahulu.\n2) Klik Buat Order atau Order Sekarang.\n3) Isi rute, jadwal pickup, armada, dan layanan.\n4) Konfirmasi detail lalu bayar via gateway.\n5) Pantau status di dashboard customer.";
+
+const buildLandingSummary = (armadas) => {
+  const total = Array.isArray(armadas) ? armadas.length : 0;
+  const armadaInfo =
+    total > 0
+      ? `Armada terdaftar saat ini: ${total} unit.`
+      : "Armada tersedia beragam (box, fuso, trailer, dll).";
+
+  return `Info umum CV ANT:\n- ${companyProfile.name}\n- Keunggulan: tracking akurat, keamanan barang, support cepat.\n- ${armadaInfo}\n- Alur order: daftar/masuk, isi detail pengiriman, pembayaran gateway.\n\nTanya saya untuk detail cara daftar atau cara order.`;
+};
+
 const buildArmadaResponse = (armadas) => {
   const list = Array.isArray(armadas) ? armadas : [];
   if (list.length === 0) {
@@ -93,7 +174,19 @@ const getReply = (text, armadas) => {
   const lower = String(text || "").toLowerCase();
 
   if (restrictedKeywords.some((keyword) => lower.includes(keyword))) {
-    return "Maaf, chatbot ini hanya melayani info armada dan tanggal pengiriman.";
+    return "Maaf, chatbot ini hanya melayani informasi umum dan pemesanan.";
+  }
+
+  if (signupKeywords.some((keyword) => lower.includes(keyword))) {
+    return buildSignupResponse();
+  }
+
+  if (orderKeywords.some((keyword) => lower.includes(keyword))) {
+    return buildOrderResponse();
+  }
+
+  if (aboutKeywords.some((keyword) => lower.includes(keyword))) {
+    return buildAboutResponse();
   }
 
   if (armadaCountKeywords.some((keyword) => lower.includes(keyword))) {
@@ -116,12 +209,16 @@ const getReply = (text, armadas) => {
     return buildDateResponse(dateInfo);
   }
 
-  return "Saya hanya bisa bantu info armada dan tanggal pengiriman. Tanyakan armada atau tanggal ya.";
+  if (infoKeywords.some((keyword) => lower.includes(keyword))) {
+    return buildLandingSummary(armadas);
+  }
+
+  return "Saya siap bantu info umum CV ANT, cara daftar akun, cara order, armada, dan jadwal pengiriman. Silakan tanyakan ya.";
 };
 
 const PublicChatbotWidget = () => {
   const defaultMessage =
-    "Halo! Saya asisten CV ANT. Saya hanya melayani info armada dan tanggal pengiriman.";
+    "Halo! Saya asisten CV ANT. Saya bisa bantu info umum, cara daftar akun, cara order, armada, dan jadwal pengiriman.";
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState([
     {
@@ -210,7 +307,7 @@ const PublicChatbotWidget = () => {
           <div className="cvant-chatbot__header">
             <div>
               <div className="cvant-chatbot__title">Asisten CV ANT</div>
-              <div className="cvant-chatbot__subtitle">Info armada & tanggal</div>
+              <div className="cvant-chatbot__subtitle">Info umum & pemesanan</div>
             </div>
             <button type="button" className="cvant-chatbot__clear" onClick={resetChat}>
               Reset Chat
@@ -233,7 +330,7 @@ const PublicChatbotWidget = () => {
               value={input}
               onChange={(event) => setInput(event.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Tanya armada atau tanggal..."
+              placeholder="Tanya tentang CV ANT, daftar akun, cara order..."
               aria-label="Tulis pesan"
             />
             <button type="submit" disabled={!input.trim()}>
