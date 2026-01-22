@@ -9,7 +9,7 @@ const RecentOrdersOne = () => {
           <div className='d-flex align-items-center flex-wrap gap-2 justify-content-between mb-20'>
             <h6 className='mb-2 fw-bold text-lg mb-0'>Recent Orders</h6>
             <Link
-              href='#'
+              href='#' onClick={(event) => event.preventDefault()}
               className='text-primary-600 hover-text-primary d-flex align-items-center gap-1'
             >
               View All
@@ -36,7 +36,7 @@ const RecentOrdersOne = () => {
                     <div className='d-flex align-items-center'>
                       <img
                         src='assets/images/users/user1.png'
-                        alt=''
+                        alt='Dianne Russell'
                         className='flex-shrink-0 me-12 radius-8'
                       />
                       <span className='text-lg text-secondary-light fw-semibold flex-grow-1'>
@@ -60,7 +60,7 @@ const RecentOrdersOne = () => {
                     <div className='d-flex align-items-center'>
                       <img
                         src='assets/images/users/user2.png'
-                        alt=''
+                        alt='Wade Warren'
                         className='flex-shrink-0 me-12 radius-8'
                       />
                       <span className='text-lg text-secondary-light fw-semibold flex-grow-1'>
@@ -84,7 +84,7 @@ const RecentOrdersOne = () => {
                     <div className='d-flex align-items-center'>
                       <img
                         src='assets/images/users/user3.png'
-                        alt=''
+                        alt='Albert Flores'
                         className='flex-shrink-0 me-12 radius-8'
                       />
                       <span className='text-lg text-secondary-light fw-semibold flex-grow-1'>
@@ -108,7 +108,7 @@ const RecentOrdersOne = () => {
                     <div className='d-flex align-items-center'>
                       <img
                         src='assets/images/users/user4.png'
-                        alt=''
+                        alt='Bessie Cooper'
                         className='flex-shrink-0 me-12 radius-8'
                       />
                       <span className='text-lg text-secondary-light fw-semibold flex-grow-1'>
@@ -132,7 +132,7 @@ const RecentOrdersOne = () => {
                     <div className='d-flex align-items-center'>
                       <img
                         src='assets/images/users/user5.png'
-                        alt=''
+                        alt='Arlene McCoy'
                         className='flex-shrink-0 me-12 radius-8'
                       />
                       <span className='text-lg text-secondary-light fw-semibold flex-grow-1'>

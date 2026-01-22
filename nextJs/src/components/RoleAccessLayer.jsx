@@ -560,7 +560,7 @@ const RoleAccessLayer = () => {
               <li className='page-item'>
                 <Link
                   className='page-link bg-neutral-200 text-secondary-light fw-semibold radius-8 border-0 d-flex align-items-center justify-content-center h-32-px w-32-px text-md'
-                  href='#'
+                  href='#' onClick={(event) => event.preventDefault()}
                 >
                   <Icon icon='ep:d-arrow-left' className='' />
                 </Link>
@@ -568,7 +568,7 @@ const RoleAccessLayer = () => {
               <li className='page-item'>
                 <Link
                   className='page-link text-secondary-light fw-semibold radius-8 border-0 d-flex align-items-center justify-content-center h-32-px w-32-px text-md bg-primary-600 text-white'
-                  href='#'
+                  href='#' onClick={(event) => event.preventDefault()}
                 >
                   1
                 </Link>
@@ -576,7 +576,7 @@ const RoleAccessLayer = () => {
               <li className='page-item'>
                 <Link
                   className='page-link bg-neutral-200 text-secondary-light fw-semibold radius-8 border-0 d-flex align-items-center justify-content-center h-32-px w-32-px'
-                  href='#'
+                  href='#' onClick={(event) => event.preventDefault()}
                 >
                   2
                 </Link>
@@ -584,7 +584,7 @@ const RoleAccessLayer = () => {
               <li className='page-item'>
                 <Link
                   className='page-link bg-neutral-200 text-secondary-light fw-semibold radius-8 border-0 d-flex align-items-center justify-content-center h-32-px w-32-px text-md'
-                  href='#'
+                  href='#' onClick={(event) => event.preventDefault()}
                 >
                   3
                 </Link>
@@ -592,7 +592,7 @@ const RoleAccessLayer = () => {
               <li className='page-item'>
                 <Link
                   className='page-link bg-neutral-200 text-secondary-light fw-semibold radius-8 border-0 d-flex align-items-center justify-content-center h-32-px w-32-px text-md'
-                  href='#'
+                  href='#' onClick={(event) => event.preventDefault()}
                 >
                   4
                 </Link>
@@ -600,7 +600,7 @@ const RoleAccessLayer = () => {
               <li className='page-item'>
                 <Link
                   className='page-link bg-neutral-200 text-secondary-light fw-semibold radius-8 border-0 d-flex align-items-center justify-content-center h-32-px w-32-px text-md'
-                  href='#'
+                  href='#' onClick={(event) => event.preventDefault()}
                 >
                   5
                 </Link>
@@ -608,7 +608,7 @@ const RoleAccessLayer = () => {
               <li className='page-item'>
                 <Link
                   className='page-link bg-neutral-200 text-secondary-light fw-semibold radius-8 border-0 d-flex align-items-center justify-content-center h-32-px w-32-px text-md'
-                  href='#'
+                  href='#' onClick={(event) => event.preventDefault()}
                 >
                   {" "}
                   <Icon icon='ep:d-arrow-right' className='' />{" "}
@@ -629,9 +629,9 @@ const RoleAccessLayer = () => {
         <div className='modal-dialog modal-lg modal-dialog modal-dialog-centered'>
           <div className='modal-content radius-16 bg-base'>
             <div className='modal-header py-16 px-24 border border-top-0 border-start-0 border-end-0'>
-              <h1 className='modal-title fs-5' id='exampleModalLabel'>
+              <h2 className='modal-title fs-5' id='exampleModalLabel'>
                 Add New Role
-              </h1>
+              </h2>
               <button
                 type='button'
                 className='btn-close'

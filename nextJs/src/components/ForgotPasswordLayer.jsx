@@ -7,7 +7,10 @@ const ForgotPasswordLayer = () => {
       <section className='auth forgot-password-page bg-base d-flex flex-wrap'>
         <div className='auth-left d-lg-block d-none'>
           <div className='d-flex align-items-center flex-column h-100 justify-content-center'>
-            <img src='assets/images/auth/forgot-pass-img.png' alt='' />
+            <img
+              src='assets/images/auth/forgot-pass-img.png'
+              alt='Forgot password illustration'
+            />
           </div>
         </div>
         <div className='auth-right py-32 px-24 d-flex flex-column justify-content-center'>
@@ -72,7 +75,10 @@ const ForgotPasswordLayer = () => {
           <div className='modal-content radius-16 bg-base'>
             <div className='modal-body p-40 text-center'>
               <div className='mb-32'>
-                <img src='assets/images/auth/envelop-icon.png' alt='' />
+                <img
+                  src='assets/images/auth/envelop-icon.png'
+                  alt='Envelope icon'
+                />
               </div>
               <h6 className='mb-12'>Verify your Email</h6>
               <p className='text-secondary-light text-sm mb-0'>

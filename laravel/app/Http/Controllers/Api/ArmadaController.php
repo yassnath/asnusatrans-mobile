@@ -41,9 +41,10 @@ class ArmadaController extends Controller
     public function publicIndex()
     {
         return Armada::orderBy('nama_truk')
-            ->get(['nama_truk', 'kapasitas'])
+            ->get(['id', 'nama_truk', 'kapasitas'])
             ->map(function ($armada) {
                 return [
+                    'id' => $armada->id,
                     'nama_truk' => $armada->nama_truk,
                     'kapasitas' => $armada->kapasitas,
                 ];

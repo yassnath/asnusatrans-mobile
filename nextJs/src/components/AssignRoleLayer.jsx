@@ -90,7 +90,7 @@ const AssignRoleLayer = () => {
                   <div className='d-flex align-items-center'>
                     <img
                       src='assets/images/user-list/user-list1.png'
-                      alt=''
+                      alt='User avatar'
                       className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
                     />
                     <div className='flex-grow-1'>
@@ -115,7 +115,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Waiter
                         </Link>
@@ -123,7 +123,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Manager
                         </Link>
@@ -131,7 +131,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Project Manager
                         </Link>
@@ -139,7 +139,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Game Developer
                         </Link>
@@ -147,7 +147,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Head
                         </Link>
@@ -155,7 +155,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Management
                         </Link>
@@ -181,7 +181,7 @@ const AssignRoleLayer = () => {
                   <div className='d-flex align-items-center'>
                     <img
                       src='assets/images/user-list/user-list2.png'
-                      alt=''
+                      alt='User avatar'
                       className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
                     />
                     <div className='flex-grow-1'>
@@ -206,7 +206,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Waiter
                         </Link>
@@ -214,7 +214,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Manager
                         </Link>
@@ -222,7 +222,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Project Manager
                         </Link>
@@ -230,7 +230,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Game Developer
                         </Link>
@@ -238,7 +238,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Head
                         </Link>
@@ -246,7 +246,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Management
                         </Link>
@@ -272,7 +272,7 @@ const AssignRoleLayer = () => {
                   <div className='d-flex align-items-center'>
                     <img
                       src='assets/images/user-list/user-list3.png'
-                      alt=''
+                      alt='User avatar'
                       className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
                     />
                     <div className='flex-grow-1'>
@@ -297,7 +297,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Waiter
                         </Link>
@@ -305,7 +305,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Manager
                         </Link>
@@ -313,7 +313,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Project Manager
                         </Link>
@@ -321,7 +321,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Game Developer
                         </Link>
@@ -329,7 +329,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Head
                         </Link>
@@ -337,7 +337,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Management
                         </Link>
@@ -363,7 +363,7 @@ const AssignRoleLayer = () => {
                   <div className='d-flex align-items-center'>
                     <img
                       src='assets/images/user-list/user-list4.png'
-                      alt=''
+                      alt='User avatar'
                       className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
                     />
                     <div className='flex-grow-1'>
@@ -388,7 +388,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Waiter
                         </Link>
@@ -396,7 +396,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Manager
                         </Link>
@@ -404,7 +404,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Project Manager
                         </Link>
@@ -412,7 +412,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Game Developer
                         </Link>
@@ -420,7 +420,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Head
                         </Link>
@@ -428,7 +428,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Management
                         </Link>
@@ -454,7 +454,7 @@ const AssignRoleLayer = () => {
                   <div className='d-flex align-items-center'>
                     <img
                       src='assets/images/user-list/user-list5.png'
-                      alt=''
+                      alt='User avatar'
                       className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
                     />
                     <div className='flex-grow-1'>
@@ -479,7 +479,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Waiter
                         </Link>
@@ -487,7 +487,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Manager
                         </Link>
@@ -495,7 +495,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Project Manager
                         </Link>
@@ -503,7 +503,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Game Developer
                         </Link>
@@ -511,7 +511,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Head
                         </Link>
@@ -519,7 +519,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Management
                         </Link>
@@ -545,7 +545,7 @@ const AssignRoleLayer = () => {
                   <div className='d-flex align-items-center'>
                     <img
                       src='assets/images/user-list/user-list6.png'
-                      alt=''
+                      alt='User avatar'
                       className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
                     />
                     <div className='flex-grow-1'>
@@ -570,7 +570,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Waiter
                         </Link>
@@ -578,7 +578,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Manager
                         </Link>
@@ -586,7 +586,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Project Manager
                         </Link>
@@ -594,7 +594,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Game Developer
                         </Link>
@@ -602,7 +602,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Head
                         </Link>
@@ -610,7 +610,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Management
                         </Link>
@@ -636,7 +636,7 @@ const AssignRoleLayer = () => {
                   <div className='d-flex align-items-center'>
                     <img
                       src='assets/images/user-list/user-list7.png'
-                      alt=''
+                      alt='User avatar'
                       className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
                     />
                     <div className='flex-grow-1'>
@@ -661,7 +661,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Waiter
                         </Link>
@@ -669,7 +669,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Manager
                         </Link>
@@ -677,7 +677,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Project Manager
                         </Link>
@@ -685,7 +685,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Game Developer
                         </Link>
@@ -693,7 +693,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Head
                         </Link>
@@ -701,7 +701,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Management
                         </Link>
@@ -727,7 +727,7 @@ const AssignRoleLayer = () => {
                   <div className='d-flex align-items-center'>
                     <img
                       src='assets/images/user-list/user-list8.png'
-                      alt=''
+                      alt='User avatar'
                       className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
                     />
                     <div className='flex-grow-1'>
@@ -752,7 +752,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Waiter
                         </Link>
@@ -760,7 +760,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Manager
                         </Link>
@@ -768,7 +768,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Project Manager
                         </Link>
@@ -776,7 +776,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Game Developer
                         </Link>
@@ -784,7 +784,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Head
                         </Link>
@@ -792,7 +792,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Management
                         </Link>
@@ -818,7 +818,7 @@ const AssignRoleLayer = () => {
                   <div className='d-flex align-items-center'>
                     <img
                       src='assets/images/user-list/user-list2.png'
-                      alt=''
+                      alt='User avatar'
                       className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
                     />
                     <div className='flex-grow-1'>
@@ -843,7 +843,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Waiter
                         </Link>
@@ -851,7 +851,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Manager
                         </Link>
@@ -859,7 +859,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Project Manager
                         </Link>
@@ -867,7 +867,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Game Developer
                         </Link>
@@ -875,7 +875,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Head
                         </Link>
@@ -883,7 +883,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Management
                         </Link>
@@ -909,7 +909,7 @@ const AssignRoleLayer = () => {
                   <div className='d-flex align-items-center'>
                     <img
                       src='assets/images/user-list/user-list10.png'
-                      alt=''
+                      alt='User avatar'
                       className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
                     />
                     <div className='flex-grow-1'>
@@ -934,7 +934,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Waiter
                         </Link>
@@ -942,7 +942,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Manager
                         </Link>
@@ -950,7 +950,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Project Manager
                         </Link>
@@ -958,7 +958,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Game Developer
                         </Link>
@@ -966,7 +966,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Head
                         </Link>
@@ -974,7 +974,7 @@ const AssignRoleLayer = () => {
                       <li>
                         <Link
                           className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                         >
                           Management
                         </Link>
@@ -992,7 +992,7 @@ const AssignRoleLayer = () => {
             <li className='page-item'>
               <Link
                 className='page-link bg-neutral-200 text-secondary-light fw-semibold radius-8 border-0 d-flex align-items-center justify-content-center h-32-px w-32-px text-md'
-                href='#'
+                href='#' onClick={(event) => event.preventDefault()}
               >
                 <Icon icon='ep:d-arrow-left' className='' />
               </Link>
@@ -1000,7 +1000,7 @@ const AssignRoleLayer = () => {
             <li className='page-item'>
               <Link
                 className='page-link text-secondary-light fw-semibold radius-8 border-0 d-flex align-items-center justify-content-center h-32-px w-32-px text-md bg-primary-600 text-white'
-                href='#'
+                href='#' onClick={(event) => event.preventDefault()}
               >
                 1
               </Link>
@@ -1008,7 +1008,7 @@ const AssignRoleLayer = () => {
             <li className='page-item'>
               <Link
                 className='page-link bg-neutral-200 text-secondary-light fw-semibold radius-8 border-0 d-flex align-items-center justify-content-center h-32-px w-32-px'
-                href='#'
+                href='#' onClick={(event) => event.preventDefault()}
               >
                 2
               </Link>
@@ -1016,7 +1016,7 @@ const AssignRoleLayer = () => {
             <li className='page-item'>
               <Link
                 className='page-link bg-neutral-200 text-secondary-light fw-semibold radius-8 border-0 d-flex align-items-center justify-content-center h-32-px w-32-px text-md'
-                href='#'
+                href='#' onClick={(event) => event.preventDefault()}
               >
                 3
               </Link>
@@ -1024,7 +1024,7 @@ const AssignRoleLayer = () => {
             <li className='page-item'>
               <Link
                 className='page-link bg-neutral-200 text-secondary-light fw-semibold radius-8 border-0 d-flex align-items-center justify-content-center h-32-px w-32-px text-md'
-                href='#'
+                href='#' onClick={(event) => event.preventDefault()}
               >
                 4
               </Link>
@@ -1032,7 +1032,7 @@ const AssignRoleLayer = () => {
             <li className='page-item'>
               <Link
                 className='page-link bg-neutral-200 text-secondary-light fw-semibold radius-8 border-0 d-flex align-items-center justify-content-center h-32-px w-32-px text-md'
-                href='#'
+                href='#' onClick={(event) => event.preventDefault()}
               >
                 5
               </Link>
@@ -1040,7 +1040,7 @@ const AssignRoleLayer = () => {
             <li className='page-item'>
               <Link
                 className='page-link bg-neutral-200 text-secondary-light fw-semibold radius-8 border-0 d-flex align-items-center justify-content-center h-32-px w-32-px text-md'
-                href='#'
+                href='#' onClick={(event) => event.preventDefault()}
               >
                 {" "}
                 <Icon icon='ep:d-arrow-right' className='' />{" "}

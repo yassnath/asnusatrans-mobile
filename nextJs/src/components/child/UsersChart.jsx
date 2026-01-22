@@ -8,7 +8,7 @@ const UsersChart = () => {
           <div className='d-flex align-items-center flex-wrap gap-2 justify-content-between'>
             <h6 className='mb-2 fw-bold text-lg mb-0'>Users</h6>
             <Link
-              href='#'
+              href='#' onClick={(event) => event.preventDefault()}
               className='text-primary-600 hover-text-primary d-flex align-items-center gap-1'
             >
               View All
@@ -25,7 +25,7 @@ const UsersChart = () => {
               <div className='d-flex align-items-center'>
                 <img
                   src='assets/images/user-grid/user-grid-img1.png'
-                  alt=''
+                  alt='User avatar'
                   className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
                 />
                 <div className='flex-grow-1'>
@@ -43,7 +43,7 @@ const UsersChart = () => {
               <div className='d-flex align-items-center'>
                 <img
                   src='assets/images/user-grid/user-grid-img2.png'
-                  alt=''
+                  alt='User avatar'
                   className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
                 />
                 <div className='flex-grow-1'>
@@ -61,7 +61,7 @@ const UsersChart = () => {
               <div className='d-flex align-items-center'>
                 <img
                   src='assets/images/user-grid/user-grid-img3.png'
-                  alt=''
+                  alt='User avatar'
                   className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
                 />
                 <div className='flex-grow-1'>
@@ -79,7 +79,7 @@ const UsersChart = () => {
               <div className='d-flex align-items-center'>
                 <img
                   src='assets/images/user-grid/user-grid-img4.png'
-                  alt=''
+                  alt='User avatar'
                   className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
                 />
                 <div className='flex-grow-1'>
@@ -97,7 +97,7 @@ const UsersChart = () => {
               <div className='d-flex align-items-center'>
                 <img
                   src='assets/images/user-grid/user-grid-img1.png'
-                  alt=''
+                  alt='User avatar'
                   className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
                 />
                 <div className='flex-grow-1'>

@@ -20,7 +20,7 @@ const TransactionsOne = () => {
               <div className='d-flex align-items-center gap-2'>
                 <img
                   src='assets/images/payment/payment1.png'
-                  alt=''
+                  alt='Paytm logo'
                   className='w-40-px h-40-px radius-8 flex-shrink-0'
                 />
                 <div className='flex-grow-1'>
@@ -36,7 +36,7 @@ const TransactionsOne = () => {
               <div className='d-flex align-items-center gap-2'>
                 <img
                   src='assets/images/payment/payment2.png'
-                  alt=''
+                  alt='PayPal logo'
                   className='w-40-px h-40-px radius-8 flex-shrink-0'
                 />
                 <div className='flex-grow-1'>
@@ -52,7 +52,7 @@ const TransactionsOne = () => {
               <div className='d-flex align-items-center gap-2'>
                 <img
                   src='assets/images/payment/payment3.png'
-                  alt=''
+                  alt='Stripe logo'
                   className='w-40-px h-40-px radius-8 flex-shrink-0'
                 />
                 <div className='flex-grow-1'>
@@ -68,7 +68,7 @@ const TransactionsOne = () => {
               <div className='d-flex align-items-center gap-2'>
                 <img
                   src='assets/images/payment/payment4.png'
-                  alt=''
+                  alt='Razorpay logo'
                   className='w-40-px h-40-px radius-8 flex-shrink-0'
                 />
                 <div className='flex-grow-1'>
@@ -84,7 +84,7 @@ const TransactionsOne = () => {
               <div className='d-flex align-items-center gap-2'>
                 <img
                   src='assets/images/payment/payment1.png'
-                  alt=''
+                  alt='Paytm logo'
                   className='w-40-px h-40-px radius-8 flex-shrink-0'
                 />
                 <div className='flex-grow-1'>
@@ -100,7 +100,7 @@ const TransactionsOne = () => {
               <div className='d-flex align-items-center gap-2'>
                 <img
                   src='assets/images/payment/payment3.png'
-                  alt=''
+                  alt='Stripe logo'
                   className='w-40-px h-40-px radius-8 flex-shrink-0'
                 />
                 <div className='flex-grow-1'>

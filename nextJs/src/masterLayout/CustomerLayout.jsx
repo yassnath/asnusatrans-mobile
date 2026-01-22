@@ -337,13 +337,18 @@ const CustomerLayout = ({ children }) => {
                             </div>
                           ) : (
                             notifications.slice(0, 6).map((item) => (
-                              <div key={item.id} className="cvant-notify-item">
+                              <Link
+                                key={item.id}
+                                href={item.href || "/customer/orders"}
+                                className="cvant-notify-item"
+                                onClick={() => setNotifOpen(false)}
+                              >
                                 <div className="cvant-notify-title">{item.title}</div>
                                 <div className="cvant-notify-text">{item.message}</div>
                                 <div className="cvant-notify-time">
                                   {formatNotificationTime(item.time)}
                                 </div>
-                              </div>
+                              </Link>
                             ))
                           )}
                         </div>
@@ -591,6 +596,7 @@ const CustomerLayout = ({ children }) => {
           border-radius: 12px;
           box-shadow: 0 18px 40px rgba(0, 0, 0, 0.2);
           z-index: 40;
+          color: var(--text-primary-light);
         }
 
         .cvant-notify-header {
@@ -617,10 +623,20 @@ const CustomerLayout = ({ children }) => {
         .cvant-notify-item {
           padding: 12px 14px;
           border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+          display: block;
+          text-decoration: none;
+          color: inherit;
+          transition: background-color 0.2s ease;
         }
 
         .cvant-notify-item:last-child {
           border-bottom: none;
+        }
+
+        .cvant-notify-item:hover,
+        .cvant-notify-item:focus-visible {
+          background-color: var(--primary-50);
+          outline: none;
         }
 
         .cvant-notify-title {
@@ -690,6 +706,11 @@ const CustomerLayout = ({ children }) => {
           box-shadow: 0 18px 40px rgba(0, 0, 0, 0.2);
           z-index: 40;
           padding: 10px 12px;
+          color: var(--text-primary-light);
+        }
+
+        .cvant-profile-menu .dropdown-item {
+          color: inherit !important;
         }
 
         .cvant-profile-header {
@@ -699,7 +720,7 @@ const CustomerLayout = ({ children }) => {
           gap: 12px;
           padding: 10px 12px;
           border-radius: 10px;
-          background: rgba(91, 140, 255, 0.08);
+          background: var(--primary-50);
           margin-bottom: 10px;
         }
 

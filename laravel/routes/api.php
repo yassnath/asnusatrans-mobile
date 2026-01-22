@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\ExpenseController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\ChatbotController;
+use App\Http\Controllers\Api\PublicDistanceController;
 
 /*
 |--------------------------------------------------------------------------
@@ -26,6 +27,9 @@ Route::prefix('public')->group(function () {
 
     // ? Public armada (nama + tonase saja)
     Route::get('/armadas', [ArmadaController::class, 'publicIndex']);
+
+    // ? Public distance lookup
+    Route::get('/distance', PublicDistanceController::class);
 });
 
 /*

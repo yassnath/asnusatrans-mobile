@@ -35,7 +35,7 @@ function SortableTask({ id, task, onEdit, onDelete }) {
         <div className='radius-8 mb-12 max-h-350-px overflow-hidden'>
           <img
             src={task.image}
-            alt=''
+            alt={task.title ? `Task image for ${task.title}` : "Task image"}
             className='w-100 h-100 object-fit-cover'
           />
         </div>

@@ -373,7 +373,7 @@ const AuthShell = ({ title, subtitle, children }) => {
               <div className="cvant-icon-ring" />
               <img
                 src="/assets/images/big-icon.webp"
-                alt=""
+                alt="CV ANT illustration"
                 className="cvant-big-icon"
               />
             </div>
@@ -393,7 +393,7 @@ const AuthShell = ({ title, subtitle, children }) => {
                 <Link href="/" className="d-inline-flex">
                   <img
                     src="/assets/images/logo.webp"
-                    alt=""
+                    alt="CV ANT logo"
                     className="cvant-logo-glow"
                     style={{ maxWidth: "290px", height: "auto" }}
                   />

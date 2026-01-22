@@ -91,7 +91,7 @@ const CustomerPaymentLayer = () => {
       </div>
 
       {!order ? (
-        <div className="card shadow-sm border-0">
+        <div className="card shadow-none border">
           <div className="card-body">
             <h6 className="mb-2">Order belum tersedia</h6>
             <p className="text-secondary-light mb-0">
@@ -105,7 +105,7 @@ const CustomerPaymentLayer = () => {
       ) : (
         <div className="row g-4">
           <div className="col-lg-5">
-            <div className="card shadow-sm border-0 h-100">
+            <div className="card shadow-none border h-100">
               <div className="card-header bg-transparent">
                 <h6 className="mb-0">Ringkasan Order</h6>
               </div>
@@ -129,8 +129,10 @@ const CustomerPaymentLayer = () => {
                       </td>
                     </tr>
                     <tr>
-                      <td className="text-secondary-light">Service</td>
-                      <td className="text-end fw-semibold">{order.service}</td>
+                      <td className="text-secondary-light">PPH (2%)</td>
+                      <td className="text-end fw-semibold">
+                        {formatCurrency(order.insurance_fee)}
+                      </td>
                     </tr>
                     <tr>
                       <td className="text-secondary-light">Total</td>
@@ -149,7 +151,7 @@ const CustomerPaymentLayer = () => {
           </div>
 
           <div className="col-lg-7">
-            <div className="card shadow-sm border-0 h-100">
+            <div className="card shadow-none border h-100">
               <div className="card-header bg-transparent">
                 <h6 className="mb-0">Pilih Metode Pembayaran</h6>
               </div>

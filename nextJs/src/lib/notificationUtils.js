@@ -12,6 +12,7 @@ export const formatNotificationTime = (value) => {
 export const buildCustomerNotifications = (orders) => {
   const list = Array.isArray(orders) ? orders : [];
   const items = [];
+  const ordersHref = "/customer/orders";
 
   list.forEach((order) => {
     const code = order?.order_code || `ORD-${order?.id ?? "-"}`;
@@ -22,6 +23,7 @@ export const buildCustomerNotifications = (orders) => {
         title: "Order dibuat",
         message: `Order ${code} berhasil dibuat.`,
         time: order.created_at,
+        href: ordersHref,
       });
     }
 
@@ -31,6 +33,7 @@ export const buildCustomerNotifications = (orders) => {
         title: "Pembayaran berhasil",
         message: `Pembayaran order ${code} berhasil.`,
         time: order.paid_at,
+        href: ordersHref,
       });
     }
 
@@ -40,6 +43,7 @@ export const buildCustomerNotifications = (orders) => {
         title: "Status order diperbarui",
         message: `Order ${code} ${order.status.toLowerCase()}.`,
         time: order.updated_at,
+        href: ordersHref,
       });
     }
   });
@@ -55,6 +59,8 @@ export const buildAdminNotifications = (customers, orders) => {
   const items = [];
   const customerList = Array.isArray(customers) ? customers : [];
   const orderList = Array.isArray(orders) ? orders : [];
+  const customerHref = "/customer-registrations";
+  const orderHref = "/order-acceptance";
 
   customerList.forEach((customer) => {
     if (!customer?.created_at) return;
@@ -63,6 +69,7 @@ export const buildAdminNotifications = (customers, orders) => {
       title: "Customer baru",
       message: `${customer?.name || "Customer"} mendaftar.`,
       time: customer.created_at,
+      href: customerHref,
     });
   });
 
@@ -76,6 +83,7 @@ export const buildAdminNotifications = (customers, orders) => {
         title: "Order baru",
         message: `${customerName} membuat order ${code}.`,
         time: order.created_at,
+        href: orderHref,
       });
     }
 
@@ -85,6 +93,7 @@ export const buildAdminNotifications = (customers, orders) => {
         title: "Order dibayar",
         message: `Order ${code} sudah dibayar.`,
         time: order.paid_at,
+        href: orderHref,
       });
     }
 
@@ -94,6 +103,7 @@ export const buildAdminNotifications = (customers, orders) => {
         title: "Status order diperbarui",
         message: `Order ${code} ${order.status.toLowerCase()}.`,
         time: order.updated_at,
+        href: orderHref,
       });
     }
   });

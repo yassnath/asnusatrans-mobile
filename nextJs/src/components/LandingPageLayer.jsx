@@ -7,6 +7,58 @@ import ThemeToggleButton from "@/helper/ThemeToggleButton";
 import { publicApi } from "@/lib/publicApi";
 import PublicChatbotWidget from "@/components/PublicChatbotWidget";
 
+const useCountUp = (target, duration = 2400) => {
+  const [value, setValue] = useState(0);
+
+  useEffect(() => {
+    if (target <= 0) {
+      setValue(0);
+      return undefined;
+    }
+
+    if (typeof window === "undefined") {
+      setValue(target);
+      return undefined;
+    }
+
+    const prefersReducedMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)"
+    ).matches;
+
+    if (prefersReducedMotion) {
+      setValue(target);
+      return undefined;
+    }
+
+    setValue(0);
+
+    let startTime;
+    let rafId;
+
+    const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+
+    const step = (timestamp) => {
+      if (!startTime) startTime = timestamp;
+      const progress = Math.min((timestamp - startTime) / duration, 1);
+      const eased = easeOutCubic(progress);
+      const current = Math.round(target * eased);
+      setValue(current);
+
+      if (progress < 1) {
+        rafId = window.requestAnimationFrame(step);
+      }
+    };
+
+    rafId = window.requestAnimationFrame(step);
+
+    return () => {
+      if (rafId) window.cancelAnimationFrame(rafId);
+    };
+  }, [target, duration]);
+
+  return value;
+};
+
 const LandingPageLayer = () => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [armadas, setArmadas] = useState([]);
@@ -96,7 +148,9 @@ const LandingPageLayer = () => {
     : fleetItems;
   const fleetSpeed = Math.max(fleetItems.length * 9, 55);
 
-  const armadaCountLabel = armadaReady ? `${armadas.length} Armada` : "Memuat armada";
+  const onTimeCount = useCountUp(98);
+  const cityCount = useCountUp(34);
+  const armadaCount = useCountUp(armadaReady ? armadas.length : 0);
   const testimonials = useMemo(
     () => [
       {
@@ -515,7 +569,7 @@ const LandingPageLayer = () => {
 
         .cvant-hero-grid {
           display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
+          grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
           gap: 44px;
           align-items: center;
           grid-template-areas: "content visual";
@@ -562,28 +616,91 @@ const LandingPageLayer = () => {
 
         .cvant-hero-badges {
           display: grid;
-          grid-template-columns: repeat(3, minmax(0, 1fr));
+          grid-template-columns: repeat(3, minmax(180px, 1fr));
           gap: 16px;
           margin-top: 32px;
+          justify-content: start;
         }
 
         .cvant-badge-card {
-          border-radius: 16px;
-          padding: 14px;
+          border-radius: 14px;
+          padding: 10px;
           background: var(--cvant-badge-bg);
           border: 1px solid var(--cvant-border);
           box-shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
+          min-height: 120px;
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          align-items: center;
+          gap: 2px;
+          text-align: center;
         }
 
         .cvant-badge-card h4 {
-          font-size: 18px;
-          margin-bottom: 4px;
+          font-size: clamp(11px, 1vw, 13px);
+          line-height: 1.05;
+          margin: 0;
+          white-space: nowrap;
+        }
+
+        .cvant-badge-card h4:first-child {
+          font-size: clamp(15px, 1.6vw, 18px);
+        }
+
+        .cvant-badge-card h4 + h4 {
+          font-weight: 600;
         }
 
         .cvant-badge-card p {
           margin: 0;
           color: var(--cvant-muted);
           font-size: 13px;
+        }
+
+        .cvant-badge-card p,
+        .cvant-feature-card p,
+        .cvant-fleet-card p,
+        .cvant-step p,
+        .cvant-price-card p,
+        .cvant-testimonial p,
+        .cvant-faq-item p,
+        .cvant-glass-card p {
+          text-align: justify;
+        }
+
+        .cvant-badge-card h4,
+        .cvant-feature-card h5,
+        .cvant-fleet-card h5,
+        .cvant-step h5,
+        .cvant-price-card h4,
+        .cvant-testimonial strong,
+        .cvant-faq-item h6,
+        .cvant-glass-card h5 {
+          text-align: center;
+        }
+
+        .cvant-testimonial,
+        .cvant-faq-item {
+          text-align: left;
+        }
+
+        .cvant-testimonial p,
+        .cvant-faq-item p {
+          text-align: left;
+        }
+
+        .cvant-testimonial strong,
+        .cvant-faq-item h6 {
+          margin-bottom: 16px;
+          display: block;
+        }
+
+        #faq .cvant-faq,
+        #faq .cvant-faq-item,
+        #faq .cvant-faq-item h6,
+        #faq .cvant-faq-item p {
+          text-align: left;
         }
 
         .cvant-hero-panel {
@@ -1004,8 +1121,30 @@ const LandingPageLayer = () => {
           border-color: rgba(91, 140, 255, 0.5);
         }
 
+        .cvant-card-head {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          margin-bottom: 16px;
+          flex-wrap: nowrap;
+          white-space: nowrap;
+          justify-content: center;
+        }
+
+        .cvant-card-icon {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          line-height: 1;
+        }
+
+        .cvant-card-head h5 {
+          white-space: nowrap;
+          font-size: clamp(15px, 1.4vw, 18px);
+        }
+
         .cvant-feature-card h5 {
-          margin-top: 12px;
+          margin: 0;
           font-weight: 700;
         }
 
@@ -1073,16 +1212,37 @@ const LandingPageLayer = () => {
           border: 1px solid var(--cvant-border);
         }
 
+        .cvant-step-head {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          margin-bottom: 16px;
+          flex-wrap: nowrap;
+          white-space: nowrap;
+          justify-content: center;
+        }
+
         .cvant-step span {
           display: inline-flex;
           align-items: center;
           justify-content: center;
           height: 40px;
           width: 40px;
+          min-width: 40px;
+          min-height: 40px;
+          flex: 0 0 40px;
           border-radius: 12px;
           background: var(--cvant-step-badge);
           color: var(--cvant-step-text);
           font-weight: 700;
+          font-size: 14px;
+        }
+
+        .cvant-step h5 {
+          margin: 0;
+          white-space: nowrap;
+          font-size: clamp(13px, 1.05vw, 15px);
+          line-height: 1.2;
         }
 
         .cvant-price-grid {
@@ -1100,7 +1260,11 @@ const LandingPageLayer = () => {
         }
 
         .cvant-price-card h4 {
-          margin-bottom: 4px;
+          margin-bottom: 16px;
+        }
+
+        .cvant-price-card h4 {
+          margin-bottom: 16px;
           font-weight: 700;
         }
 
@@ -1138,6 +1302,14 @@ const LandingPageLayer = () => {
           border-radius: 18px;
           background: var(--cvant-panel);
           border: 1px solid var(--cvant-border);
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+
+        .cvant-testimonial p,
+        .cvant-testimonial strong {
+          margin: 0;
         }
 
         .cvant-faq {
@@ -1321,6 +1493,25 @@ const LandingPageLayer = () => {
             justify-items: center;
           }
 
+          .cvant-card-head,
+          .cvant-step-head {
+            flex-wrap: wrap;
+            white-space: normal;
+          }
+
+          .cvant-card-head h5,
+          .cvant-step h5 {
+            white-space: normal;
+            text-align: center;
+          }
+
+          .cvant-badge-card {
+            aspect-ratio: auto;
+            min-height: 120px;
+            max-width: 220px;
+            width: 100%;
+          }
+
           .cvant-section,
           .cvant-cta,
           .cvant-footer {
@@ -1460,16 +1651,16 @@ const LandingPageLayer = () => {
                 </div>
                 <div className="cvant-hero-badges">
                   <div className="cvant-badge-card">
-                    <h4>98% On-time</h4>
-                    <p>Pengiriman sesuai SLA</p>
+                    <h4>{onTimeCount}%</h4>
+                    <h4>On-time</h4>
                   </div>
-                <div className="cvant-badge-card">
-                  <h4>{armadaCountLabel}</h4>
-                  <p>Armada terdaftar di dashboard</p>
-                </div>
                   <div className="cvant-badge-card">
-                    <h4>24 Kota</h4>
-                    <p>Jaringan operasional utama</p>
+                    <h4>{armadaReady ? armadaCount : "..."}</h4>
+                    <h4>Armada</h4>
+                  </div>  
+                  <div className="cvant-badge-card">
+                    <h4>{cityCount}</h4>
+                    <h4>Kota</h4>
                   </div>
                 </div>
               </div>
@@ -1484,7 +1675,7 @@ const LandingPageLayer = () => {
                   <div className="cvant-hero-ring" />
                   <img
                     src="/assets/images/big-icon.webp"
-                    alt=""
+                    alt="CV ANT hero illustration"
                     className="cvant-hero-icon"
                   />
                 </div>
@@ -1559,18 +1750,36 @@ const LandingPageLayer = () => {
               </div>
               <div className="cvant-grid">
                 <div className="cvant-feature-card cvant-animate-up">
-                  <Icon icon="solar:map-point-linear" style={{ fontSize: "26px" }} />
-                  <h5>Tracking akurat</h5>
+                  <div className="cvant-card-head">
+                    <Icon
+                      icon="solar:map-point-linear"
+                      className="cvant-card-icon"
+                      style={{ fontSize: "26px" }}
+                    />
+                    <h5>Tracking akurat</h5>
+                  </div>
                   <p>Update posisi armada dan ETA otomatis untuk tim Anda.</p>
                 </div>
                 <div className="cvant-feature-card cvant-animate-up cvant-delay-1">
-                  <Icon icon="solar:shield-check-linear" style={{ fontSize: "26px" }} />
-                  <h5>Keamanan barang</h5>
+                  <div className="cvant-card-head">
+                    <Icon
+                      icon="solar:shield-check-linear"
+                      className="cvant-card-icon"
+                      style={{ fontSize: "26px" }}
+                    />
+                    <h5>Keamanan barang</h5>
+                  </div>
                   <p>Prosedur loading, SOP seal, dan dokumentasi sebelum jalan.</p>
                 </div>
                 <div className="cvant-feature-card cvant-animate-up cvant-delay-2">
-                  <Icon icon="solar:hand-shake-linear" style={{ fontSize: "26px" }} />
-                  <h5>Support cepat</h5>
+                  <div className="cvant-card-head">
+                    <Icon
+                      icon="solar:hand-shake-linear"
+                      className="cvant-card-icon"
+                      style={{ fontSize: "26px" }}
+                    />
+                    <h5>Support cepat</h5>
+                  </div>
                   <p>Tim CS responsif untuk perubahan jadwal atau kebutuhan urgent.</p>
                 </div>
               </div>
@@ -1633,22 +1842,28 @@ const LandingPageLayer = () => {
               </div>
               <div className="cvant-step-grid">
                 <div className="cvant-step">
-                  <span>1</span>
-                  <h5 className="mt-16 mb-8">Daftar atau masuk</h5>
+                  <div className="cvant-step-head">
+                    <span>1</span>
+                    <h5>Daftar atau masuk</h5>
+                  </div>
                   <p className="cvant-section-desc">
                     Buat akun customer agar detail order tersimpan rapi.
                   </p>
                 </div>
                 <div className="cvant-step">
-                  <span>2</span>
-                  <h5 className="mt-16 mb-8">Isi detail pengiriman</h5>
+                  <div className="cvant-step-head">
+                    <span>2</span>
+                    <h5>Isi detail pengiriman</h5>
+                  </div>
                   <p className="cvant-section-desc">
                     Pilih armada, rute, dan jadwal pickup sesuai kebutuhan.
                   </p>
                 </div>
                 <div className="cvant-step">
-                  <span>3</span>
-                  <h5 className="mt-16 mb-8">Pembayaran gateway</h5>
+                  <div className="cvant-step-head">
+                    <span>3</span>
+                    <h5>Pembayaran gateway</h5>
+                  </div>
                   <p className="cvant-section-desc">
                     Selesaikan pembayaran via transfer, VA, atau e-wallet.
                   </p>

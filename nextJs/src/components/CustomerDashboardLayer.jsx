@@ -57,7 +57,7 @@ const CustomerDashboardLayer = () => {
   const recentOrders = useMemo(() => orders.slice(0, 5), [orders]);
 
   const renderMobileOrders = () => (
-    <div className="d-md-none p-3 d-flex flex-column gap-12">
+    <div className="d-md-none d-flex flex-column gap-12">
       {recentOrders.map((order) => {
         const schedule = `${order.pickup_date || "-"}${
           order.pickup_time ? ` | ${String(order.pickup_time).slice(0, 5)}` : ""
@@ -117,148 +117,142 @@ const CustomerDashboardLayer = () => {
         </Link>
       </div>
 
-      <div className="row g-4 mb-4">
-        <div className="col-12 col-sm-6 col-xl-4">
-          <div className="card shadow-sm border-0 h-100 cvant-stat-card">
-            <div className="card-body d-flex align-items-center gap-3">
-              <span className="d-flex align-items-center justify-content-center rounded-circle bg-primary-50 text-primary-600 cvant-stat-icon">
-                <Icon icon="solar:clipboard-check-linear" />
-              </span>
-              <div>
-                <p className="mb-1 text-secondary-light cvant-stat-label">
-                  Total Order
-                </p>
-                <h5 className="mb-0 cvant-stat-value">{stats.total}</h5>
+      <div className="row row-cols-xxxl-3 row-cols-lg-3 row-cols-sm-2 row-cols-1 gy-4 cvant-stats-row">
+        <div className="col">
+          <div className="card shadow-none border bg-gradient-start-1 h-100">
+            <div className="card-body p-20">
+              <div className="d-flex justify-content-between align-items-center gap-3">
+                <div>
+                  <p className="fw-medium text-primary-light mb-1">
+                    Total Order
+                  </p>
+                  <h6 className="mb-0">{stats.total}</h6>
+                </div>
+                <div className="w-50-px h-50-px bg-cyan rounded-circle d-flex justify-content-center align-items-center">
+                  <Icon
+                    icon="solar:clipboard-check-linear"
+                    className="text-white text-2xl"
+                  />
+                </div>
               </div>
             </div>
           </div>
         </div>
-        <div className="col-12 col-sm-6 col-xl-4">
-          <div className="card shadow-sm border-0 h-100 cvant-stat-card">
-            <div className="card-body d-flex align-items-center gap-3">
-              <span className="d-flex align-items-center justify-content-center rounded-circle bg-warning-focus text-warning-600 cvant-stat-icon">
-                <Icon icon="solar:hourglass-linear" />
-              </span>
-              <div>
-                <p className="mb-1 text-secondary-light cvant-stat-label">
-                  Pending Payment
-                </p>
-                <h5 className="mb-0 cvant-stat-value">{stats.pending}</h5>
+        <div className="col">
+          <div className="card shadow-none border bg-gradient-start-4 h-100">
+            <div className="card-body p-20">
+              <div className="d-flex justify-content-between align-items-center gap-3">
+                <div>
+                  <p className="fw-medium text-primary-light mb-1">
+                    Pending Payment
+                  </p>
+                  <h6 className="mb-0">{stats.pending}</h6>
+                </div>
+                <div className="w-50-px h-50-px bg-warning-600 rounded-circle d-flex justify-content-center align-items-center">
+                  <Icon
+                    icon="solar:hourglass-linear"
+                    className="text-white text-2xl"
+                  />
+                </div>
               </div>
             </div>
           </div>
         </div>
-        <div className="col-12 col-sm-6 col-xl-4">
-          <div className="card shadow-sm border-0 h-100 cvant-stat-card">
-            <div className="card-body d-flex align-items-center gap-3">
-              <span className="d-flex align-items-center justify-content-center rounded-circle bg-success-focus text-success-600 cvant-stat-icon">
-                <Icon icon="solar:card-transfer-linear" />
-              </span>
-              <div>
-                <p className="mb-1 text-secondary-light cvant-stat-label">
-                  Total Biaya
-                </p>
-                <h5 className="mb-0 cvant-stat-value">
-                  {formatCurrency(stats.totalSpend)}
-                </h5>
+        <div className="col">
+          <div className="card shadow-none border bg-gradient-start-5 h-100">
+            <div className="card-body p-20">
+              <div className="d-flex justify-content-between align-items-center gap-3">
+                <div>
+                  <p className="fw-medium text-primary-light mb-1">
+                    Total Biaya
+                  </p>
+                  <h6 className="mb-0">{formatCurrency(stats.totalSpend)}</h6>
+                </div>
+                <div className="w-50-px h-50-px bg-success-main rounded-circle d-flex justify-content-center align-items-center">
+                  <Icon
+                    icon="solar:card-transfer-linear"
+                    className="text-white text-2xl"
+                  />
+                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="card shadow-sm border-0">
-        <div className="card-header bg-transparent d-flex align-items-center justify-content-between flex-wrap gap-2 cvant-orders-header">
-          <h6 className="mb-0">Riwayat Order Terbaru</h6>
-          <Link
-            href="/customer/orders"
-            className="btn btn-outline-primary btn-sm radius-8"
-          >
-            Lihat Semua
-          </Link>
-        </div>
-        <div className="card-body p-0">
-          {loading ? (
-            <div className="p-4">Memuat data...</div>
-          ) : error ? (
-            <div className="p-4 text-danger">{error}</div>
-          ) : orders.length === 0 ? (
-            <div className="p-4">Belum ada order yang dibuat.</div>
-          ) : (
-            <>
-              {renderMobileOrders()}
-
-              <div className="d-none d-md-block card-body table-responsive scroll-sm d-flex">
-                <table className="table bordered-table text-center align-middle mb-0">
-                  <thead>
-                    <tr>
-                      <th>ID Order</th>
-                      <th>Rute</th>
-                      <th>Jadwal</th>
-                      <th>Service</th>
-                      <th>Total</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {recentOrders.map((order) => (
-                      <tr key={order.id}>
-                        <td>{order.order_code || `ORD-${order.id}`}</td>
-                        <td>
-                          {order.pickup || "-"} - {order.destination || "-"}
-                        </td>
-                        <td>
-                          {order.pickup_date || "-"}{" "}
-                          {order.pickup_time
-                            ? `| ${String(order.pickup_time).slice(0, 5)}`
-                            : ""}
-                        </td>
-                        <td>{order.service || "-"}</td>
-                        <td>{formatCurrency(order.total)}</td>
-                        <td>
-                          <span
-                            className={`cvant-status-badge ${statusBadge(
-                              order.status
-                            )}`}
-                          >
-                            {order.status || "Pending Payment"}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+      <div className="row gy-4 mt-1 cvant-orders-row">
+        <div className="col-12">
+          <div className="card shadow-none border">
+            <div className="card-body p-24">
+              <div className="d-flex align-items-center flex-wrap gap-2 justify-content-between mb-20">
+                <h6 className="mb-0 fw-bold text-lg">Riwayat Order Terbaru</h6>
+                <Link
+                  href="/customer/orders"
+                  className="text-primary-600 hover-text-primary d-flex align-items-center gap-1"
+                >
+                  Lihat Semua
+                  <Icon icon="solar:alt-arrow-right-linear" className="icon" />
+                </Link>
               </div>
-            </>
-          )}
+              {loading ? (
+                <div className="py-3">Memuat data...</div>
+              ) : error ? (
+                <div className="py-3 text-danger">{error}</div>
+              ) : orders.length === 0 ? (
+                <div className="py-3">Belum ada order yang dibuat.</div>
+              ) : (
+                <>
+                  {renderMobileOrders()}
+
+                  <div className="table-responsive scroll-sm d-none d-md-block">
+                    <table className="table bordered-table text-center align-middle mb-0">
+                      <thead>
+                        <tr>
+                          <th>ID Order</th>
+                          <th>Rute</th>
+                          <th>Jadwal</th>
+                          <th>Service</th>
+                          <th>Total</th>
+                          <th>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {recentOrders.map((order) => (
+                          <tr key={order.id}>
+                            <td>{order.order_code || `ORD-${order.id}`}</td>
+                            <td>
+                              {order.pickup || "-"} - {order.destination || "-"}
+                            </td>
+                            <td>
+                              {order.pickup_date || "-"}{" "}
+                              {order.pickup_time
+                                ? `| ${String(order.pickup_time).slice(0, 5)}`
+                                : ""}
+                            </td>
+                            <td>{order.service || "-"}</td>
+                            <td>{formatCurrency(order.total)}</td>
+                            <td>
+                              <span
+                                className={`cvant-status-badge ${statusBadge(
+                                  order.status
+                                )}`}
+                              >
+                                {order.status || "Pending Payment"}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
       <style jsx global>{`
-        .cvant-stat-card .card-body {
-          padding: 16px 18px;
-        }
-
-        .cvant-stat-icon {
-          width: 44px;
-          height: 44px;
-          font-size: 20px;
-        }
-
-        .cvant-stat-label {
-          font-size: 13px;
-        }
-
-        .cvant-stat-value {
-          font-size: 20px;
-          font-weight: 700;
-        }
-
-        .cvant-orders-header .btn {
-          height: 32px;
-          padding: 4px 12px;
-        }
-
         .cvant-status-badge {
           display: inline-flex;
           align-items: center;
@@ -301,27 +295,8 @@ const CustomerDashboardLayer = () => {
             width: 100%;
           }
 
-          .cvant-stat-card .card-body {
-            padding: 14px 16px;
-          }
-
-          .cvant-stat-value {
-            font-size: 18px;
-          }
-
-          .cvant-orders-header {
-            flex-wrap: nowrap !important;
-            gap: 8px !important;
-          }
-
-          .cvant-orders-header h6 {
-            font-size: 14px;
-          }
-
-          .cvant-orders-header .btn {
-            height: 30px;
-            padding: 4px 10px;
-            font-size: 12px;
+          .cvant-stats-row {
+            margin-top: 12px;
           }
 
           .cvant-order-card {

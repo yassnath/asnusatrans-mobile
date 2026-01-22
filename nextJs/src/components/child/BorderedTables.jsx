@@ -22,7 +22,7 @@ const BorderedTables = () => {
               <tbody>
                 <tr>
                   <td>
-                    <Link href='#' className='text-primary-600'>
+                    <Link href='#' onClick={(event) => event.preventDefault()} className='text-primary-600'>
                       #526534
                     </Link>
                   </td>
@@ -30,14 +30,14 @@ const BorderedTables = () => {
                   <td>25 Jan 2024</td>
                   <td>$200.00</td>
                   <td>
-                    <Link href='#' className='text-primary-600'>
+                    <Link href='#' onClick={(event) => event.preventDefault()} className='text-primary-600'>
                       View More &gt;
                     </Link>
                   </td>
                 </tr>
                 <tr>
                   <td>
-                    <Link href='#' className='text-primary-600'>
+                    <Link href='#' onClick={(event) => event.preventDefault()} className='text-primary-600'>
                       #696589
                     </Link>
                   </td>
@@ -45,14 +45,14 @@ const BorderedTables = () => {
                   <td>25 Jan 2024</td>
                   <td>$200.00</td>
                   <td>
-                    <Link href='#' className='text-primary-600'>
+                    <Link href='#' onClick={(event) => event.preventDefault()} className='text-primary-600'>
                       View More &gt;
                     </Link>
                   </td>
                 </tr>
                 <tr>
                   <td>
-                    <Link href='#' className='text-primary-600'>
+                    <Link href='#' onClick={(event) => event.preventDefault()} className='text-primary-600'>
                       #256584
                     </Link>
                   </td>
@@ -60,14 +60,14 @@ const BorderedTables = () => {
                   <td>10 Feb 2024</td>
                   <td>$200.00</td>
                   <td>
-                    <Link href='#' className='text-primary-600'>
+                    <Link href='#' onClick={(event) => event.preventDefault()} className='text-primary-600'>
                       View More &gt;
                     </Link>
                   </td>
                 </tr>
                 <tr>
                   <td>
-                    <Link href='#' className='text-primary-600'>
+                    <Link href='#' onClick={(event) => event.preventDefault()} className='text-primary-600'>
                       #526587
                     </Link>
                   </td>
@@ -75,14 +75,14 @@ const BorderedTables = () => {
                   <td>10 Feb 2024</td>
                   <td>$150.00</td>
                   <td>
-                    <Link href='#' className='text-primary-600'>
+                    <Link href='#' onClick={(event) => event.preventDefault()} className='text-primary-600'>
                       View More &gt;
                     </Link>
                   </td>
                 </tr>
                 <tr>
                   <td>
-                    <Link href='#' className='text-primary-600'>
+                    <Link href='#' onClick={(event) => event.preventDefault()} className='text-primary-600'>
                       #105986
                     </Link>
                   </td>
@@ -90,7 +90,7 @@ const BorderedTables = () => {
                   <td>15 Mar 2024</td>
                   <td>$150.00</td>
                   <td>
-                    <Link href='#' className='text-primary-600'>
+                    <Link href='#' onClick={(event) => event.preventDefault()} className='text-primary-600'>
                       View More &gt;
                     </Link>
                   </td>

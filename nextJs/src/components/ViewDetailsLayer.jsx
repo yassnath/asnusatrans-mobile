@@ -229,7 +229,7 @@ const ViewDetailsLayer = () => {
                         Just confirming that we transferred $63.86 to you via
                         PayPal
                         <Link
-                          href='#'
+                          href='#' onClick={(event) => event.preventDefault()}
                           className='text-primary-600 text-decoration-underline'
                         >
                           (info367@gmail.com)

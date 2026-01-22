@@ -251,7 +251,7 @@ const MasterLayout = ({ children }) => {
               <li className="sidebar-menu-group-title">Application</li>
 
               <li className="dropdown">
-                <Link href="#">
+                <Link href="#" onClick={(event) => event.preventDefault()}>
                   <Icon icon="hugeicons:invoice-03" className="menu-icon" />
                   <span>Invoice</span>
                 </Link>
@@ -306,7 +306,7 @@ const MasterLayout = ({ children }) => {
               </li>
 
               <li className="dropdown">
-                <Link href="#">
+                <Link href="#" onClick={(event) => event.preventDefault()}>
                   <Icon icon="mdi:truck-outline" className="menu-icon" />
                   <span>Fleet</span>
                 </Link>
@@ -400,7 +400,7 @@ const MasterLayout = ({ children }) => {
                   </button>
 
                   <form className="navbar-search">
-                    <input type="text" placeholder="Search" />
+                    <input type="text" placeholder="Search" aria-label="Search" />
                     <Icon icon="ion:search-outline" className="icon" />
                   </form>
                 </div>
@@ -450,7 +450,12 @@ const MasterLayout = ({ children }) => {
                             </div>
                           ) : (
                             notifications.slice(0, 6).map((item) => (
-                              <div key={item.id} className="cvant-notify-item">
+                              <Link
+                                key={item.id}
+                                href={item.href || "/dashboard"}
+                                className="cvant-notify-item"
+                                onClick={() => setNotifOpen(false)}
+                              >
                                 <div className="cvant-notify-title">
                                   {item.title}
                                 </div>
@@ -460,7 +465,7 @@ const MasterLayout = ({ children }) => {
                                 <div className="cvant-notify-time">
                                   {formatNotificationTime(item.time)}
                                 </div>
-                              </div>
+                              </Link>
                             ))
                           )}
                         </div>
@@ -758,10 +763,10 @@ const MasterLayout = ({ children }) => {
           top: calc(100% + 12px);
           right: 0;
           width: min(320px, 90vw);
-          background: var(--bs-body-bg, #1f2937);
-          border: 1px solid rgba(148, 163, 184, 0.3);
-          border-radius: 12px;
-          box-shadow: 0 18px 40px rgba(0, 0, 0, 0.2);
+          background: var(--white);
+          border: 0;
+          border-radius: 16px;
+          box-shadow: 0px 13px 30px 10px rgba(46, 45, 116, 0.05);
           z-index: 40;
         }
 
@@ -789,10 +794,20 @@ const MasterLayout = ({ children }) => {
         .cvant-notify-item {
           padding: 12px 14px;
           border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+          display: block;
+          text-decoration: none;
+          color: inherit;
+          transition: background-color 0.2s ease;
         }
 
         .cvant-notify-item:last-child {
           border-bottom: none;
+        }
+
+        .cvant-notify-item:hover,
+        .cvant-notify-item:focus-visible {
+          background-color: var(--primary-50);
+          outline: none;
         }
 
         .cvant-notify-title {

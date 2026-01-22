@@ -43,7 +43,7 @@ const LatestPerformanceOne = () => {
             </li>
           </ul>
           <Link
-            href='#'
+            href='#' onClick={(event) => event.preventDefault()}
             className='text-primary-600 hover-text-primary d-flex align-items-center gap-1'
           >
             View All
@@ -106,7 +106,7 @@ const LatestPerformanceOne = () => {
                             <li>
                               <Link
                                 className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                                href='#'
+                                href='#' onClick={(event) => event.preventDefault()}
                               >
                                 Action
                               </Link>
@@ -114,7 +114,7 @@ const LatestPerformanceOne = () => {
                             <li>
                               <Link
                                 className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                                href='#'
+                                href='#' onClick={(event) => event.preventDefault()}
                               >
                                 Another action
                               </Link>
@@ -122,7 +122,7 @@ const LatestPerformanceOne = () => {
                             <li>
                               <Link
                                 className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                                href='#'
+                                href='#' onClick={(event) => event.preventDefault()}
                               >
                                 Something else here
                               </Link>
@@ -166,7 +166,7 @@ const LatestPerformanceOne = () => {
                             <li>
                               <Link
                                 className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                                href='#'
+                                href='#' onClick={(event) => event.preventDefault()}
                               >
                                 Action
                               </Link>
@@ -174,7 +174,7 @@ const LatestPerformanceOne = () => {
                             <li>
                               <Link
                                 className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                                href='#'
+                                href='#' onClick={(event) => event.preventDefault()}
                               >
                                 Another action
                               </Link>
@@ -182,7 +182,7 @@ const LatestPerformanceOne = () => {
                             <li>
                               <Link
                                 className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                                href='#'
+                                href='#' onClick={(event) => event.preventDefault()}
                               >
                                 Something else here
                               </Link>
@@ -226,7 +226,7 @@ const LatestPerformanceOne = () => {
                             <li>
                               <Link
                                 className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                                href='#'
+                                href='#' onClick={(event) => event.preventDefault()}
                               >
                                 Action
                               </Link>
@@ -234,7 +234,7 @@ const LatestPerformanceOne = () => {
                             <li>
                               <Link
                                 className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                                href='#'
+                                href='#' onClick={(event) => event.preventDefault()}
                               >
                                 Another action
                               </Link>
@@ -242,7 +242,7 @@ const LatestPerformanceOne = () => {
                             <li>
                               <Link
                                 className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                                href='#'
+                                href='#' onClick={(event) => event.preventDefault()}
                               >
                                 Something else here
                               </Link>
@@ -286,7 +286,7 @@ const LatestPerformanceOne = () => {
                             <li>
                               <Link
                                 className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                                href='#'
+                                href='#' onClick={(event) => event.preventDefault()}
                               >
                                 Action
                               </Link>
@@ -294,7 +294,7 @@ const LatestPerformanceOne = () => {
                             <li>
                               <Link
                                 className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                                href='#'
+                                href='#' onClick={(event) => event.preventDefault()}
                               >
                                 Another action
                               </Link>
@@ -302,7 +302,7 @@ const LatestPerformanceOne = () => {
                             <li>
                               <Link
                                 className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                                href='#'
+                                href='#' onClick={(event) => event.preventDefault()}
                               >
                                 Something else here
                               </Link>
@@ -346,7 +346,7 @@ const LatestPerformanceOne = () => {
                             <li>
                               <Link
                                 className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                                href='#'
+                                href='#' onClick={(event) => event.preventDefault()}
                               >
                                 Action
                               </Link>
@@ -354,7 +354,7 @@ const LatestPerformanceOne = () => {
                             <li>
                               <Link
                                 className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                                href='#'
+                                href='#' onClick={(event) => event.preventDefault()}
                               >
                                 Another action
                               </Link>
@@ -362,7 +362,7 @@ const LatestPerformanceOne = () => {
                             <li>
                               <Link
                                 className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                                href='#'
+                                href='#' onClick={(event) => event.preventDefault()}
                               >
                                 Something else here
                               </Link>
@@ -429,7 +429,7 @@ const LatestPerformanceOne = () => {
                             <li>
                               <Link
                                 className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                                href='#'
+                                href='#' onClick={(event) => event.preventDefault()}
                               >
                                 Action
                               </Link>
@@ -437,7 +437,7 @@ const LatestPerformanceOne = () => {
                             <li>
                               <Link
                                 className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                                href='#'
+                                href='#' onClick={(event) => event.preventDefault()}
                               >
                                 Another action
                               </Link>
@@ -445,7 +445,7 @@ const LatestPerformanceOne = () => {
                             <li>
                               <Link
                                 className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                                href='#'
+                                href='#' onClick={(event) => event.preventDefault()}
                               >
                                 Something else here
                               </Link>
@@ -489,7 +489,7 @@ const LatestPerformanceOne = () => {
                             <li>
                               <Link
                                 className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                                href='#'
+                                href='#' onClick={(event) => event.preventDefault()}
                               >
                                 Action
                               </Link>
@@ -497,7 +497,7 @@ const LatestPerformanceOne = () => {
                             <li>
                               <Link
                                 className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                                href='#'
+                                href='#' onClick={(event) => event.preventDefault()}
                               >
                                 Another action
                               </Link>
@@ -505,7 +505,7 @@ const LatestPerformanceOne = () => {
                             <li>
                               <Link
                                 className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                                href='#'
+                                href='#' onClick={(event) => event.preventDefault()}
                               >
                                 Something else here
                               </Link>
@@ -549,7 +549,7 @@ const LatestPerformanceOne = () => {
                             <li>
                               <Link
                                 className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                                href='#'
+                                href='#' onClick={(event) => event.preventDefault()}
                               >
                                 Action
                               </Link>
@@ -557,7 +557,7 @@ const LatestPerformanceOne = () => {
                             <li>
                               <Link
                                 className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                                href='#'
+                                href='#' onClick={(event) => event.preventDefault()}
                               >
                                 Another action
                               </Link>
@@ -565,7 +565,7 @@ const LatestPerformanceOne = () => {
                             <li>
                               <Link
                                 className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                                href='#'
+                                href='#' onClick={(event) => event.preventDefault()}
                               >
                                 Something else here
                               </Link>
@@ -609,7 +609,7 @@ const LatestPerformanceOne = () => {
                             <li>
                               <Link
                                 className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                                href='#'
+                                href='#' onClick={(event) => event.preventDefault()}
                               >
                                 Action
                               </Link>
@@ -617,7 +617,7 @@ const LatestPerformanceOne = () => {
                             <li>
                               <Link
                                 className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                                href='#'
+                                href='#' onClick={(event) => event.preventDefault()}
                               >
                                 Another action
                               </Link>
@@ -625,7 +625,7 @@ const LatestPerformanceOne = () => {
                             <li>
                               <Link
                                 className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                                href='#'
+                                href='#' onClick={(event) => event.preventDefault()}
                               >
                                 Something else here
                               </Link>
@@ -669,7 +669,7 @@ const LatestPerformanceOne = () => {
                             <li>
                               <Link
                                 className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                                href='#'
+                                href='#' onClick={(event) => event.preventDefault()}
                               >
                                 Action
                               </Link>
@@ -677,7 +677,7 @@ const LatestPerformanceOne = () => {
                             <li>
                               <Link
                                 className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                                href='#'
+                                href='#' onClick={(event) => event.preventDefault()}
                               >
                                 Another action
                               </Link>
@@ -685,7 +685,7 @@ const LatestPerformanceOne = () => {
                             <li>
                               <Link
                                 className='dropdown-item px-16 py-8 rounded text-secondary-light bg-hover-neutral-200 text-hover-neutral-900'
-                                href='#'
+                                href='#' onClick={(event) => event.preventDefault()}
                               >
                                 Something else here
                               </Link>

@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\CustomerOrder;
+use App\Models\Invoice;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 
 class CustomerOrderController extends Controller
@@ -19,6 +21,21 @@ class CustomerOrderController extends Controller
         do {
             $code = 'ORD-' . strtoupper(Str::random(6));
         } while (CustomerOrder::where('order_code', $code)->exists());
+
+        return $code;
+    }
+
+    protected function generateInvoiceNumber(): string
+    {
+        $now = now();
+        $prefix = 'INC-' . $now->format('m') . '-' . $now->format('Y') . '-';
+        $next = Invoice::where('no_invoice', 'like', $prefix . '%')->count() + 1;
+
+        do {
+            $number = str_pad((string) $next, 4, '0', STR_PAD_LEFT);
+            $code = $prefix . $number;
+            $next++;
+        } while (Invoice::where('no_invoice', $code)->exists());
 
         return $code;
     }
@@ -64,6 +81,60 @@ class CustomerOrderController extends Controller
             'insurance_fee' => ['required', 'numeric', 'min:0'],
             'total' => ['required', 'numeric', 'min:0'],
         ]);
+
+        if ($request->has('rincian')) {
+            $invoiceValidator = Validator::make($request->all(), [
+                'tanggal' => ['required', 'date'],
+                'due_date' => ['required', 'date'],
+                'nama_pelanggan' => ['required', 'string'],
+                'email' => ['required', 'string'],
+                'no_telp' => ['required', 'string'],
+                'status' => ['required', 'string'],
+                'diterima_oleh' => ['required', 'string'],
+                'rincian' => ['required', 'array', 'min:1'],
+                'rincian.*.lokasi_muat' => ['required', 'string'],
+                'rincian.*.lokasi_bongkar' => ['required', 'string'],
+                'rincian.*.armada_id' => ['required', 'exists:armadas,id'],
+                'rincian.*.armada_start_date' => ['required', 'date'],
+                'rincian.*.armada_end_date' => ['required', 'date'],
+                'rincian.*.tonase' => ['required', 'numeric', 'gt:0'],
+                'rincian.*.harga' => ['required', 'numeric', 'gt:0'],
+                'total_biaya' => ['required', 'numeric', 'gte:0'],
+                'pph' => ['required', 'numeric', 'gte:0'],
+                'total_bayar' => ['required', 'numeric', 'gte:0'],
+            ]);
+
+            if ($invoiceValidator->fails()) {
+                return response()->json([
+                    'message' => 'Validasi invoice gagal.',
+                    'errors' => $invoiceValidator->errors(),
+                ], 422);
+            }
+
+            $invoiceData = $invoiceValidator->validated();
+            $invoiceData['no_invoice'] = $this->generateInvoiceNumber();
+
+            $first = $invoiceData['rincian'][0];
+            $invoiceData['lokasi_muat'] = $first['lokasi_muat'];
+            $invoiceData['lokasi_bongkar'] = $first['lokasi_bongkar'];
+            $invoiceData['armada_id'] = $first['armada_id'];
+            $invoiceData['armada_start_date'] = $first['armada_start_date'];
+            $invoiceData['armada_end_date'] = $first['armada_end_date'];
+            $invoiceData['tonase'] = $first['tonase'];
+            $invoiceData['harga'] = $first['harga'];
+
+            $subtotal = collect($invoiceData['rincian'])->reduce(function ($sum, $row) {
+                $tonase = (float) ($row['tonase'] ?? 0);
+                $harga = (float) ($row['harga'] ?? 0);
+                return $sum + ($tonase * $harga);
+            }, 0);
+            $pph = $subtotal * 0.02;
+            $invoiceData['total_biaya'] = $subtotal;
+            $invoiceData['pph'] = $pph;
+            $invoiceData['total_bayar'] = $subtotal - $pph;
+
+            Invoice::create($invoiceData);
+        }
 
         $order = CustomerOrder::create([
             'customer_id' => $customer->id,
