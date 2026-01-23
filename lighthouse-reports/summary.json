@@ -1,0 +1,42 @@
+[
+    {
+        "page":  "landing",
+        "url":  "http://localhost:3000/",
+        "performance":  38,
+        "accessibility":  93,
+        "best_practices":  100,
+        "seo":  92
+    },
+    {
+        "page":  "sign-in",
+        "url":  "http://localhost:3000/sign-in",
+        "performance":  50,
+        "accessibility":  94,
+        "best_practices":  100,
+        "seo":  92
+    },
+    {
+        "page":  "order",
+        "url":  "http://localhost:3000/order",
+        "performance":  38,
+        "accessibility":  94,
+        "best_practices":  100,
+        "seo":  92
+    },
+    {
+        "page":  "customer-sign-up",
+        "url":  "http://localhost:3000/customer/sign-up",
+        "performance":  40,
+        "accessibility":  90,
+        "best_practices":  100,
+        "seo":  92
+    },
+    {
+        "page":  "dashboard",
+        "url":  "http://localhost:3000/dashboard",
+        "performance":  38,
+        "accessibility":  92,
+        "best_practices":  96,
+        "seo":  92
+    }
+]

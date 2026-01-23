@@ -201,6 +201,7 @@ const MasterLayout = ({ children }) => {
             onClick={mobileMenuControl}
             type="button"
             className="sidebar-close-btn"
+            aria-label="Tutup menu"
           >
             <Icon icon="radix-icons:cross-2" />
           </button>
@@ -377,6 +378,7 @@ const MasterLayout = ({ children }) => {
                     type="button"
                     className="sidebar-toggle"
                     onClick={sidebarControl}
+                    aria-label="Toggle sidebar"
                   >
                     {sidebarActive ? (
                       <Icon
@@ -395,6 +397,7 @@ const MasterLayout = ({ children }) => {
                     onClick={mobileMenuControl}
                     type="button"
                     className="sidebar-mobile-toggle"
+                    aria-label="Toggle menu mobile"
                   >
                     <Icon icon="heroicons:bars-3-solid" className="icon" />
                   </button>
@@ -497,7 +500,11 @@ const MasterLayout = ({ children }) => {
                           </span>
                         </div>
 
-                        <button type="button" className="hover-text-danger">
+                        <button
+                          type="button"
+                          className="hover-text-danger"
+                          aria-label="Tutup profil"
+                        >
                           <Icon
                             icon="radix-icons:cross-1"
                             className="icon text-xl"

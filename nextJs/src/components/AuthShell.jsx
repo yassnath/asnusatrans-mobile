@@ -68,6 +68,26 @@ const AuthShell = ({ title, subtitle, children }) => {
           padding-left: 52px !important;
         }
 
+        .cvant-auth-bg .cvant-input {
+          background-color: #f8fafc !important;
+          border: 1px solid #cbd5e1 !important;
+          color: #0f172a !important;
+        }
+
+        .cvant-auth-bg .cvant-input::placeholder {
+          color: #94a3b8 !important;
+        }
+
+        .cvant-auth-bg .cvant-input:focus,
+        .cvant-auth-bg .cvant-input:active {
+          background-color: #ffffff !important;
+          border-color: var(--cvant-blue) !important;
+        }
+
+        .cvant-auth-bg .cvant-icon-wrap {
+          color: #64748b !important;
+        }
+
         .cvant-eye-btn {
           position: absolute !important;
           right: 10px !important;
@@ -375,6 +395,9 @@ const AuthShell = ({ title, subtitle, children }) => {
                 src="/assets/images/big-icon.webp"
                 alt="CV ANT illustration"
                 className="cvant-big-icon"
+                loading="eager"
+                decoding="async"
+                fetchPriority="high"
               />
             </div>
           </div>
@@ -396,6 +419,9 @@ const AuthShell = ({ title, subtitle, children }) => {
                     alt="CV ANT logo"
                     className="cvant-logo-glow"
                     style={{ maxWidth: "290px", height: "auto" }}
+                    loading="eager"
+                    decoding="async"
+                    fetchPriority="high"
                   />
                 </Link>
               </div>

@@ -6,7 +6,13 @@ const MaintenanceLayer = () => {
       <div className='container container--xl'>
         <div className='d-flex align-items-center justify-content-between py-24'>
           <Link href='/' className=''>
-            <img src='assets/images/logo.png' alt='CV ANT logo' />
+            <img
+              src='assets/images/logo.png'
+              alt='CV ANT logo'
+              loading='eager'
+              decoding='async'
+              fetchPriority='high'
+            />
           </Link>
           <Link href='/' className='btn btn-outline-primary-600 text-sm'>
             {" "}
@@ -52,6 +58,9 @@ const MaintenanceLayer = () => {
               <img
                 src='assets/images/coming-soon/maintenance.png'
                 alt='Maintenance illustration'
+                loading='eager'
+                decoding='async'
+                fetchPriority='high'
               />
             </div>
           </div>

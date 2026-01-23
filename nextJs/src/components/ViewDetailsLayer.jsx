@@ -211,7 +211,7 @@ const ViewDetailsLayer = () => {
             <div className='card-body p-0'>
               <div className='py-16 px-24 border-bottom'>
                 <div className='d-flex align-items-start gap-3'>
-                  <img
+                  <img loading="lazy" decoding="async"
                     src='assets/images/user-list/user-list1.png'
                     alt='Wowdash'
                     className='w-40-px h-40-px rounded-pill'
@@ -246,7 +246,7 @@ const ViewDetailsLayer = () => {
               </div>
               <div className='py-16 px-24 border-bottom'>
                 <div className='d-flex align-items-start gap-3'>
-                  <img
+                  <img loading="lazy" decoding="async"
                     src='assets/images/user-list/user-list2.png'
                     alt='Wowdash'
                     className='w-40-px h-40-px rounded-pill'

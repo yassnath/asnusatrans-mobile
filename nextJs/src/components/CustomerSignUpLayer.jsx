@@ -220,6 +220,7 @@ const CustomerSignUpLayer = () => {
               type="text"
               className="form-control bg-neutral-50 radius-12 cvant-input"
               placeholder="Nama lengkap"
+              aria-label="Nama lengkap"
               value={form.name}
               onChange={onChange("name")}
               autoComplete="name"
@@ -234,6 +235,7 @@ const CustomerSignUpLayer = () => {
               type="text"
               className="form-control bg-neutral-50 radius-12 cvant-input"
               placeholder="Username"
+              aria-label="Username"
               value={form.username}
               onChange={onChange("username")}
               autoComplete="username"
@@ -248,6 +250,7 @@ const CustomerSignUpLayer = () => {
               type="email"
               className="form-control bg-neutral-50 radius-12 cvant-input"
               placeholder="nama@email.com"
+              aria-label="Email"
               value={form.email}
               onChange={onChange("email")}
               autoComplete="email"
@@ -262,6 +265,7 @@ const CustomerSignUpLayer = () => {
               type="tel"
               className="form-control bg-neutral-50 radius-12 cvant-input"
               placeholder="08xxxxxxxxxx"
+              aria-label="Nomor telepon"
               value={form.phone}
               onChange={onChange("phone")}
               autoComplete="tel"
@@ -297,6 +301,7 @@ const CustomerSignUpLayer = () => {
             <input
               type="date"
               className="form-control bg-neutral-50 radius-12 cvant-input"
+              aria-label="Tanggal lahir"
               value={form.birthDate}
               onChange={onChange("birthDate")}
               autoComplete="bday"
@@ -311,6 +316,7 @@ const CustomerSignUpLayer = () => {
               type="text"
               className="form-control bg-neutral-50 radius-12 cvant-input"
               placeholder="Alamat lengkap"
+              aria-label="Alamat lengkap"
               value={form.address}
               onChange={onChange("address")}
               autoComplete="street-address"
@@ -325,6 +331,7 @@ const CustomerSignUpLayer = () => {
               type="text"
               className="form-control bg-neutral-50 radius-12 cvant-input"
               placeholder="Nama kota"
+              aria-label="Kota"
               value={form.city}
               onChange={onChange("city")}
               autoComplete="address-level2"
@@ -339,6 +346,7 @@ const CustomerSignUpLayer = () => {
               type="text"
               className="form-control bg-neutral-50 radius-12 cvant-input"
               placeholder="Nama perusahaan"
+              aria-label="Nama perusahaan"
               value={form.company}
               onChange={onChange("company")}
               autoComplete="organization"
@@ -353,6 +361,7 @@ const CustomerSignUpLayer = () => {
               type={showPassword ? "text" : "password"}
               className="form-control bg-neutral-50 radius-12 cvant-input"
               placeholder="Password"
+              aria-label="Password"
               value={form.password}
               onChange={onChange("password")}
               autoComplete="new-password"
@@ -382,6 +391,7 @@ const CustomerSignUpLayer = () => {
               type={showPassword ? "text" : "password"}
               className="form-control bg-neutral-50 radius-12 cvant-input"
               placeholder="Konfirmasi password"
+              aria-label="Konfirmasi password"
               value={form.confirmPassword}
               onChange={onChange("confirmPassword")}
               autoComplete="new-password"

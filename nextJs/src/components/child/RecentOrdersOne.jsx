@@ -34,7 +34,7 @@ const RecentOrdersOne = () => {
                 <tr>
                   <td>
                     <div className='d-flex align-items-center'>
-                      <img
+                      <img loading="lazy" decoding="async"
                         src='assets/images/users/user1.png'
                         alt='Dianne Russell'
                         className='flex-shrink-0 me-12 radius-8'
@@ -58,7 +58,7 @@ const RecentOrdersOne = () => {
                 <tr>
                   <td>
                     <div className='d-flex align-items-center'>
-                      <img
+                      <img loading="lazy" decoding="async"
                         src='assets/images/users/user2.png'
                         alt='Wade Warren'
                         className='flex-shrink-0 me-12 radius-8'
@@ -82,7 +82,7 @@ const RecentOrdersOne = () => {
                 <tr>
                   <td>
                     <div className='d-flex align-items-center'>
-                      <img
+                      <img loading="lazy" decoding="async"
                         src='assets/images/users/user3.png'
                         alt='Albert Flores'
                         className='flex-shrink-0 me-12 radius-8'
@@ -106,7 +106,7 @@ const RecentOrdersOne = () => {
                 <tr>
                   <td>
                     <div className='d-flex align-items-center'>
-                      <img
+                      <img loading="lazy" decoding="async"
                         src='assets/images/users/user4.png'
                         alt='Bessie Cooper'
                         className='flex-shrink-0 me-12 radius-8'
@@ -130,7 +130,7 @@ const RecentOrdersOne = () => {
                 <tr>
                   <td>
                     <div className='d-flex align-items-center'>
-                      <img
+                      <img loading="lazy" decoding="async"
                         src='assets/images/users/user5.png'
                         alt='Arlene McCoy'
                         className='flex-shrink-0 me-12 radius-8'

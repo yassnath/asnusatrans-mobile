@@ -10,6 +10,9 @@ const ForgotPasswordLayer = () => {
             <img
               src='assets/images/auth/forgot-pass-img.png'
               alt='Forgot password illustration'
+              loading='eager'
+              decoding='async'
+              fetchPriority='high'
             />
           </div>
         </div>
@@ -31,6 +34,7 @@ const ForgotPasswordLayer = () => {
                   type='email'
                   className='form-control h-56-px bg-neutral-50 radius-12'
                   placeholder='Enter Email'
+                  aria-label='Email'
                 />
               </div>
               <button
@@ -78,6 +82,8 @@ const ForgotPasswordLayer = () => {
                 <img
                   src='assets/images/auth/envelop-icon.png'
                   alt='Envelope icon'
+                  loading='lazy'
+                  decoding='async'
                 />
               </div>
               <h6 className='mb-12'>Verify your Email</h6>

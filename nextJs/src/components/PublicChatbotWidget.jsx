@@ -122,6 +122,14 @@ const formatTonnage = (value) => {
   return `${raw} ton`;
 };
 
+const normalizeArmadas = (payload) => {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.armadas)) return payload.armadas;
+  if (Array.isArray(payload?.items)) return payload.items;
+  return [];
+};
+
 const companyProfile = {
   name: "CV AS Nusa Trans (CV ANT)",
 };
@@ -237,7 +245,7 @@ const PublicChatbotWidget = () => {
       try {
         const data = await publicApi.get("/public/armadas");
         if (!mounted) return;
-        setArmadas(Array.isArray(data) ? data : []);
+        setArmadas(normalizeArmadas(data));
       } catch {
         if (!mounted) return;
         setArmadas([]);
@@ -330,7 +338,7 @@ const PublicChatbotWidget = () => {
               value={input}
               onChange={(event) => setInput(event.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Tanya tentang CV ANT, daftar akun, cara order..."
+              placeholder="Tanya tentang CV ANT"
               aria-label="Tulis pesan"
             />
             <button type="submit" disabled={!input.trim()}>

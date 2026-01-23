@@ -2,22 +2,22 @@
 import React from "react";
 import { Icon } from "@iconify/react";
 import Link from "next/link";
-const Breadcrumb = ({ title }) => {
+const Breadcrumb = ({ title, rootHref = "/", rootLabel = "Dashboard" }) => {
   return (
     <>
       <div className='d-flex flex-wrap align-items-center justify-content-between gap-3 mb-24 cvant-breadcrumb-row'>
-        <h6 className='fw-semibold mb-0 cvant-breadcrumb-title'>Dashboard</h6>
+        <h6 className='fw-semibold mb-0 cvant-breadcrumb-title'>{rootLabel}</h6>
         <ul className='d-flex align-items-center gap-2 cvant-breadcrumb-list'>
         <li className='fw-medium'>
           <Link
-            href='/'
+            href={rootHref}
             className='d-flex align-items-center gap-1 hover-text-primary'
           >
             <Icon
               icon='solar:home-smile-angle-outline'
               className='icon text-lg'
             />
-            Dashboard
+            {rootLabel}
           </Link>
         </li>
         <li> - </li>

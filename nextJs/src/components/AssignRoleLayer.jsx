@@ -30,6 +30,7 @@ const AssignRoleLayer = () => {
               className='bg-base h-40-px w-auto'
               name='search'
               placeholder='Search'
+              aria-label='Search'
             />
             <Icon icon='ion:search-outline' className='icon' />
           </form>
@@ -88,7 +89,7 @@ const AssignRoleLayer = () => {
                 </td>
                 <td>
                   <div className='d-flex align-items-center'>
-                    <img
+                    <img loading="lazy" decoding="async"
                       src='assets/images/user-list/user-list1.png'
                       alt='User avatar'
                       className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
@@ -179,7 +180,7 @@ const AssignRoleLayer = () => {
                 </td>
                 <td>
                   <div className='d-flex align-items-center'>
-                    <img
+                    <img loading="lazy" decoding="async"
                       src='assets/images/user-list/user-list2.png'
                       alt='User avatar'
                       className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
@@ -270,7 +271,7 @@ const AssignRoleLayer = () => {
                 </td>
                 <td>
                   <div className='d-flex align-items-center'>
-                    <img
+                    <img loading="lazy" decoding="async"
                       src='assets/images/user-list/user-list3.png'
                       alt='User avatar'
                       className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
@@ -361,7 +362,7 @@ const AssignRoleLayer = () => {
                 </td>
                 <td>
                   <div className='d-flex align-items-center'>
-                    <img
+                    <img loading="lazy" decoding="async"
                       src='assets/images/user-list/user-list4.png'
                       alt='User avatar'
                       className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
@@ -452,7 +453,7 @@ const AssignRoleLayer = () => {
                 </td>
                 <td>
                   <div className='d-flex align-items-center'>
-                    <img
+                    <img loading="lazy" decoding="async"
                       src='assets/images/user-list/user-list5.png'
                       alt='User avatar'
                       className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
@@ -543,7 +544,7 @@ const AssignRoleLayer = () => {
                 </td>
                 <td>
                   <div className='d-flex align-items-center'>
-                    <img
+                    <img loading="lazy" decoding="async"
                       src='assets/images/user-list/user-list6.png'
                       alt='User avatar'
                       className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
@@ -634,7 +635,7 @@ const AssignRoleLayer = () => {
                 </td>
                 <td>
                   <div className='d-flex align-items-center'>
-                    <img
+                    <img loading="lazy" decoding="async"
                       src='assets/images/user-list/user-list7.png'
                       alt='User avatar'
                       className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
@@ -725,7 +726,7 @@ const AssignRoleLayer = () => {
                 </td>
                 <td>
                   <div className='d-flex align-items-center'>
-                    <img
+                    <img loading="lazy" decoding="async"
                       src='assets/images/user-list/user-list8.png'
                       alt='User avatar'
                       className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
@@ -816,7 +817,7 @@ const AssignRoleLayer = () => {
                 </td>
                 <td>
                   <div className='d-flex align-items-center'>
-                    <img
+                    <img loading="lazy" decoding="async"
                       src='assets/images/user-list/user-list2.png'
                       alt='User avatar'
                       className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
@@ -907,7 +908,7 @@ const AssignRoleLayer = () => {
                 </td>
                 <td>
                   <div className='d-flex align-items-center'>
-                    <img
+                    <img loading="lazy" decoding="async"
                       src='assets/images/user-list/user-list10.png'
                       alt='User avatar'
                       className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'

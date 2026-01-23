@@ -8,6 +8,9 @@ const ErrorLayer = () => {
           src='assets/images/error-img.png'
           alt='Error illustration'
           className='mb-24'
+          loading='eager'
+          decoding='async'
+          fetchPriority='high'
         />
         <h6 className='mb-16'>Page not Found</h6>
         <p className='text-secondary-light'>

@@ -510,6 +510,9 @@ const CustomerAuthShell = ({ title, subtitle, children, footer, wide = false }) 
                 src="/assets/images/big-icon.webp"
                 alt="CV ANT illustration"
                 className="cvant-big-icon"
+                loading="eager"
+                decoding="async"
+                fetchPriority="high"
               />
             </div>
           </div>
@@ -529,6 +532,9 @@ const CustomerAuthShell = ({ title, subtitle, children, footer, wide = false }) 
                     alt="CV ANT logo"
                     className="cvant-logo-glow"
                     style={{ maxWidth: "290px", height: "auto" }}
+                    loading="eager"
+                    decoding="async"
+                    fetchPriority="high"
                   />
                 </Link>
               </div>

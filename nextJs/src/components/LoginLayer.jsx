@@ -301,6 +301,7 @@ const LoginLayer = () => {
               type="text"
               className="form-control bg-neutral-50 radius-12 cvant-input"
               placeholder="Email / Username"
+              aria-label="Email atau Username"
               value={form.login}
               onChange={onChange("login")}
               autoComplete="username"
@@ -316,6 +317,7 @@ const LoginLayer = () => {
               type={showPassword ? "text" : "password"}
               className="form-control bg-neutral-50 radius-12 cvant-input"
               placeholder="Password"
+              aria-label="Password"
               value={form.password}
               onChange={onChange("password")}
               autoComplete="current-password"

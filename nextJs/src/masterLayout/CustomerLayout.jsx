@@ -153,6 +153,7 @@ const CustomerLayout = ({ children }) => {
             onClick={mobileMenuControl}
             type="button"
             className="sidebar-close-btn"
+            aria-label="Tutup menu"
           >
             <Icon icon="radix-icons:cross-2" />
           </button>
@@ -264,6 +265,7 @@ const CustomerLayout = ({ children }) => {
                     type="button"
                     className="sidebar-toggle"
                     onClick={sidebarControl}
+                    aria-label="Toggle sidebar"
                   >
                     {sidebarActive ? (
                       <Icon
@@ -282,12 +284,13 @@ const CustomerLayout = ({ children }) => {
                     onClick={mobileMenuControl}
                     type="button"
                     className="sidebar-mobile-toggle"
+                    aria-label="Toggle menu mobile"
                   >
                     <Icon icon="heroicons:bars-3-solid" className="icon" />
                   </button>
 
                   <form className="navbar-search">
-                    <input type="text" placeholder="Search" />
+                    <input type="text" placeholder="Search" aria-label="Search" />
                     <Icon icon="ion:search-outline" className="icon" />
                   </form>
                 </div>
@@ -387,6 +390,7 @@ const CustomerLayout = ({ children }) => {
                             type="button"
                             className="hover-text-danger"
                             onClick={() => setProfileOpen(false)}
+                            aria-label="Tutup profil"
                           >
                             <Icon icon="radix-icons:cross-1" className="icon text-xl" />
                           </button>
@@ -591,12 +595,11 @@ const CustomerLayout = ({ children }) => {
           top: calc(100% + 12px);
           right: 0;
           width: min(320px, 90vw);
-          background: var(--bs-body-bg, #1f2937);
-          border: 1px solid rgba(148, 163, 184, 0.3);
-          border-radius: 12px;
-          box-shadow: 0 18px 40px rgba(0, 0, 0, 0.2);
+          background: var(--white);
+          border: 0;
+          border-radius: 16px;
+          box-shadow: 0px 13px 30px 10px rgba(46, 45, 116, 0.05);
           z-index: 40;
-          color: var(--text-primary-light);
         }
 
         .cvant-notify-header {
@@ -700,17 +703,28 @@ const CustomerLayout = ({ children }) => {
           top: calc(100% + 12px);
           right: 0;
           width: 220px;
-          border-radius: 12px;
-          background: var(--bs-body-bg, #1f2937);
-          border: 1px solid rgba(148, 163, 184, 0.3);
-          box-shadow: 0 18px 40px rgba(0, 0, 0, 0.2);
+          border-radius: 16px;
+          background: var(--white);
+          border: 0;
+          box-shadow: 0px 13px 30px 10px rgba(46, 45, 116, 0.05);
           z-index: 40;
-          padding: 10px 12px;
-          color: var(--text-primary-light);
+          padding: 12px 14px;
         }
 
         .cvant-profile-menu .dropdown-item {
           color: inherit !important;
+        }
+
+        .cvant-profile-menu .dropdown-item.hover-text-danger:hover,
+        .cvant-profile-menu .dropdown-item.hover-text-danger:focus-visible,
+        .cvant-profile-menu .dropdown-item.hover-text-danger:active {
+          color: var(--danger-main) !important;
+        }
+
+        .cvant-profile-menu .dropdown-item.hover-text-danger:hover .icon,
+        .cvant-profile-menu .dropdown-item.hover-text-danger:focus-visible .icon,
+        .cvant-profile-menu .dropdown-item.hover-text-danger:active .icon {
+          color: var(--danger-main) !important;
         }
 
         .cvant-profile-header {
@@ -718,10 +732,10 @@ const CustomerLayout = ({ children }) => {
           align-items: flex-start;
           justify-content: space-between;
           gap: 12px;
-          padding: 10px 12px;
-          border-radius: 10px;
+          padding: 12px 16px;
+          border-radius: 8px;
           background: var(--primary-50);
-          margin-bottom: 10px;
+          margin-bottom: 12px;
         }
 
         .cvant-profile-list {

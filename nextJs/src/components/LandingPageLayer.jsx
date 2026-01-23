@@ -59,6 +59,30 @@ const useCountUp = (target, duration = 2400) => {
   return value;
 };
 
+const normalizeArmadas = (payload) => {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.armadas)) return payload.armadas;
+  if (Array.isArray(payload?.items)) return payload.items;
+  return [];
+};
+
+const clearStoredAuth = () => {
+  if (typeof window === "undefined") return;
+
+  localStorage.removeItem("token");
+  localStorage.removeItem("user");
+  localStorage.removeItem("role");
+  localStorage.removeItem("username");
+  localStorage.removeItem("cvant_customer_token");
+  localStorage.removeItem("cvant_customer_user");
+
+  document.cookie =
+    "token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax;";
+  document.cookie =
+    "customer_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax;";
+};
+
 const LandingPageLayer = () => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [armadas, setArmadas] = useState([]);
@@ -81,7 +105,7 @@ const LandingPageLayer = () => {
       try {
         const data = await publicApi.get("/public/armadas");
         if (!mounted) return;
-        setArmadas(Array.isArray(data) ? data : []);
+        setArmadas(normalizeArmadas(data));
       } catch {
         if (!mounted) return;
         setArmadas([]);
@@ -1584,7 +1608,13 @@ const LandingPageLayer = () => {
         <header className="cvant-nav">
           <div className="cvant-container cvant-nav-inner">
             <Link href="/" className="cvant-brand" onClick={closeMenu}>
-              <img src="/assets/images/logo.webp" alt="CV ANT" />
+              <img
+                src="/assets/images/logo.webp"
+                alt="CV ANT"
+                loading="eager"
+                decoding="async"
+                fetchPriority="high"
+              />
             </Link>
 
             <nav className={`cvant-nav-links ${menuOpen ? "is-open" : ""}`}>
@@ -1599,7 +1629,14 @@ const LandingPageLayer = () => {
                 <span className="cvant-theme-desktop">
                   <ThemeToggleButton />
                 </span>
-                <Link href="/sign-in" className="cvant-btn cvant-btn-ghost">
+                <Link
+                  href="/sign-in"
+                  className="cvant-btn cvant-btn-ghost"
+                  onClick={() => {
+                    clearStoredAuth();
+                    closeMenu();
+                  }}
+                >
                   Masuk
                 </Link>
                 <Link href="/order" className="cvant-btn cvant-btn-primary">
@@ -1677,6 +1714,9 @@ const LandingPageLayer = () => {
                     src="/assets/images/big-icon.webp"
                     alt="CV ANT hero illustration"
                     className="cvant-hero-icon"
+                    loading="eager"
+                    decoding="async"
+                    fetchPriority="high"
                   />
                 </div>
               </div>

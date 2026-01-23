@@ -48,7 +48,7 @@ const PaymentHistoryOne = () => {
               <tr>
                 <td className=''>
                   <div className='d-flex align-items-center'>
-                    <img
+                    <img loading="lazy" decoding="async"
                       src='assets/images/users/user1.png'
                       alt='Dianne Russell'
                       className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
@@ -72,7 +72,7 @@ const PaymentHistoryOne = () => {
               <tr>
                 <td className=''>
                   <div className='d-flex align-items-center'>
-                    <img
+                    <img loading="lazy" decoding="async"
                       src='assets/images/users/user2.png'
                       alt='Wade Warren'
                       className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
@@ -96,7 +96,7 @@ const PaymentHistoryOne = () => {
               <tr>
                 <td className=''>
                   <div className='d-flex align-items-center'>
-                    <img
+                    <img loading="lazy" decoding="async"
                       src='assets/images/users/user3.png'
                       alt='Albert Flores'
                       className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
@@ -120,7 +120,7 @@ const PaymentHistoryOne = () => {
               <tr>
                 <td className=''>
                   <div className='d-flex align-items-center'>
-                    <img
+                    <img loading="lazy" decoding="async"
                       src='assets/images/users/user4.png'
                       alt='Bessie Cooper'
                       className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
@@ -144,7 +144,7 @@ const PaymentHistoryOne = () => {
               <tr>
                 <td className=''>
                   <div className='d-flex align-items-center'>
-                    <img
+                    <img loading="lazy" decoding="async"
                       src='assets/images/users/user5.png'
                       alt='Arlene McCoy'
                       className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'

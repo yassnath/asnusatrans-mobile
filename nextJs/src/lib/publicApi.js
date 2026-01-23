@@ -4,6 +4,9 @@ API_URL = API_URL.replace(/\/+$/, "");
 
 const buildUrl = (url) => {
   const path = url.startsWith("/") ? url : `/${url}`;
+  if (API_URL.endsWith("/api")) {
+    return `${API_URL}${path}`;
+  }
   return `${API_URL}/api${path}`;
 };
 

@@ -31,6 +31,7 @@ const CurrenciesLayer = () => {
                 className='bg-base h-40-px w-auto'
                 name='search'
                 placeholder='Search'
+                aria-label='Search'
               />
               <Icon icon='ion:search-outline' className='icon' />
             </form>

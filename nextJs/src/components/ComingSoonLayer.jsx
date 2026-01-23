@@ -42,7 +42,13 @@ const ComingSoonLayer = () => {
       <div className='container container--xl'>
         <div className='d-flex align-items-center justify-content-between py-24'>
           <Link href='/'>
-            <img src='assets/images/logo.png' alt='Logo' />
+            <img
+              src='assets/images/logo.png'
+              alt='Logo'
+              loading='eager'
+              decoding='async'
+              fetchPriority='high'
+            />
           </Link>
           <Link href='/' className='btn btn-outline-primary-600 text-sm'>
             Go To Home
@@ -110,6 +116,9 @@ const ComingSoonLayer = () => {
               <img
                 src='assets/images/coming-soon/coming-soon.png'
                 alt='Coming Soon'
+                loading='eager'
+                decoding='async'
+                fetchPriority='high'
               />
             </div>
           </div>

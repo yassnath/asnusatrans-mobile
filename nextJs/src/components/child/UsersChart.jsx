@@ -23,7 +23,7 @@ const UsersChart = () => {
           <div className='d-flex flex-column gap-24'>
             <div className='d-flex align-items-center justify-content-between gap-3'>
               <div className='d-flex align-items-center'>
-                <img
+                <img loading="lazy" decoding="async"
                   src='assets/images/user-grid/user-grid-img1.png'
                   alt='User avatar'
                   className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
@@ -41,7 +41,7 @@ const UsersChart = () => {
             </div>
             <div className='d-flex align-items-center justify-content-between gap-3'>
               <div className='d-flex align-items-center'>
-                <img
+                <img loading="lazy" decoding="async"
                   src='assets/images/user-grid/user-grid-img2.png'
                   alt='User avatar'
                   className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
@@ -59,7 +59,7 @@ const UsersChart = () => {
             </div>
             <div className='d-flex align-items-center justify-content-between gap-3'>
               <div className='d-flex align-items-center'>
-                <img
+                <img loading="lazy" decoding="async"
                   src='assets/images/user-grid/user-grid-img3.png'
                   alt='User avatar'
                   className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
@@ -77,7 +77,7 @@ const UsersChart = () => {
             </div>
             <div className='d-flex align-items-center justify-content-between gap-3'>
               <div className='d-flex align-items-center'>
-                <img
+                <img loading="lazy" decoding="async"
                   src='assets/images/user-grid/user-grid-img4.png'
                   alt='User avatar'
                   className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'
@@ -95,7 +95,7 @@ const UsersChart = () => {
             </div>
             <div className='d-flex align-items-center justify-content-between gap-3'>
               <div className='d-flex align-items-center'>
-                <img
+                <img loading="lazy" decoding="async"
                   src='assets/images/user-grid/user-grid-img1.png'
                   alt='User avatar'
                   className='w-40-px h-40-px rounded-circle flex-shrink-0 me-12 overflow-hidden'

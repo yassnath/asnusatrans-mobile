@@ -1,3 +1,4 @@
+import Breadcrumb from "@/components/Breadcrumb";
 import CustomerLayout from "@/masterLayout/CustomerLayout";
 import CustomerOrdersLayer from "@/components/CustomerOrdersLayer";
 
@@ -9,6 +10,11 @@ export const metadata = {
 export default function CustomerOrdersPage() {
   return (
     <CustomerLayout>
+      <Breadcrumb
+        title="Riwayat Pesanan"
+        rootHref="/customer/dashboard"
+        rootLabel="Dashboard"
+      />
       <CustomerOrdersLayer />
     </CustomerLayout>
   );

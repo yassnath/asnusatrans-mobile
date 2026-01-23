@@ -18,7 +18,7 @@ const TransactionsOne = () => {
           <div className='mt-32'>
             <div className='d-flex align-items-center justify-content-between gap-3 mb-32'>
               <div className='d-flex align-items-center gap-2'>
-                <img
+                <img loading="lazy" decoding="async"
                   src='assets/images/payment/payment1.png'
                   alt='Paytm logo'
                   className='w-40-px h-40-px radius-8 flex-shrink-0'
@@ -34,7 +34,7 @@ const TransactionsOne = () => {
             </div>
             <div className='d-flex align-items-center justify-content-between gap-3 mb-32'>
               <div className='d-flex align-items-center gap-2'>
-                <img
+                <img loading="lazy" decoding="async"
                   src='assets/images/payment/payment2.png'
                   alt='PayPal logo'
                   className='w-40-px h-40-px radius-8 flex-shrink-0'
@@ -50,7 +50,7 @@ const TransactionsOne = () => {
             </div>
             <div className='d-flex align-items-center justify-content-between gap-3 mb-32'>
               <div className='d-flex align-items-center gap-2'>
-                <img
+                <img loading="lazy" decoding="async"
                   src='assets/images/payment/payment3.png'
                   alt='Stripe logo'
                   className='w-40-px h-40-px radius-8 flex-shrink-0'
@@ -66,7 +66,7 @@ const TransactionsOne = () => {
             </div>
             <div className='d-flex align-items-center justify-content-between gap-3 mb-32'>
               <div className='d-flex align-items-center gap-2'>
-                <img
+                <img loading="lazy" decoding="async"
                   src='assets/images/payment/payment4.png'
                   alt='Razorpay logo'
                   className='w-40-px h-40-px radius-8 flex-shrink-0'
@@ -82,7 +82,7 @@ const TransactionsOne = () => {
             </div>
             <div className='d-flex align-items-center justify-content-between gap-3 mb-32'>
               <div className='d-flex align-items-center gap-2'>
-                <img
+                <img loading="lazy" decoding="async"
                   src='assets/images/payment/payment1.png'
                   alt='Paytm logo'
                   className='w-40-px h-40-px radius-8 flex-shrink-0'
@@ -98,7 +98,7 @@ const TransactionsOne = () => {
             </div>
             <div className='d-flex align-items-center justify-content-between gap-3'>
               <div className='d-flex align-items-center gap-2'>
-                <img
+                <img loading="lazy" decoding="async"
                   src='assets/images/payment/payment3.png'
                   alt='Stripe logo'
                   className='w-40-px h-40-px radius-8 flex-shrink-0'

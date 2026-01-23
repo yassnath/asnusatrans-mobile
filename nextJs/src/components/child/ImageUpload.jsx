@@ -50,7 +50,7 @@ const ImageUpload = () => {
                                         className="text-xl text-danger-600"
                                     ></Icon>
                                 </button>
-                                <img
+                                <img loading="lazy" decoding="async"
                                     id="uploaded-img__preview"
                                     className="w-100 h-100 object-fit-cover"
                                     src={imagePreview}

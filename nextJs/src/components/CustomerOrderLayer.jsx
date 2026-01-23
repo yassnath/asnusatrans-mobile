@@ -507,12 +507,23 @@ const CustomerOrderLayer = () => {
                 )}
 
                 <div className="row g-3">
-                  <div className="col-md-4">
+                  <div className="col-md-6">
                     <label className="form-label fw-semibold">Tanggal</label>
                     <input
                       type="date"
                       className="form-control"
                       value={form.tanggal}
+                      readOnly
+                    />
+                  </div>
+                  <div className="col-md-6">
+                    <label className="form-label fw-semibold">
+                      Tanggal Jatuh Tempo
+                    </label>
+                    <input
+                      type="date"
+                      className="form-control"
+                      value={form.due_date}
                       readOnly
                     />
                   </div>
@@ -548,7 +559,7 @@ const CustomerOrderLayer = () => {
                       readOnly
                     />
                   </div>
-                  <div className="col-md-4">
+                  <div className="col-md-6">
                     <label className="form-label fw-semibold">
                       Perusahaan (opsional)
                     </label>
@@ -559,7 +570,7 @@ const CustomerOrderLayer = () => {
                       readOnly
                     />
                   </div>
-                  <div className="col-md-4">
+                  <div className="col-md-6">
                     <label className="form-label fw-semibold">Jenis Barang</label>
                     <input
                       type="text"
@@ -567,17 +578,6 @@ const CustomerOrderLayer = () => {
                       value={form.cargo}
                       onChange={onChange("cargo")}
                       placeholder="Contoh: material, makanan"
-                    />
-                  </div>
-                  <div className="col-md-4">
-                    <label className="form-label fw-semibold">Berat (ton)</label>
-                    <input
-                      type="number"
-                      className="form-control"
-                      value={form.weight}
-                      onChange={onChange("weight")}
-                      placeholder="Contoh: 4"
-                      min="0"
                     />
                   </div>
                   <div className="col-md-12">
