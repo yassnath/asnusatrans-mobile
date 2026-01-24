@@ -40,15 +40,29 @@ class ArmadaController extends Controller
 
     public function publicIndex()
     {
-        return Armada::orderBy('nama_truk')
-            ->get(['id', 'nama_truk', 'kapasitas'])
-            ->map(function ($armada) {
-                return [
-                    'id' => $armada->id,
-                    'nama_truk' => $armada->nama_truk,
-                    'kapasitas' => $armada->kapasitas,
-                ];
+        $today = now()->toDateString();
+
+        $armadas = Armada::with(['invoices:id,armada_id,armada_start_date,armada_end_date'])
+            ->orderBy('nama_truk')
+            ->get();
+
+        return $armadas->map(function ($armada) use ($today) {
+            $isBusy = $armada->invoices->contains(function ($inv) use ($today) {
+                if (!$inv->armada_start_date || !$inv->armada_end_date) return false;
+
+                $start = optional($inv->armada_start_date)->toDateString() ?? (string) $inv->armada_start_date;
+                $end   = optional($inv->armada_end_date)->toDateString() ?? (string) $inv->armada_end_date;
+
+                return $start <= $today && $end >= $today;
             });
+
+            return [
+                'id' => $armada->id,
+                'nama_truk' => $armada->nama_truk,
+                'kapasitas' => $armada->kapasitas,
+                'status' => $isBusy ? 'Full' : 'Ready',
+            ];
+        });
     }
 
     public function store(Request $request)

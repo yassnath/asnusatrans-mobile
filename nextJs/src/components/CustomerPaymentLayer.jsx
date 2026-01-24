@@ -2,29 +2,36 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Icon } from "@iconify/react/dist/iconify.js";
 import { customerApi } from "@/lib/customerApi";
 
 const CustomerPaymentLayer = () => {
+  const searchParams = useSearchParams();
+  const orderId = searchParams.get("id");
   const [order, setOrder] = useState(null);
   const [method, setMethod] = useState("");
-  const [message, setMessage] = useState(null);
   const [processing, setProcessing] = useState(false);
+  const [popup, setPopup] = useState(null);
 
   useEffect(() => {
     const loadLatest = async () => {
       try {
-        const latest = await customerApi.get("/customer/orders?latest=1");
-        if (latest) {
-          setOrder(latest);
+        if (orderId) {
+          const selected = await customerApi.get(`/customer/orders/${orderId}`);
+          setOrder(selected || null);
+          return;
         }
+
+        const latest = await customerApi.get("/customer/orders?latest=1");
+        setOrder(latest || null);
       } catch {
         setOrder(null);
       }
     };
 
     loadLatest();
-  }, []);
+  }, [orderId]);
 
   const formatCurrency = (value) => {
     const parsed = Number(value);
@@ -32,9 +39,32 @@ const CustomerPaymentLayer = () => {
     return `Rp ${safeValue.toLocaleString("id-ID")}`;
   };
 
+  const formatScheduleDate = (value) => {
+    if (!value) return "-";
+    const raw = String(value);
+    const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match) return `${match[3]}-${match[2]}-${match[1]}`;
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) return raw;
+    const day = String(parsed.getDate()).padStart(2, "0");
+    const month = String(parsed.getMonth() + 1).padStart(2, "0");
+    const year = String(parsed.getFullYear());
+    return `${day}-${month}-${year}`;
+  };
+
+  const formatStatusLabel = (status) => {
+    if (!status) return "Pending";
+    const normalized = String(status).toLowerCase();
+    if (normalized.includes("pending")) return "Pending";
+    if (normalized.includes("accepted")) return "Accepted";
+    if (normalized.includes("rejected")) return "Rejected";
+    if (normalized.includes("paid")) return "Paid";
+    return status;
+  };
+
   const handlePay = async () => {
     if (!method) {
-      setMessage({
+      setPopup({
         type: "error",
         text: "Pilih metode pembayaran terlebih dulu.",
       });
@@ -43,19 +73,19 @@ const CustomerPaymentLayer = () => {
 
     if (!order) return;
     setProcessing(true);
-    setMessage(null);
+    setPopup(null);
 
     try {
       const updated = await customerApi.post(`/customer/orders/${order.id}/pay`, {
         payment_method: method,
       });
       setOrder(updated);
-      setMessage({
+      setPopup({
         type: "success",
         text: "Pembayaran berhasil. Tim kami akan segera memproses order.",
       });
     } catch (error) {
-      setMessage({
+      setPopup({
         type: "error",
         text: error?.message || "Pembayaran gagal. Coba lagi.",
       });
@@ -65,9 +95,11 @@ const CustomerPaymentLayer = () => {
   };
 
   const orderCode = order?.order_code || order?.id || "-";
-  const scheduleDate = order?.pickup_date || order?.date || "-";
-  const rawTime = order?.pickup_time || order?.time || "";
-  const scheduleTime = rawTime ? rawTime.slice(0, 5) : "-";
+  const scheduleDate = formatScheduleDate(order?.pickup_date || order?.date);
+  const normalizedStatus = String(order?.status || "").toLowerCase();
+  const isPaymentAvailable =
+    normalizedStatus.includes("accepted") || normalizedStatus.includes("paid");
+  const isAwaitingApproval = order && !isPaymentAvailable;
 
   const methods = [
     { id: "va", label: "Virtual Account", icon: "solar:card-transfer-linear" },
@@ -96,6 +128,19 @@ const CustomerPaymentLayer = () => {
             </Link>
           </div>
         </div>
+      ) : isAwaitingApproval ? (
+        <div className="card shadow-none border">
+          <div className="card-body">
+            <h6 className="mb-2">Menunggu Persetujuan</h6>
+            <p className="text-secondary-light mb-0">
+              Order Anda sedang ditinjau oleh owner/admin. Invoice akan
+              dikirimkan melalui notifikasi setelah disetujui.
+            </p>
+            <Link href="/customer/notifications" className="btn btn-primary mt-3">
+              Lihat Notifikasi
+            </Link>
+          </div>
+        </div>
       ) : (
         <div className="row g-4">
           <div className="col-lg-5">
@@ -118,7 +163,7 @@ const CustomerPaymentLayer = () => {
                   <div className="cvant-mobile-card-row">
                     <span className="cvant-mobile-card-label">Jadwal</span>
                     <span className="cvant-mobile-card-value">
-                      {scheduleDate} | {scheduleTime}
+                      {scheduleDate}
                     </span>
                   </div>
                   <div className="cvant-mobile-card-row">
@@ -153,11 +198,11 @@ const CustomerPaymentLayer = () => {
                         </td>
                       </tr>
                       <tr>
-                        <td className="text-secondary-light">Jadwal</td>
-                        <td className="text-end fw-semibold">
-                          {scheduleDate} | {scheduleTime}
-                        </td>
-                      </tr>
+                      <td className="text-secondary-light">Jadwal</td>
+                      <td className="text-end fw-semibold">
+                        {scheduleDate}
+                      </td>
+                    </tr>
                       <tr>
                         <td className="text-secondary-light">PPH (2%)</td>
                         <td className="text-end fw-semibold">
@@ -170,13 +215,15 @@ const CustomerPaymentLayer = () => {
                           {formatCurrency(order.total)}
                         </td>
                       </tr>
-                      <tr>
-                        <td className="text-secondary-light">Status</td>
-                        <td className="text-end fw-semibold">{order.status}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
+                    <tr>
+                      <td className="text-secondary-light">Status</td>
+                      <td className="text-end fw-semibold">
+                        {formatStatusLabel(order.status)}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
               </div>
             </div>
           </div>
@@ -217,21 +264,65 @@ const CustomerPaymentLayer = () => {
                 >
                   {processing ? "Memproses..." : "Bayar Sekarang"}
                 </button>
-
-                {message && (
-                  <div
-                    className={`alert mt-3 ${
-                      message.type === "success" ? "alert-success" : "alert-danger"
-                    }`}
-                  >
-                    {message.text}
-                  </div>
-                )}
               </div>
             </div>
           </div>
         </div>
       )}
+
+      {popup && (
+        <div
+          className="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center"
+          style={{
+            zIndex: 9999,
+            background: "rgba(0,0,0,0.55)",
+            padding: "16px",
+          }}
+          onClick={() => setPopup(null)}
+        >
+          <div
+            className="cvant-order-modal"
+            style={{ maxWidth: "420px", width: "100%" }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="cvant-order-modal-header">
+              <h6 className="mb-0">
+                {popup.type === "success" ? "Payment Success" : "Payment Failed"}
+              </h6>
+            </div>
+            <div className="cvant-order-modal-body text-center">
+              <p className="text-secondary-light mb-20">{popup.text}</p>
+              <button
+                type="button"
+                className="btn btn-primary px-24"
+                onClick={() => setPopup(null)}
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <style jsx global>{`
+        .cvant-order-modal {
+          background: var(--white);
+          border-radius: 16px;
+          box-shadow: 0px 13px 30px 10px rgba(46, 45, 116, 0.05);
+          border: 0;
+          overflow: hidden;
+        }
+
+        .cvant-order-modal-header {
+          padding: 14px 18px;
+          background: var(--primary-50);
+          border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+        }
+
+        .cvant-order-modal-body {
+          padding: 22px 20px 24px;
+        }
+      `}</style>
     </div>
   );
 };

@@ -1,4 +1,5 @@
 import CustomerPaymentLayer from "@/components/CustomerPaymentLayer";
+import Breadcrumb from "@/components/Breadcrumb";
 import CustomerLayout from "@/masterLayout/CustomerLayout";
 
 export const metadata = {
@@ -9,6 +10,11 @@ export const metadata = {
 export default function PaymentPage() {
   return (
     <CustomerLayout>
+      <Breadcrumb
+        title="Payment"
+        rootHref="/customer/dashboard"
+        rootLabel="Dashboard"
+      />
       <CustomerPaymentLayer />
     </CustomerLayout>
   );

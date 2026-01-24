@@ -346,7 +346,7 @@ const MasterLayout = ({ children }) => {
                     icon="solar:clipboard-check-linear"
                     className="menu-icon"
                   />
-                  <span>Penerimaan Order</span>
+                  <span>Order Acceptance</span>
                 </Link>
               </li>
 
@@ -360,7 +360,7 @@ const MasterLayout = ({ children }) => {
                   }
                 >
                   <Icon icon="solar:user-linear" className="menu-icon" />
-                  <span>Pendaftaran Customer</span>
+                  <span>Customer Registrations</span>
                 </Link>
               </li>
             </ul>

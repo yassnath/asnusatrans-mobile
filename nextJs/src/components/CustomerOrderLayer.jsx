@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { customerApi } from "@/lib/customerApi";
 
 const userKey = "cvant_customer_user";
@@ -42,21 +41,15 @@ function isLightModeNow() {
 }
 
 const CustomerOrderLayer = () => {
-  const router = useRouter();
   const [message, setMessage] = useState(null);
   const [isLightMode, setIsLightMode] = useState(false);
   const [armadas, setArmadas] = useState([]);
   const [armadaLoading, setArmadaLoading] = useState(true);
   const [armadaError, setArmadaError] = useState("");
   const [showConfirm, setShowConfirm] = useState(false);
+  const [showWaiting, setShowWaiting] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const todayDate = getTodayDate();
-  const estimateRates = [
-    { ton: 1, pricePerKm: 12000 },
-    { ton: 2, pricePerKm: 11000 },
-    { ton: 5, pricePerKm: 9500 },
-    { ton: 10, pricePerKm: 8500 },
-  ];
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -207,11 +200,6 @@ const CustomerOrderLayer = () => {
     }));
   };
 
-  const formatCurrency = (value) => {
-    const safeValue = Number.isFinite(value) ? value : 0;
-    return `Rp ${safeValue.toLocaleString("id-ID")}`;
-  };
-
   const handleSubmit = async (event) => {
     event.preventDefault();
     setMessage(null);
@@ -312,7 +300,7 @@ const CustomerOrderLayer = () => {
       });
 
       setShowConfirm(false);
-      router.push("/order/payment");
+      setShowWaiting(true);
     } catch (error) {
       setMessage({
         type: "error",
@@ -487,13 +475,17 @@ const CustomerOrderLayer = () => {
                                   : "Pilih Armada"}
                               </option>
                               {armadas.map((item) => {
+                                const statusLabel = item?.status || "Ready";
+                                const isFull =
+                                  String(statusLabel).toLowerCase().includes("full");
                                 const label = item?.kapasitas
-                                  ? `${item.nama_truk} (${item.kapasitas} ton)`
-                                  : item?.nama_truk || "Armada";
+                                  ? `${item.nama_truk} (${item.kapasitas} ton) - ${statusLabel}`
+                                  : `${item?.nama_truk || "Armada"} - ${statusLabel}`;
                                 return (
                                   <option
                                     key={item.id}
                                     value={item.id}
+                                    disabled={isFull}
                                     style={{
                                       backgroundColor: optionBg,
                                       color: optionText,
@@ -543,56 +535,6 @@ const CustomerOrderLayer = () => {
                     </button>
                   </div>
 
-                  <div className="col-12 mt-4">
-                    <div className="d-flex align-items-center justify-content-between flex-wrap gap-2">
-                      <h6 className="mb-0">Estimasi Harga</h6>
-                      <span className="text-secondary-light text-sm">
-                        Perkiraan per 1 ton dan per 1 km
-                      </span>
-                    </div>
-                    <div className="d-md-none mt-3 d-flex flex-column gap-12">
-                      {estimateRates.map((rate) => (
-                        <div key={rate.ton} className="cvant-mobile-card">
-                          <div className="cvant-mobile-card-row">
-                            <span className="cvant-mobile-card-label">Tonase</span>
-                            <span className="cvant-mobile-card-value">
-                              {rate.ton} ton
-                            </span>
-                          </div>
-                          <div className="cvant-mobile-card-row">
-                            <span className="cvant-mobile-card-label">
-                              Harga / km
-                            </span>
-                            <span className="cvant-mobile-card-value">
-                              {formatCurrency(rate.pricePerKm)} / km
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="table-responsive mt-2 d-none d-md-block">
-                      <table className="table bordered-table text-center align-middle mb-0">
-                        <thead>
-                          <tr>
-                            <th>Tonase</th>
-                            <th>Harga / km</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {estimateRates.map((rate) => (
-                            <tr key={rate.ton}>
-                              <td>{rate.ton} ton</td>
-                              <td>{formatCurrency(rate.pricePerKm)} / km</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    <p className="text-secondary-light text-sm mt-2 mb-0">
-                      Estimasi dapat berubah sesuai rute dan kebutuhan muatan.
-                    </p>
-                  </div>
-
                 </div>
               </div>
             </div>
@@ -639,9 +581,44 @@ const CustomerOrderLayer = () => {
                   onClick={handleConfirmOrder}
                   disabled={submitting}
                 >
-                  {submitting ? "Processing..." : "Proceed to Payment"}
+                  {submitting ? "Processing..." : "Submit Order"}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showWaiting && (
+        <div
+          className="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center"
+          style={{
+            zIndex: 9999,
+            background: "rgba(0,0,0,0.55)",
+            padding: "16px",
+          }}
+          onClick={() => setShowWaiting(false)}
+        >
+          <div
+            className="cvant-order-modal"
+            style={{ maxWidth: "520px", width: "100%" }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="cvant-order-modal-header">
+              <h6 className="mb-0">Order submitted</h6>
+            </div>
+            <div className="cvant-order-modal-body text-center">
+              <p className="text-secondary-light mb-20">
+                Menunggu status acc dari owner/admin. Invoice akan dikirimkan ke
+                notifikasi Anda untuk melanjutkan pembayaran.
+              </p>
+              <button
+                type="button"
+                className="btn btn-primary px-24"
+                onClick={() => setShowWaiting(false)}
+              >
+                OK
+              </button>
             </div>
           </div>
         </div>

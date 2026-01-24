@@ -9,6 +9,7 @@ import { customerApi } from "@/lib/customerApi";
 import {
   buildCustomerNotifications,
   formatNotificationTime,
+  getStoredInvoiceNotifications,
 } from "@/lib/notificationUtils";
 
 const lastSeenKey = "cvant_customer_notif_seen";
@@ -68,12 +69,18 @@ const CustomerLayout = ({ children }) => {
   const loadNotifications = async () => {
     try {
       const orders = await customerApi.get("/customer/orders");
-      const items = buildCustomerNotifications(orders);
+      const invoiceNotifications = getStoredInvoiceNotifications();
+      const items = buildCustomerNotifications(
+        orders,
+        customer,
+        invoiceNotifications
+      );
       setNotifications(items);
 
       const lastSeen = getLastSeen();
       const unread = items.filter((item) => getTimeValue(item.time) > lastSeen);
       setUnreadCount(unread.length);
+
     } catch {
       setNotifications([]);
       setUnreadCount(0);
@@ -82,7 +89,18 @@ const CustomerLayout = ({ children }) => {
 
   useEffect(() => {
     loadNotifications();
-  }, []);
+  }, [customer]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleStorage = (event) => {
+      if (event.key === "cvant_customer_invoice_notifications") {
+        loadNotifications();
+      }
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, [customer]);
 
   useEffect(() => {
     if (!profileOpen) return;
@@ -111,6 +129,8 @@ const CustomerLayout = ({ children }) => {
 
   const customerRole = customer?.role || "Customer";
   const customerName = customer?.name || "Customer";
+  const isActivePath = (path) =>
+    pathname === path || pathname.startsWith(`${path}/`);
 
   const handleLogout = () => {
     customerApi.clearToken();
@@ -192,7 +212,7 @@ const CustomerLayout = ({ children }) => {
                 <Link
                   href="/customer/dashboard"
                   className={
-                    pathname === "/customer/dashboard" ? "active-page" : ""
+                    isActivePath("/customer/dashboard") ? "active-page" : ""
                   }
                 >
                   <Icon
@@ -208,10 +228,10 @@ const CustomerLayout = ({ children }) => {
               <li>
                 <Link
                   href="/order"
-                  className={pathname === "/order" ? "active-page" : ""}
+                  className={isActivePath("/order") ? "active-page" : ""}
                 >
                   <Icon icon="solar:clipboard-check-linear" className="menu-icon" />
-                  <span>Order & Payment</span>
+                  <span>Order</span>
                 </Link>
               </li>
 
@@ -219,7 +239,7 @@ const CustomerLayout = ({ children }) => {
                 <Link
                   href="/customer/orders"
                   className={
-                    pathname === "/customer/orders" ? "active-page" : ""
+                    isActivePath("/customer/orders") ? "active-page" : ""
                   }
                 >
                   <Icon icon="solar:document-text-linear" className="menu-icon" />
@@ -233,11 +253,16 @@ const CustomerLayout = ({ children }) => {
                 <Link
                   href="/customer/notifications"
                   className={
-                    pathname === "/customer/notifications" ? "active-page" : ""
+                    isActivePath("/customer/notifications") ? "active-page" : ""
                   }
                 >
                   <Icon icon="solar:bell-linear" className="menu-icon" />
-                  <span>Notifications</span>
+                  <span className="cvant-menu-label">
+                    <span>Notifications</span>
+                    {unreadCount > 0 ? (
+                      <span className="cvant-side-badge">{unreadCount}</span>
+                    ) : null}
+                  </span>
                 </Link>
               </li>
 
@@ -245,7 +270,7 @@ const CustomerLayout = ({ children }) => {
                 <Link
                   href="/customer/settings"
                   className={
-                    pathname === "/customer/settings" ? "active-page" : ""
+                    isActivePath("/customer/settings") ? "active-page" : ""
                   }
                 >
                   <Icon icon="solar:settings-linear" className="menu-icon" />
@@ -588,6 +613,26 @@ const CustomerLayout = ({ children }) => {
           padding: 2px 6px;
           min-width: 18px;
           text-align: center;
+        }
+
+        .cvant-menu-label {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          width: 100%;
+        }
+
+        .cvant-side-badge {
+          background: #ef4444;
+          color: #fff;
+          font-size: 11px;
+          font-weight: 700;
+          border-radius: 999px;
+          padding: 2px 8px;
+          min-width: 20px;
+          text-align: center;
+          line-height: 1.2;
         }
 
         .cvant-notify-menu {

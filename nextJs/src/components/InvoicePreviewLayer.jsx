@@ -4,6 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { formatInvoiceNumber } from "@/lib/invoiceNumber";
+import { storeInvoiceNotification } from "@/lib/notificationUtils";
 import Image from "next/image";
 
 function useCvAntPageIn() {
@@ -26,6 +27,8 @@ export default function InvoicePreviewLayer() {
   const [invoice, setInvoice] = useState(null);
   const [armadas, setArmadas] = useState([]);
   const [sending, setSending] = useState(false);
+  const [notifying, setNotifying] = useState(false);
+  const [notifyMessage, setNotifyMessage] = useState(null);
 
   // ✅ API base dari env (dibersihkan)
   const apiBase = useMemo(() => {
@@ -304,6 +307,38 @@ export default function InvoicePreviewLayer() {
     }
   };
 
+  const handleSendToCustomer = () => {
+    if (!invoice) return;
+    const customerEmail = invoice.email || "";
+    if (!String(customerEmail).trim()) {
+      setNotifyMessage({
+        type: "error",
+        text: "Email customer tidak tersedia.",
+      });
+      return;
+    }
+
+    setNotifying(true);
+    const invoiceNumber = formatInvoiceNumber(
+      invoice.no_invoice,
+      invoice.tanggal
+    );
+    const stored = storeInvoiceNotification({
+      invoiceId: invoice.id,
+      customerEmail,
+      customerName: invoice.nama_pelanggan,
+      invoiceNumber,
+      time: new Date().toISOString(),
+    });
+
+    setNotifyMessage(
+      stored
+        ? { type: "success", text: "Invoice terkirim ke notifikasi customer." }
+        : { type: "error", text: "Gagal mengirim notifikasi invoice." }
+    );
+    setNotifying(false);
+  };
+
   const handleOpenPdf = () => {
     if (!invoice) return;
 
@@ -355,6 +390,14 @@ export default function InvoicePreviewLayer() {
           </button>
 
           <button
+            className="btn btn-sm btn-outline-info"
+            onClick={handleSendToCustomer}
+            disabled={notifying}
+          >
+            {notifying ? "Sending..." : "Send to Customer"}
+          </button>
+
+          <button
             className="btn btn-sm btn-outline-secondary"
             onClick={handleSendToEmail}
             disabled={sending}
@@ -362,6 +405,16 @@ export default function InvoicePreviewLayer() {
             {sending ? "Sending..." : "Send to Email"}
           </button>
         </div>
+
+        {notifyMessage ? (
+          <div
+            className={`alert mt-3 ${
+              notifyMessage.type === "success" ? "alert-success" : "alert-danger"
+            }`}
+          >
+            {notifyMessage.text}
+          </div>
+        ) : null}
 
         <div className="invoice-screen">
           <div className="container my-3 p-5 bg-white rounded shadow-sm position-relative invoice-paper">

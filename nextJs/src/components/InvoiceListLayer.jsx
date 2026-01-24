@@ -5,6 +5,7 @@ import Link from "next/link";
 import React, { useEffect, useState, useMemo } from "react";
 import { api } from "@/lib/api";
 import { formatInvoiceNumber } from "@/lib/invoiceNumber";
+import { storeInvoiceNotification } from "@/lib/notificationUtils";
 
 function useCvAntPageIn() {
   const [pageIn, setPageIn] = useState(false);
@@ -257,6 +258,31 @@ export default function InvoiceListLayer() {
       currency: "IDR",
       minimumFractionDigits: 0,
     }).format(num || 0);
+
+  const handleSendInvoice = (item) => {
+    if (item?.type !== "Income") return;
+    const email = String(item?.email || "").trim();
+    if (!email) {
+      showPopup("danger", "Email customer tidak tersedia.", 2500);
+      return;
+    }
+
+    const stored = storeInvoiceNotification({
+      invoiceId: item.id,
+      customerEmail: email,
+      customerName: item.nama,
+      invoiceNumber: item.no,
+      time: new Date().toISOString(),
+    });
+
+    showPopup(
+      stored ? "success" : "danger",
+      stored
+        ? "Invoice dikirim ke notifikasi customer."
+        : "Gagal mengirim notifikasi invoice.",
+      2500
+    );
+  };
 
   const handleGenerateReport = async (range) => {
     try {
@@ -594,6 +620,14 @@ export default function InvoiceListLayer() {
                               >
                                 <Icon icon="mdi:eye" width={18} height={18} />
                               </button>
+
+                              <button
+                                className="btn btn-sm btn-outline-info"
+                                style={mobileActionBtnStyle}
+                                onClick={() => handleSendInvoice(item)}
+                              >
+                                <Icon icon="mdi:send" width={18} height={18} />
+                              </button>
                             </>
                           ) : (
                             <>
@@ -726,6 +760,20 @@ export default function InvoiceListLayer() {
                                     }
                                   >
                                     <Icon icon="mdi:eye" />
+                                  </button>
+
+                                  <button
+                                    className="btn btn-xs btn-outline-info"
+                                    style={{
+                                      width: 50,
+                                      height: 40,
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                    }}
+                                    onClick={() => handleSendInvoice(item)}
+                                  >
+                                    <Icon icon="mdi:send" />
                                   </button>
                                 </>
                               ) : (

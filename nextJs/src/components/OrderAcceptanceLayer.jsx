@@ -83,10 +83,34 @@ const OrderAcceptanceLayer = () => {
     return `Rp ${safeValue.toLocaleString("id-ID")}`;
   };
 
+  const formatScheduleDate = (value) => {
+    if (!value) return "-";
+    const raw = String(value);
+    const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match) return `${match[3]}-${match[2]}-${match[1]}`;
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) return raw;
+    const day = String(parsed.getDate()).padStart(2, "0");
+    const month = String(parsed.getMonth() + 1).padStart(2, "0");
+    const year = String(parsed.getFullYear());
+    return `${day}-${month}-${year}`;
+  };
+
+  const formatStatusLabel = (status) => {
+    if (!status) return "Pending";
+    const normalized = String(status).toLowerCase();
+    if (normalized.includes("pending")) return "Pending";
+    if (normalized.includes("accepted")) return "Accepted";
+    if (normalized.includes("rejected")) return "Rejected";
+    if (normalized.includes("paid")) return "Paid";
+    return status;
+  };
+
   const statusBadge = (status) => {
-    if (status === "Accepted") return "bg-success-focus text-success-main";
-    if (status === "Rejected") return "bg-danger-focus text-danger-main";
-    if (status === "Paid") return "bg-info-focus text-info-main";
+    const label = String(status || "").toLowerCase();
+    if (label.includes("accepted")) return "bg-success-focus text-success-main";
+    if (label.includes("rejected")) return "bg-danger-focus text-danger-main";
+    if (label.includes("paid")) return "bg-info-focus text-info-main";
     return "bg-warning-focus text-warning-main";
   };
 
@@ -98,9 +122,8 @@ const OrderAcceptanceLayer = () => {
   const renderMobileCards = () => (
     <div className="d-md-none p-3 d-flex flex-column gap-12">
       {orders.map((order) => {
-        const schedule = `${order.pickup_date || "-"}${
-          order.pickup_time ? ` | ${String(order.pickup_time).slice(0, 5)}` : ""
-        }`;
+        const schedule = formatScheduleDate(order.pickup_date);
+        const isFinal = ["Accepted", "Rejected"].includes(order.status);
 
         return (
           <div
@@ -136,7 +159,7 @@ const OrderAcceptanceLayer = () => {
                 )} px-12 py-4 rounded-pill fw-medium`}
                 style={{ fontSize: "12px", whiteSpace: "nowrap" }}
               >
-                {order.status || "Pending Payment"}
+                {formatStatusLabel(order.status)}
               </span>
             </div>
 
@@ -155,12 +178,6 @@ const OrderAcceptanceLayer = () => {
                 <span style={{ color: textMain, fontWeight: 600 }}>{schedule}</span>
               </div>
               <div className="d-flex justify-content-between">
-                <span style={{ color: textSub }}>Service</span>
-                <span style={{ color: textMain, fontWeight: 600 }}>
-                  {order.service || "-"}
-                </span>
-              </div>
-              <div className="d-flex justify-content-between">
                 <span style={{ color: textSub }}>Total</span>
                 <span style={{ color: textMain, fontWeight: 700 }}>
                   {formatCurrency(order.total)}
@@ -172,14 +189,14 @@ const OrderAcceptanceLayer = () => {
               <button
                 className="btn btn-success btn-sm radius-8"
                 onClick={() => updateStatus(order.id, "Accepted")}
-                disabled={order.status === "Accepted"}
+                disabled={isFinal}
               >
                 Accept
               </button>
               <button
                 className="btn btn-danger btn-sm radius-8"
                 onClick={() => updateStatus(order.id, "Rejected")}
-                disabled={order.status === "Rejected"}
+                disabled={isFinal}
               >
                 Reject
               </button>
@@ -234,66 +251,64 @@ const OrderAcceptanceLayer = () => {
                         <th>Customer</th>
                         <th>Rute</th>
                         <th>Jadwal</th>
-                        <th>Service</th>
                         <th>Total</th>
                         <th>Status</th>
                         <th>Action</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {orders.map((order) => (
-                        <tr key={order.id}>
-                          <td>{order.order_code || order.id}</td>
-                          <td>
-                            <div className="d-flex flex-column">
-                              <span className="fw-semibold">
-                                {order.customer?.name || "-"}
-                              </span>
-                              <span className="text-secondary-light text-sm">
-                                {order.customer?.email || "-"}
-                              </span>
-                            </div>
-                          </td>
-                          <td>
-                            {order.pickup || "-"} - {order.destination || "-"}
-                          </td>
-                          <td>
-                            {order.pickup_date || "-"}{" "}
-                            {order.pickup_time
-                              ? `| ${String(order.pickup_time).slice(0, 5)}`
-                              : ""}
-                          </td>
-                          <td>{order.service || "-"}</td>
-                          <td>{formatCurrency(order.total)}</td>
-                          <td>
-                            <span
-                              className={`${statusBadge(
-                                order.status
-                              )} px-16 py-4 rounded-pill fw-medium text-sm`}
-                            >
-                              {order.status || "Pending Payment"}
-                            </span>
-                          </td>
-                          <td>
-                            <div className="d-flex justify-content-center gap-2">
-                              <button
-                                className="btn btn-success btn-sm radius-8"
-                                onClick={() => updateStatus(order.id, "Accepted")}
-                                disabled={order.status === "Accepted"}
+                      {orders.map((order) => {
+                        const isFinal = ["Accepted", "Rejected"].includes(order.status);
+                        return (
+                          <tr key={order.id}>
+                            <td>{order.order_code || order.id}</td>
+                            <td>
+                              <div className="d-flex flex-column">
+                                <span className="fw-semibold">
+                                  {order.customer?.name || "-"}
+                                </span>
+                                <span className="text-secondary-light text-sm">
+                                  {order.customer?.email || "-"}
+                                </span>
+                              </div>
+                            </td>
+                            <td>
+                              {order.pickup || "-"} - {order.destination || "-"}
+                            </td>
+                            <td>
+                              {formatScheduleDate(order.pickup_date)}
+                            </td>
+                            <td>{formatCurrency(order.total)}</td>
+                            <td>
+                              <span
+                                className={`${statusBadge(
+                                  order.status
+                                )} px-16 py-4 rounded-pill fw-medium text-sm`}
                               >
-                                Accept
-                              </button>
-                              <button
-                                className="btn btn-danger btn-sm radius-8"
-                                onClick={() => updateStatus(order.id, "Rejected")}
-                                disabled={order.status === "Rejected"}
-                              >
-                                Reject
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
+                                {formatStatusLabel(order.status)}
+                              </span>
+                            </td>
+                            <td>
+                              <div className="d-flex justify-content-center gap-2">
+                                <button
+                                  className="btn btn-success btn-sm radius-8"
+                                  onClick={() => updateStatus(order.id, "Accepted")}
+                                  disabled={isFinal}
+                                >
+                                  Accept
+                                </button>
+                                <button
+                                  className="btn btn-danger btn-sm radius-8"
+                                  onClick={() => updateStatus(order.id, "Rejected")}
+                                  disabled={isFinal}
+                                >
+                                  Reject
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

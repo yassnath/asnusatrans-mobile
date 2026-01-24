@@ -11,7 +11,7 @@ export default function OrderPage() {
   return (
     <CustomerLayout>
       <Breadcrumb
-        title="Order & Payment"
+        title="Order"
         rootHref="/customer/dashboard"
         rootLabel="Dashboard"
       />

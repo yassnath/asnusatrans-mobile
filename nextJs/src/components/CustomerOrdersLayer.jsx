@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Icon } from "@iconify/react/dist/iconify.js";
 import { customerApi } from "@/lib/customerApi";
 
 const formatCurrency = (value) => {
@@ -31,24 +32,36 @@ const statusBadge = (status) => {
   return "bg-warning-focus text-warning-main";
 };
 
+const formatStatusLabel = (status) => {
+  if (!status) return "Pending";
+  const normalized = String(status).toLowerCase();
+  if (normalized.includes("pending")) return "Pending";
+  if (normalized.includes("accepted")) return "Accepted";
+  if (normalized.includes("rejected")) return "Rejected";
+  if (normalized.includes("paid")) return "Paid";
+  return status;
+};
+
 const CustomerOrdersLayer = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    const loadOrders = async () => {
-      try {
-        const data = await customerApi.get("/customer/orders");
-        setOrders(Array.isArray(data) ? data : []);
-      } catch (err) {
-        setError(err?.message || "Failed to load order history.");
-        setOrders([]);
-      } finally {
-        setLoading(false);
-      }
-    };
+  const loadOrders = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const data = await customerApi.get("/customer/orders");
+      setOrders(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setError(err?.message || "Failed to load order history.");
+      setOrders([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  useEffect(() => {
     loadOrders();
   }, []);
 
@@ -56,9 +69,11 @@ const CustomerOrdersLayer = () => {
     <div className="d-md-none p-3 d-flex flex-column gap-12">
       {orders.map((order) => {
         const scheduleDate = formatScheduleDate(order.pickup_date || order.date);
-        const schedule = `${scheduleDate}${
-          order.pickup_time ? ` | ${String(order.pickup_time).slice(0, 5)}` : ""
-        }`;
+        const schedule = scheduleDate;
+        const statusLabel = String(order.status || "").toLowerCase();
+        const canPay =
+          statusLabel.includes("accepted") && !statusLabel.includes("paid");
+        const isPaid = statusLabel.includes("paid");
 
         return (
           <div key={order.id} className="cvant-mobile-card">
@@ -73,7 +88,7 @@ const CustomerOrdersLayer = () => {
                   order.status
                 )} px-12 py-4 rounded-pill fw-medium text-sm`}
               >
-                {order.status || "-"}
+                {formatStatusLabel(order.status)}
               </span>
             </div>
 
@@ -100,6 +115,25 @@ const CustomerOrdersLayer = () => {
                   {formatCurrency(order.total)}
                 </span>
               </div>
+              <div className="cvant-mobile-card-row">
+                <span className="cvant-mobile-card-label">Payment</span>
+                {canPay ? (
+                  <a
+                    className="btn btn-sm btn-primary"
+                    href={`/order/payment?id=${order.id}`}
+                  >
+                    Pay
+                  </a>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-secondary"
+                    disabled
+                  >
+                    {isPaid ? "Paid" : "Waiting"}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         );
@@ -108,64 +142,140 @@ const CustomerOrdersLayer = () => {
   );
 
   return (
-    <div className="container-fluid py-4">
-      <div className="card shadow-sm border-0">
-        <div className="card-body p-0">
-          {loading ? (
-            <div className="p-4">Loading data...</div>
-          ) : error ? (
-            <div className="p-4 text-danger">{error}</div>
-          ) : orders.length === 0 ? (
-            <div className="p-4">No orders yet.</div>
-          ) : (
-            <>
-              {renderMobileCards()}
+    <div className="row">
+      <div className="col-12">
+        <div className="card h-100">
+          <div className="card-header d-flex flex-wrap align-items-center justify-content-between gap-3 cvant-data-header">
+            <div className="d-flex flex-column justify-content-center">
+              <h6 className="mb-0 fw-bold cvant-data-title">Order History</h6>
+            </div>
+            <button
+              className="btn btn-sm btn-primary radius-8 d-inline-flex align-items-center cvant-refresh-btn"
+              onClick={loadOrders}
+              disabled={loading}
+            >
+              <Icon
+                icon="solar:refresh-linear"
+                className="me-6"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  lineHeight: 1,
+                  transform: "translateY(1px)",
+                }}
+              />
+              Refresh
+            </button>
+          </div>
 
-              <div className="table-responsive d-none d-md-block">
-                <table className="table bordered-table text-center align-middle mb-0">
-                  <thead>
-                    <tr>
-                      <th>Order ID</th>
-                      <th>Route</th>
-                      <th>Schedule</th>
+          <div className="card-body p-0">
+            {loading ? (
+              <div className="text-center py-40">Loading data...</div>
+            ) : error ? (
+              <div className="text-center py-40 text-danger">{error}</div>
+            ) : orders.length === 0 ? (
+              <div className="text-center py-40">
+                <Icon icon="solar:inbox-linear" className="text-2xl" />
+                <p className="mt-12 mb-0">No orders yet.</p>
+              </div>
+            ) : (
+              <>
+                {renderMobileCards()}
+
+                <div className="d-none d-md-block card-body table-responsive scroll-sm d-flex">
+                  <table className="table bordered-table text-center align-middle mb-0">
+                    <thead>
+                      <tr>
+                        <th>Order ID</th>
+                        <th>Route</th>
+                        <th>Schedule</th>
                       <th>Fleet</th>
                       <th>Total</th>
                       <th>Status</th>
+                      <th>Payment</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {orders.map((order) => (
-                      <tr key={order.id}>
-                        <td>{order.order_code || `ORD-${order.id}`}</td>
-                        <td>
-                          {order.pickup} - {order.destination}
-                        </td>
-                        <td>
-                          {formatScheduleDate(order.pickup_date || order.date)}{" "}
-                          {order.pickup_time
-                            ? `| ${String(order.pickup_time).slice(0, 5)}`
-                            : ""}
-                        </td>
-                        <td>{order.fleet}</td>
-                        <td>{formatCurrency(order.total)}</td>
-                        <td>
-                          <span
-                            className={`${statusBadge(
-                              order.status
-                            )} px-16 py-4 rounded-pill fw-medium text-sm`}
-                          >
-                            {order.status || "-"}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
+                    {orders.map((order) => {
+                      const statusLabel = String(order.status || "").toLowerCase();
+                      const canPay =
+                        statusLabel.includes("accepted") &&
+                        !statusLabel.includes("paid");
+                      const isPaid = statusLabel.includes("paid");
+
+                      return (
+                        <tr key={order.id}>
+                          <td>{order.order_code || `ORD-${order.id}`}</td>
+                          <td>
+                            {order.pickup} - {order.destination}
+                          </td>
+                          <td>
+                            {formatScheduleDate(order.pickup_date || order.date)}
+                          </td>
+                          <td>{order.fleet}</td>
+                          <td>{formatCurrency(order.total)}</td>
+                          <td>
+                            <span
+                              className={`${statusBadge(
+                                order.status
+                              )} px-16 py-4 rounded-pill fw-medium text-sm`}
+                            >
+                              {formatStatusLabel(order.status)}
+                            </span>
+                          </td>
+                          <td>
+                            {canPay ? (
+                              <a
+                                className="btn btn-sm btn-primary"
+                                href={`/order/payment?id=${order.id}`}
+                              >
+                                Pay
+                              </a>
+                            ) : (
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-secondary"
+                                disabled
+                              >
+                                {isPaid ? "Paid" : "Waiting"}
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
-            </>
-          )}
+              </>
+            )}
+          </div>
         </div>
       </div>
+
+      <style jsx global>{`
+        @media (max-width: 767.98px) {
+          .cvant-data-header {
+            flex-wrap: nowrap !important;
+            align-items: center !important;
+            gap: 8px !important;
+          }
+
+          .cvant-data-header > div {
+            min-width: 0 !important;
+          }
+
+          .cvant-data-title {
+            line-height: 1.2 !important;
+          }
+
+          .cvant-refresh-btn {
+            padding: 4px 10px !important;
+            height: 32px !important;
+            font-size: 12px !important;
+          }
+        }
+      `}</style>
     </div>
   );
 };

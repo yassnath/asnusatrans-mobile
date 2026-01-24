@@ -22,6 +22,29 @@ const statusBadge = (status) => {
   return "bg-info-focus text-info-main";
 };
 
+const formatStatusLabel = (status) => {
+  if (!status) return "Pending";
+  const label = String(status).toLowerCase();
+  if (label.includes("pending")) return "Pending";
+  if (label.includes("accepted")) return "Accepted";
+  if (label.includes("rejected")) return "Rejected";
+  if (label.includes("paid")) return "Paid";
+  return status;
+};
+
+const formatScheduleDate = (value) => {
+  if (!value) return "-";
+  const raw = String(value);
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) return `${match[3]}-${match[2]}-${match[1]}`;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return raw;
+  const day = String(parsed.getDate()).padStart(2, "0");
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const year = String(parsed.getFullYear());
+  return `${day}-${month}-${year}`;
+};
+
 const CustomerDashboardLayer = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -59,9 +82,8 @@ const CustomerDashboardLayer = () => {
   const renderMobileOrders = () => (
     <div className="d-md-none d-flex flex-column gap-12">
       {recentOrders.map((order) => {
-        const schedule = `${order.pickup_date || "-"}${
-          order.pickup_time ? ` | ${String(order.pickup_time).slice(0, 5)}` : ""
-        }`;
+        const scheduleDate = formatScheduleDate(order.pickup_date || order.date);
+        const schedule = scheduleDate;
 
         return (
           <div key={order.id} className="cvant-order-card">
@@ -75,7 +97,7 @@ const CustomerDashboardLayer = () => {
                 </div>
               </div>
               <span className={`cvant-status-badge ${statusBadge(order.status)}`}>
-                {order.status || "Pending Payment"}
+                {formatStatusLabel(order.status)}
               </span>
             </div>
 
@@ -218,10 +240,7 @@ const CustomerDashboardLayer = () => {
                               {order.pickup || "-"} - {order.destination || "-"}
                             </td>
                             <td>
-                              {order.pickup_date || "-"}{" "}
-                              {order.pickup_time
-                                ? `| ${String(order.pickup_time).slice(0, 5)}`
-                                : ""}
+                              {formatScheduleDate(order.pickup_date || order.date)}
                             </td>
                             <td>{order.service || "-"}</td>
                             <td>{formatCurrency(order.total)}</td>
@@ -231,7 +250,7 @@ const CustomerDashboardLayer = () => {
                                   order.status
                                 )}`}
                               >
-                                {order.status || "Pending Payment"}
+                                {formatStatusLabel(order.status)}
                               </span>
                             </td>
                           </tr>
@@ -261,11 +280,17 @@ const CustomerDashboardLayer = () => {
         .cvant-order-card {
           border-radius: 12px;
           padding: 14px;
-          border: 1px solid var(--bs-border-color, rgba(148, 163, 184, 0.25));
-          background: var(--bs-body-bg, #1b2431);
+          border: 1px solid #273142;
+          background: #1b2431;
           display: flex;
           flex-direction: column;
           gap: 10px;
+        }
+
+        html[data-bs-theme="light"] .cvant-order-card,
+        html[data-theme="light"] .cvant-order-card {
+          border-color: rgba(148, 163, 184, 0.35);
+          background: #ffffff;
         }
 
         .cvant-order-meta {
