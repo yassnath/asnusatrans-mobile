@@ -3,15 +3,15 @@ import CustomerLayout from "@/masterLayout/CustomerLayout";
 import CustomerNotificationsLayer from "@/components/CustomerNotificationsLayer";
 
 export const metadata = {
-  title: "Notifikasi | CV ANT",
-  description: "Notifikasi aktivitas customer CV ANT.",
+  title: "Notifications | CV ANT",
+  description: "Customer activity notifications for CV ANT.",
 };
 
 export default function CustomerNotificationsPage() {
   return (
     <CustomerLayout>
       <Breadcrumb
-        title="Notifikasi"
+        title="Notifications"
         rootHref="/customer/dashboard"
         rootLabel="Dashboard"
       />

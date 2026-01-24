@@ -33,7 +33,7 @@ const CustomerDashboardLayer = () => {
         const data = await customerApi.get("/customer/orders");
         setOrders(Array.isArray(data) ? data : []);
       } catch (err) {
-        setError(err?.message || "Gagal memuat data order.");
+        setError(err?.message || "Failed to load order data.");
         setOrders([]);
       } finally {
         setLoading(false);
@@ -71,7 +71,7 @@ const CustomerDashboardLayer = () => {
                   {order.order_code || `ORD-${order.id}`}
                 </div>
                 <div className="text-secondary-light text-sm">
-                  {order.service || "Service belum dipilih"}
+                  {order.service || "Service not selected"}
                 </div>
               </div>
               <span className={`cvant-status-badge ${statusBadge(order.status)}`}>
@@ -81,13 +81,13 @@ const CustomerDashboardLayer = () => {
 
             <div className="cvant-order-meta">
               <div className="d-flex justify-content-between gap-3">
-                <span className="text-secondary-light">Rute</span>
+                <span className="text-secondary-light">Route</span>
                 <span className="cvant-order-value">
                   {order.pickup || "-"} - {order.destination || "-"}
                 </span>
               </div>
               <div className="d-flex justify-content-between gap-3">
-                <span className="text-secondary-light">Jadwal</span>
+                <span className="text-secondary-light">Schedule</span>
                 <span className="cvant-order-value">{schedule}</span>
               </div>
               <div className="d-flex justify-content-between gap-3">
@@ -105,13 +105,7 @@ const CustomerDashboardLayer = () => {
 
   return (
     <div className="container-fluid py-4 cvant-customer-dashboard">
-      <div className="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4 cvant-dashboard-header">
-        <div>
-          <h4 className="mb-1">Dashboard Customer</h4>
-          <p className="text-secondary-light mb-0">
-            Ringkasan aktivitas order terbaru Anda.
-          </p>
-        </div>
+      <div className="d-flex justify-content-end mb-4 cvant-dashboard-header">
         <Link href="/order" className="btn btn-primary btn-sm">
           Buat Order
         </Link>
@@ -124,7 +118,7 @@ const CustomerDashboardLayer = () => {
               <div className="d-flex justify-content-between align-items-center gap-3">
                 <div>
                   <p className="fw-medium text-primary-light mb-1">
-                    Total Order
+                    Total Orders
                   </p>
                   <h6 className="mb-0">{stats.total}</h6>
                 </div>
@@ -164,7 +158,7 @@ const CustomerDashboardLayer = () => {
               <div className="d-flex justify-content-between align-items-center gap-3">
                 <div>
                   <p className="fw-medium text-primary-light mb-1">
-                    Total Biaya
+                    Total Spend
                   </p>
                   <h6 className="mb-0">{formatCurrency(stats.totalSpend)}</h6>
                 </div>
@@ -185,21 +179,21 @@ const CustomerDashboardLayer = () => {
           <div className="card shadow-none border">
             <div className="card-body p-24">
               <div className="d-flex align-items-center flex-wrap gap-2 justify-content-between mb-20">
-                <h6 className="mb-0 fw-bold text-lg">Riwayat Order Terbaru</h6>
+                <h6 className="mb-0 fw-bold text-lg">Latest Orders</h6>
                 <Link
                   href="/customer/orders"
                   className="text-primary-600 hover-text-primary d-flex align-items-center gap-1"
                 >
-                  Lihat Semua
+                  View All
                   <Icon icon="solar:alt-arrow-right-linear" className="icon" />
                 </Link>
               </div>
               {loading ? (
-                <div className="py-3">Memuat data...</div>
+                <div className="py-3">Loading data...</div>
               ) : error ? (
                 <div className="py-3 text-danger">{error}</div>
               ) : orders.length === 0 ? (
-                <div className="py-3">Belum ada order yang dibuat.</div>
+                <div className="py-3">No orders yet.</div>
               ) : (
                 <>
                   {renderMobileOrders()}
@@ -208,9 +202,9 @@ const CustomerDashboardLayer = () => {
                     <table className="table bordered-table text-center align-middle mb-0">
                       <thead>
                         <tr>
-                          <th>ID Order</th>
-                          <th>Rute</th>
-                          <th>Jadwal</th>
+                          <th>Order ID</th>
+                          <th>Route</th>
+                          <th>Schedule</th>
                           <th>Service</th>
                           <th>Total</th>
                           <th>Status</th>

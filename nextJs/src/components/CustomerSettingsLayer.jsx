@@ -132,15 +132,6 @@ const CustomerSettingsLayer = () => {
 
   return (
     <div className="container-fluid py-4">
-      <div className="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
-        <div>
-          <h4 className="mb-1">Settings</h4>
-          <p className="text-secondary-light mb-0">
-            Perbarui profil dan keamanan akun Anda.
-          </p>
-        </div>
-      </div>
-
       <div className="row g-4">
         <div className="col-lg-7">
           <div className="card shadow-sm border-0">
@@ -277,7 +268,7 @@ const CustomerSettingsLayer = () => {
                   className="btn btn-primary w-100"
                   disabled={savingPassword}
                 >
-                  {savingPassword ? "Memperbarui..." : "Update Password"}
+                  {savingPassword ? "Memperbarui..." : "Perbarui Password"}
                 </button>
               </form>
             </div>

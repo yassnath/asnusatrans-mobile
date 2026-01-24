@@ -4,14 +4,14 @@ import CustomerDashboardLayer from "@/components/CustomerDashboardLayer";
 
 export const metadata = {
   title: "Customer Dashboard | CV ANT",
-  description: "Dashboard customer untuk memantau order dan pembayaran.",
+  description: "Customer dashboard to track orders and payments.",
 };
 
 export default function CustomerDashboardPage() {
   return (
     <CustomerLayout>
       <Breadcrumb
-        title="Dashboard Customer"
+        title="Customer Dashboard"
         rootHref="/customer/dashboard"
         rootLabel="Dashboard"
       />

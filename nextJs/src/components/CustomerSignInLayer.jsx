@@ -153,7 +153,8 @@ const CustomerSignInLayer = () => {
         </button>
 
         <div className="cvant-auth-helper">
-          Lupa password? <Link href="https://wa.me/+6285771753354">Hubungi admin</Link>
+          Lupa password?{" "}
+          <Link href="https://instagram.com/solvix.studio">ig: solvix.studio</Link>
         </div>
       </form>
     </CustomerAuthShell>

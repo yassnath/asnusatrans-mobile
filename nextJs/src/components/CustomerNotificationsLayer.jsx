@@ -19,7 +19,7 @@ const CustomerNotificationsLayer = () => {
         const items = buildCustomerNotifications(orders);
         setNotifications(items);
       } catch (err) {
-        setError(err?.message || "Gagal memuat notifikasi.");
+        setError(err?.message || "Failed to load notifications.");
         setNotifications([]);
       } finally {
         setLoading(false);
@@ -31,23 +31,14 @@ const CustomerNotificationsLayer = () => {
 
   return (
     <div className="container-fluid py-4">
-      <div className="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
-        <div>
-          <h4 className="mb-1">Notifikasi</h4>
-          <p className="text-secondary-light mb-0">
-            Aktivitas terbaru terkait order dan pembayaran.
-          </p>
-        </div>
-      </div>
-
       <div className="card shadow-sm border-0">
         <div className="card-body">
           {loading ? (
-            <div>Memuat notifikasi...</div>
+            <div>Loading notifications...</div>
           ) : error ? (
             <div className="text-danger">{error}</div>
           ) : notifications.length === 0 ? (
-            <div>Belum ada notifikasi.</div>
+            <div>No notifications yet.</div>
           ) : (
             <div className="d-grid gap-3">
               {notifications.map((item) => (

@@ -4,7 +4,7 @@ import CustomerLayout from "@/masterLayout/CustomerLayout";
 
 export const metadata = {
   title: "Order | CV ANT",
-  description: "Form order customer CV ANT.",
+  description: "Customer order form for CV ANT.",
 };
 
 export default function OrderPage() {

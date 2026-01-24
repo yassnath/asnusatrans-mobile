@@ -153,7 +153,7 @@ const CustomerLayout = ({ children }) => {
             onClick={mobileMenuControl}
             type="button"
             className="sidebar-close-btn"
-            aria-label="Tutup menu"
+            aria-label="Close menu"
           >
             <Icon icon="radix-icons:cross-2" />
           </button>
@@ -203,7 +203,7 @@ const CustomerLayout = ({ children }) => {
                 </Link>
               </li>
 
-              <li className="sidebar-menu-group-title">Order</li>
+              <li className="sidebar-menu-group-title">Orders</li>
 
               <li>
                 <Link
@@ -223,11 +223,11 @@ const CustomerLayout = ({ children }) => {
                   }
                 >
                   <Icon icon="solar:document-text-linear" className="menu-icon" />
-                  <span>Riwayat Pesanan</span>
+                  <span>Order History</span>
                 </Link>
               </li>
 
-              <li className="sidebar-menu-group-title">Akun</li>
+              <li className="sidebar-menu-group-title">Account</li>
 
               <li>
                 <Link
@@ -237,7 +237,7 @@ const CustomerLayout = ({ children }) => {
                   }
                 >
                   <Icon icon="solar:bell-linear" className="menu-icon" />
-                  <span>Notifikasi</span>
+                  <span>Notifications</span>
                 </Link>
               </li>
 
@@ -302,12 +302,12 @@ const CustomerLayout = ({ children }) => {
 
                   <div className="cvant-notify" ref={notifRef}>
                     <button
-                      type="button"
-                      className="cvant-notify-btn"
-                      onClick={toggleNotifications}
-                      aria-label="Notifikasi"
-                      aria-expanded={notifOpen}
-                    >
+                    type="button"
+                    className="cvant-notify-btn"
+                    onClick={toggleNotifications}
+                    aria-label="Notifications"
+                    aria-expanded={notifOpen}
+                  >
                       <Icon icon="solar:bell-linear" className="icon" />
                       {unreadCount > 0 ? (
                         <span className="cvant-notify-badge">{unreadCount}</span>
@@ -318,16 +318,16 @@ const CustomerLayout = ({ children }) => {
                       <div className="cvant-notify-menu">
                         <div className="cvant-notify-header">
                           <div>
-                            <h6 className="mb-0">Notifikasi</h6>
+                            <h6 className="mb-0">Notifications</h6>
                             <span className="text-secondary-light text-sm">
-                              Aktivitas terbaru order Anda
+                              Your latest order activity
                             </span>
                           </div>
                           <button
                             type="button"
                             className="cvant-notify-close"
                             onClick={() => setNotifOpen(false)}
-                            aria-label="Tutup notifikasi"
+                            aria-label="Close notifications"
                           >
                             <Icon icon="radix-icons:cross-1" />
                           </button>
@@ -336,7 +336,7 @@ const CustomerLayout = ({ children }) => {
                         <div className="cvant-notify-list">
                           {notifications.length === 0 ? (
                             <div className="cvant-notify-empty">
-                              Belum ada aktivitas terbaru.
+                              No recent activity yet.
                             </div>
                           ) : (
                             notifications.slice(0, 6).map((item) => (
@@ -357,7 +357,7 @@ const CustomerLayout = ({ children }) => {
                         </div>
 
                         <Link href="/customer/notifications" className="cvant-notify-footer">
-                          Lihat semua notifikasi
+                          View all notifications
                         </Link>
                       </div>
                     ) : null}
@@ -368,7 +368,7 @@ const CustomerLayout = ({ children }) => {
                       className="d-flex justify-content-center align-items-center rounded-circle"
                       type="button"
                       onClick={() => setProfileOpen((value) => !value)}
-                      aria-label="Menu profil"
+                      aria-label="Profile menu"
                       aria-expanded={profileOpen}
                     >
                       <span className="cvant-profile-avatar">{customerInitial}</span>
@@ -390,7 +390,7 @@ const CustomerLayout = ({ children }) => {
                             type="button"
                             className="hover-text-danger"
                             onClick={() => setProfileOpen(false)}
-                            aria-label="Tutup profil"
+                            aria-label="Close profile"
                           >
                             <Icon icon="radix-icons:cross-1" className="icon text-xl" />
                           </button>
@@ -742,6 +742,33 @@ const CustomerLayout = ({ children }) => {
           list-style: none;
           padding: 0;
           margin: 0;
+        }
+
+        .cvant-mobile-card {
+          border-radius: 12px;
+          padding: 14px;
+          border: 1px solid var(--bs-border-color, rgba(148, 163, 184, 0.25));
+          background: var(--bs-body-bg, #1b2431);
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .cvant-mobile-card-row {
+          display: flex;
+          justify-content: space-between;
+          gap: 12px;
+          font-size: 13px;
+        }
+
+        .cvant-mobile-card-label {
+          color: var(--bs-secondary-color, #94a3b8);
+        }
+
+        .cvant-mobile-card-value {
+          font-weight: 600;
+          text-align: right;
+          color: var(--bs-body-color, #ffffff);
         }
 
         @media (max-width: 991px) {

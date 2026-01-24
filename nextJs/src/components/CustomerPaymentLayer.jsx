@@ -78,13 +78,7 @@ const CustomerPaymentLayer = () => {
 
   return (
     <div className="container-fluid py-4">
-      <div className="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
-        <div>
-          <h4 className="mb-1">Payment</h4>
-          <p className="text-secondary-light mb-0">
-            Selesaikan pembayaran agar order segera diproses.
-          </p>
-        </div>
+      <div className="d-flex justify-content-end mb-4">
         <Link href="/order" className="btn btn-outline-primary btn-sm">
           Ubah Order
         </Link>
@@ -110,42 +104,79 @@ const CustomerPaymentLayer = () => {
                 <h6 className="mb-0">Ringkasan Order</h6>
               </div>
               <div className="card-body">
-                <table className="table table-borderless mb-0">
-                  <tbody>
-                    <tr>
-                      <td className="text-secondary-light">ID Order</td>
-                      <td className="text-end fw-semibold">{orderCode}</td>
-                    </tr>
-                    <tr>
-                      <td className="text-secondary-light">Rute</td>
-                      <td className="text-end fw-semibold">
-                        {order.pickup} - {order.destination}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="text-secondary-light">Jadwal</td>
-                      <td className="text-end fw-semibold">
-                        {scheduleDate} | {scheduleTime}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="text-secondary-light">PPH (2%)</td>
-                      <td className="text-end fw-semibold">
-                        {formatCurrency(order.insurance_fee)}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="text-secondary-light">Total</td>
-                      <td className="text-end fw-semibold">
-                        {formatCurrency(order.total)}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="text-secondary-light">Status</td>
-                      <td className="text-end fw-semibold">{order.status}</td>
-                    </tr>
-                  </tbody>
-                </table>
+                <div className="d-md-none cvant-mobile-card">
+                  <div className="cvant-mobile-card-row">
+                    <span className="cvant-mobile-card-label">ID Order</span>
+                    <span className="cvant-mobile-card-value">{orderCode}</span>
+                  </div>
+                  <div className="cvant-mobile-card-row">
+                    <span className="cvant-mobile-card-label">Rute</span>
+                    <span className="cvant-mobile-card-value">
+                      {order.pickup} - {order.destination}
+                    </span>
+                  </div>
+                  <div className="cvant-mobile-card-row">
+                    <span className="cvant-mobile-card-label">Jadwal</span>
+                    <span className="cvant-mobile-card-value">
+                      {scheduleDate} | {scheduleTime}
+                    </span>
+                  </div>
+                  <div className="cvant-mobile-card-row">
+                    <span className="cvant-mobile-card-label">PPH (2%)</span>
+                    <span className="cvant-mobile-card-value">
+                      {formatCurrency(order.insurance_fee)}
+                    </span>
+                  </div>
+                  <div className="cvant-mobile-card-row">
+                    <span className="cvant-mobile-card-label">Total</span>
+                    <span className="cvant-mobile-card-value">
+                      {formatCurrency(order.total)}
+                    </span>
+                  </div>
+                  <div className="cvant-mobile-card-row">
+                    <span className="cvant-mobile-card-label">Status</span>
+                    <span className="cvant-mobile-card-value">{order.status}</span>
+                  </div>
+                </div>
+
+                <div className="d-none d-md-block">
+                  <table className="table table-borderless mb-0">
+                    <tbody>
+                      <tr>
+                        <td className="text-secondary-light">ID Order</td>
+                        <td className="text-end fw-semibold">{orderCode}</td>
+                      </tr>
+                      <tr>
+                        <td className="text-secondary-light">Rute</td>
+                        <td className="text-end fw-semibold">
+                          {order.pickup} - {order.destination}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="text-secondary-light">Jadwal</td>
+                        <td className="text-end fw-semibold">
+                          {scheduleDate} | {scheduleTime}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="text-secondary-light">PPH (2%)</td>
+                        <td className="text-end fw-semibold">
+                          {formatCurrency(order.insurance_fee)}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="text-secondary-light">Total</td>
+                        <td className="text-end fw-semibold">
+                          {formatCurrency(order.total)}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="text-secondary-light">Status</td>
+                        <td className="text-end fw-semibold">{order.status}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           </div>

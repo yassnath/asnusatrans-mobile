@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { customerApi } from "@/lib/customerApi";
 
 const userKey = "cvant_customer_user";
@@ -41,22 +42,21 @@ function isLightModeNow() {
 }
 
 const CustomerOrderLayer = () => {
+  const router = useRouter();
   const [message, setMessage] = useState(null);
   const [isLightMode, setIsLightMode] = useState(false);
   const [armadas, setArmadas] = useState([]);
   const [armadaLoading, setArmadaLoading] = useState(true);
   const [armadaError, setArmadaError] = useState("");
-  const [showEstimate, setShowEstimate] = useState(false);
-  const [showThanks, setShowThanks] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState("");
-  const [distanceKm, setDistanceKm] = useState(0);
-  const [distanceText, setDistanceText] = useState("");
-  const [distanceLoading, setDistanceLoading] = useState(false);
-  const [distanceError, setDistanceError] = useState("");
-  const rawPricePerKm = Number(process.env.NEXT_PUBLIC_PRICE_PER_KM);
-  const pricePerKm = Number.isFinite(rawPricePerKm) ? rawPricePerKm : 0;
   const todayDate = getTodayDate();
+  const estimateRates = [
+    { ton: 1, pricePerKm: 12000 },
+    { ton: 2, pricePerKm: 11000 },
+    { ton: 5, pricePerKm: 9500 },
+    { ton: 10, pricePerKm: 8500 },
+  ];
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -75,9 +75,6 @@ const CustomerOrderLayer = () => {
         lokasi_bongkar: "",
         armada_id: "",
         armada_start_date: "",
-        armada_end_date: "",
-        tonase: "",
-        harga: "",
       },
     ],
   });
@@ -120,27 +117,6 @@ const CustomerOrderLayer = () => {
         if (!active) return;
         const list = Array.isArray(data) ? data : [];
         setArmadas(list);
-        setForm((prev) => ({
-          ...prev,
-          rincian:
-            prev.rincian && prev.rincian.length > 0
-              ? prev.rincian.map((row, index) =>
-                  index === 0 && !row.armada_id
-                    ? { ...row, armada_id: list[0]?.id ?? "" }
-                    : row
-                )
-              : [
-                  {
-                    lokasi_muat: "",
-                    lokasi_bongkar: "",
-                    armada_id: list[0]?.id ?? "",
-                    armada_start_date: "",
-                    armada_end_date: "",
-                    tonase: "",
-                    harga: "",
-                  },
-                ],
-        }));
       } catch (err) {
         if (!active) return;
         setArmadas([]);
@@ -194,71 +170,6 @@ const CustomerOrderLayer = () => {
     loadProfile();
   }, []);
 
-  useEffect(() => {
-    const primary = form.rincian?.[0] || {};
-    const origin = String(primary.lokasi_muat || "").trim();
-    const destination = String(primary.lokasi_bongkar || "").trim();
-
-    if (!origin || !destination) {
-      setDistanceKm(0);
-      setDistanceText("");
-      setDistanceError("");
-      return;
-    }
-
-    let active = true;
-    const controller = new AbortController();
-    const timer = setTimeout(async () => {
-      setDistanceLoading(true);
-      setDistanceError("");
-
-      try {
-        const apiUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080")
-          .replace(/\/+$/, "");
-        const res = await fetch(
-          `${apiUrl}/api/public/distance?origin=${encodeURIComponent(
-            origin
-          )}&destination=${encodeURIComponent(destination)}`,
-          { signal: controller.signal }
-        );
-        const data = await res.json();
-
-        if (!res.ok) {
-          throw new Error(data?.message || "Gagal menghitung jarak.");
-        }
-
-        if (!active) return;
-        setDistanceKm(Number(data?.distance_km) || 0);
-        setDistanceText(data?.distance_text || "");
-      } catch (err) {
-        if (!active || err?.name === "AbortError") return;
-        setDistanceKm(0);
-        setDistanceText("");
-        setDistanceError(err?.message || "Gagal menghitung jarak.");
-      } finally {
-        if (active) setDistanceLoading(false);
-      }
-    }, 600);
-
-    return () => {
-      active = false;
-      clearTimeout(timer);
-      controller.abort();
-    };
-  }, [form.rincian?.[0]?.lokasi_muat, form.rincian?.[0]?.lokasi_bongkar]);
-
-  useEffect(() => {
-    if (!pricePerKm) return;
-    const autoHarga = distanceKm ? Math.round(distanceKm * pricePerKm) : "";
-
-    setForm((prev) => {
-      const updated = [...(prev.rincian || [])];
-      if (!updated[0]) return prev;
-      updated[0] = { ...updated[0], harga: String(autoHarga) };
-      return { ...prev, rincian: updated };
-    });
-  }, [distanceKm, pricePerKm]);
-
   const onChange = (field) => (event) => {
     const value =
       event.target.type === "checkbox" ? event.target.checked : event.target.value;
@@ -282,11 +193,8 @@ const CustomerOrderLayer = () => {
         {
           lokasi_muat: "",
           lokasi_bongkar: "",
-          armada_id: armadas[0]?.id ?? "",
+          armada_id: "",
           armada_start_date: "",
-          armada_end_date: "",
-          tonase: "",
-          harga: "",
         },
       ],
     }));
@@ -299,28 +207,12 @@ const CustomerOrderLayer = () => {
     }));
   };
 
-  const calcRowSubtotal = (row) => {
-    const tonase = parseFloat(row?.tonase) || 0;
-    const harga = parseFloat(row?.harga) || 0;
-    return tonase * harga;
-  };
-
-  const subtotal = useMemo(() => {
-    return (form.rincian || []).reduce(
-      (sum, row) => sum + calcRowSubtotal(row),
-      0
-    );
-  }, [form.rincian]);
-
-  const pphFee = useMemo(() => subtotal * 0.02, [subtotal]);
-  const totalBayar = useMemo(() => subtotal - pphFee, [subtotal, pphFee]);
-
   const formatCurrency = (value) => {
     const safeValue = Number.isFinite(value) ? value : 0;
     return `Rp ${safeValue.toLocaleString("id-ID")}`;
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
     setMessage(null);
 
@@ -328,45 +220,11 @@ const CustomerOrderLayer = () => {
       !form.name ||
       !form.email ||
       !form.phone ||
-      !form.tanggal ||
-      !form.due_date ||
       !form.status
     ) {
       setMessage({
         type: "error",
         text: "Lengkapi data wajib sebelum melanjutkan.",
-      });
-      return;
-    }
-
-    if (distanceLoading) {
-      setMessage({
-        type: "error",
-        text: "Sedang menghitung jarak. Tunggu sebentar.",
-      });
-      return;
-    }
-
-    if (distanceError) {
-      setMessage({
-        type: "error",
-        text: distanceError,
-      });
-      return;
-    }
-
-    if (!distanceKm) {
-      setMessage({
-        type: "error",
-        text: "Jarak belum ditemukan. Pastikan lokasi muat dan bongkar benar.",
-      });
-      return;
-    }
-
-    if (!pricePerKm) {
-      setMessage({
-        type: "error",
-        text: "Harga per km belum diset. Hubungi admin.",
       });
       return;
     }
@@ -384,10 +242,7 @@ const CustomerOrderLayer = () => {
         !String(row.lokasi_muat || "").trim() ||
         !String(row.lokasi_bongkar || "").trim() ||
         !String(row.armada_id || "").trim() ||
-        !String(row.armada_start_date || "").trim() ||
-        !String(row.armada_end_date || "").trim() ||
-        !String(row.tonase || "").trim() ||
-        !String(row.harga || "").trim()
+        !String(row.armada_start_date || "").trim()
     );
 
     if (invalidRow) {
@@ -398,20 +253,22 @@ const CustomerOrderLayer = () => {
       return;
     }
 
-    setSubmitError("");
-    setShowEstimate(true);
+    setShowConfirm(true);
   };
 
   const handleConfirmOrder = async () => {
     setSubmitting(true);
-    setSubmitError("");
+    setMessage(null);
 
     try {
       const normalizedRincian = (form.rincian || []).map((row) => ({
-        ...row,
+        lokasi_muat: row.lokasi_muat,
+        lokasi_bongkar: row.lokasi_bongkar,
         armada_id: row.armada_id ? Number(row.armada_id) : "",
-        tonase: row.tonase ? Number(row.tonase) : "",
-        harga: row.harga ? Number(row.harga) : "",
+        armada_start_date: row.armada_start_date || "",
+        armada_end_date: row.armada_end_date || null,
+        tonase: 0,
+        harga: 0,
       }));
       const firstRincian = normalizedRincian[0] || {};
       const armadaLabel =
@@ -422,6 +279,9 @@ const CustomerOrderLayer = () => {
       const destination = firstRincian.lokasi_bongkar || "-";
       const pickupDate = firstRincian.armada_start_date || form.tanggal;
       const pickupTime = "00:00";
+      const estimate = 0;
+      const insuranceFee = 0;
+      const total = 0;
 
       await customerApi.post("/customer/orders", {
         pickup,
@@ -432,12 +292,12 @@ const CustomerOrderLayer = () => {
         fleet: armadaLabel,
         cargo: form.cargo,
         weight: form.weight ? Number(form.weight) : null,
-        distance: distanceKm ? Number(distanceKm) : null,
+        distance: null,
         notes: form.notes,
         insurance: false,
-        estimate: subtotal,
-        insurance_fee: pphFee,
-        total: totalBayar,
+        estimate,
+        insurance_fee: insuranceFee,
+        total,
         tanggal: form.tanggal,
         due_date: form.due_date,
         nama_pelanggan: form.name,
@@ -446,15 +306,19 @@ const CustomerOrderLayer = () => {
         status: form.status,
         diterima_oleh: form.diterima_oleh,
         rincian: normalizedRincian,
-        total_biaya: subtotal,
-        pph: pphFee,
-        total_bayar: totalBayar,
+        total_biaya: estimate,
+        pph: insuranceFee,
+        total_bayar: total,
       });
 
-      setShowEstimate(false);
-      setShowThanks(true);
+      setShowConfirm(false);
+      router.push("/order/payment");
     } catch (error) {
-      setSubmitError(error?.message || "Gagal membuat order. Coba lagi.");
+      setMessage({
+        type: "error",
+        text: error?.message || "Gagal membuat order. Coba lagi.",
+      });
+      setShowConfirm(false);
     } finally {
       setSubmitting(false);
     }
@@ -465,34 +329,20 @@ const CustomerOrderLayer = () => {
   const controlBorder = isLightMode ? "#c7c8ca" : "#6c757d";
   const optionBg = controlBg;
   const optionText = controlText;
-  const primaryRincian = form.rincian?.[0] || {};
-  const selectedFleet = armadas.find(
-    (armada) => String(armada?.id) === String(primaryRincian.armada_id)
-  );
-  const fleetLabel = selectedFleet
-    ? selectedFleet.kapasitas
-      ? `${selectedFleet.nama_truk} (${selectedFleet.kapasitas} ton)`
-      : selectedFleet.nama_truk
-    : "-";
 
   return (
     <div className="container-fluid py-4">
-      <div className="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
-        <div>
-          <h4 className="mb-1">Form Order Pengiriman</h4>
-          <p className="text-secondary-light mb-0">
-            Lengkapi detail order untuk mendapatkan estimasi biaya.
-          </p>
-        </div>
-      </div>
-
       <div className="row g-4">
         <div className="col-12">
           <form onSubmit={handleSubmit}>
             <div className="card shadow-sm border-0">
               <div className="card-header bg-transparent d-flex justify-content-end">
-                <button type="submit" className="btn btn-sm btn-primary">
-                  Simpan Order
+                <button
+                  type="submit"
+                  className="btn btn-sm btn-primary"
+                  disabled={submitting}
+                >
+                  {submitting ? "Saving..." : "Save Order"}
                 </button>
               </div>
               <div className="card-body">
@@ -507,31 +357,6 @@ const CustomerOrderLayer = () => {
                 )}
 
                 <div className="row g-3">
-                  <div className="col-md-6">
-                    <label className="form-label fw-semibold">Tanggal</label>
-                    <input
-                      type="date"
-                      className="form-control"
-                      value={form.tanggal}
-                      readOnly
-                    />
-                  </div>
-                  <div className="col-md-6">
-                    <label className="form-label fw-semibold">
-                      Tanggal Jatuh Tempo
-                    </label>
-                    <input
-                      type="date"
-                      className="form-control"
-                      value={form.due_date}
-                      readOnly
-                    />
-                  </div>
-
-                  <div className="col-12">
-                    <hr className="my-2" />
-                  </div>
-
                   <div className="col-md-4">
                     <label className="form-label fw-semibold">Nama</label>
                     <input
@@ -605,8 +430,6 @@ const CustomerOrderLayer = () => {
                     ) : null}
 
                     {(form.rincian || []).map((row, index) => {
-                      const rowTotal = calcRowSubtotal(row);
-                      const isAutoHarga = pricePerKm > 0 && index === 0;
                       return (
                         <div
                           key={index}
@@ -644,7 +467,7 @@ const CustomerOrderLayer = () => {
                           <div className="col-md-4">
                             <select
                               className="form-select"
-                              value={row.armada_id}
+                              value={row.armada_id || ""}
                               disabled={armadaLoading}
                               onChange={(e) =>
                                 updateRincian(index, "armada_id", e.target.value)
@@ -661,7 +484,7 @@ const CustomerOrderLayer = () => {
                               >
                                 {armadaLoading
                                   ? "Memuat armada..."
-                                  : "-- Pilih Armada --"}
+                                  : "Pilih Armada"}
                               </option>
                               {armadas.map((item) => {
                                 const label = item?.kapasitas
@@ -682,18 +505,18 @@ const CustomerOrderLayer = () => {
                               })}
                             </select>
                           </div>
-                          <div className="col-md-2 text-end">
+                          <div className="col-md-1 text-end">
                             {(form.rincian || []).length > 1 && (
                               <button
                                 className="btn btn-sm btn-outline-danger"
                                 type="button"
                                 onClick={() => removeRincian(index)}
                               >
-                                Hapus
+                                Remove
                               </button>
                             )}
                           </div>
-                          <div className="col-md-3">
+                          <div className="col-md-4">
                             <input
                               type="date"
                               className="form-control"
@@ -707,51 +530,6 @@ const CustomerOrderLayer = () => {
                               }
                             />
                           </div>
-                          <div className="col-md-3">
-                            <input
-                              type="date"
-                              className="form-control"
-                              value={row.armada_end_date}
-                              onChange={(e) =>
-                                updateRincian(
-                                  index,
-                                  "armada_end_date",
-                                  e.target.value
-                                )
-                              }
-                            />
-                          </div>
-                          <div className="col-md-2">
-                            <input
-                              type="number"
-                              className="form-control"
-                              placeholder="Tonase"
-                              value={row.tonase}
-                              onChange={(e) =>
-                                updateRincian(index, "tonase", e.target.value)
-                              }
-                            />
-                          </div>
-                          <div className="col-md-2">
-                            <input
-                              type="number"
-                              className="form-control"
-                              placeholder={isAutoHarga ? "Otomatis" : "Harga / Ton"}
-                              value={row.harga}
-                              onChange={(e) =>
-                                updateRincian(index, "harga", e.target.value)
-                              }
-                              readOnly={isAutoHarga}
-                            />
-                          </div>
-                          <div className="col-md-2">
-                            <input
-                              type="text"
-                              className="form-control"
-                              value={formatCurrency(rowTotal)}
-                              readOnly
-                            />
-                          </div>
                         </div>
                       );
                     })}
@@ -761,41 +539,58 @@ const CustomerOrderLayer = () => {
                       className="btn btn-sm btn-outline-primary mt-4"
                       onClick={addRincian}
                     >
-                      + Tambah Rincian
+                      + Add Detail
                     </button>
                   </div>
 
-                  <div className="col-md-4 mt-4">
-                    <label className="form-label fw-semibold">Subtotal</label>
-                    <input
-                      type="text"
-                      className="form-control"
-                      value={formatCurrency(subtotal)}
-                      readOnly
-                    />
-                  </div>
-                  <div className="col-md-4 mt-4">
-                    <label className="form-label fw-semibold">PPH (2%)</label>
-                    <input
-                      type="text"
-                      className="form-control"
-                      value={formatCurrency(pphFee)}
-                      readOnly
-                    />
-                  </div>
-                  <div className="col-md-4 mt-4">
-                    <label className="form-label fw-semibold">Total Bayar</label>
-                    <input
-                      type="text"
-                      className="form-control fw-bold"
-                      style={{
-                        backgroundColor: "#f8f9fa",
-                        color: "black",
-                        WebkitTextFillColor: "black",
-                      }}
-                      value={formatCurrency(totalBayar)}
-                      readOnly
-                    />
+                  <div className="col-12 mt-4">
+                    <div className="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                      <h6 className="mb-0">Estimasi Harga</h6>
+                      <span className="text-secondary-light text-sm">
+                        Perkiraan per 1 ton dan per 1 km
+                      </span>
+                    </div>
+                    <div className="d-md-none mt-3 d-flex flex-column gap-12">
+                      {estimateRates.map((rate) => (
+                        <div key={rate.ton} className="cvant-mobile-card">
+                          <div className="cvant-mobile-card-row">
+                            <span className="cvant-mobile-card-label">Tonase</span>
+                            <span className="cvant-mobile-card-value">
+                              {rate.ton} ton
+                            </span>
+                          </div>
+                          <div className="cvant-mobile-card-row">
+                            <span className="cvant-mobile-card-label">
+                              Harga / km
+                            </span>
+                            <span className="cvant-mobile-card-value">
+                              {formatCurrency(rate.pricePerKm)} / km
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="table-responsive mt-2 d-none d-md-block">
+                      <table className="table bordered-table text-center align-middle mb-0">
+                        <thead>
+                          <tr>
+                            <th>Tonase</th>
+                            <th>Harga / km</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {estimateRates.map((rate) => (
+                            <tr key={rate.ton}>
+                              <td>{rate.ton} ton</td>
+                              <td>{formatCurrency(rate.pricePerKm)} / km</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <p className="text-secondary-light text-sm mt-2 mb-0">
+                      Estimasi dapat berubah sesuai rute dan kebutuhan muatan.
+                    </p>
                   </div>
 
                 </div>
@@ -805,7 +600,7 @@ const CustomerOrderLayer = () => {
         </div>
       </div>
 
-      {showEstimate && (
+      {showConfirm && (
         <div
           className="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center"
           style={{
@@ -813,88 +608,38 @@ const CustomerOrderLayer = () => {
             background: "rgba(0,0,0,0.55)",
             padding: "16px",
           }}
-          onClick={() => (submitting ? null : setShowEstimate(false))}
+          onClick={() => {
+            if (!submitting) setShowConfirm(false);
+          }}
         >
           <div
-            className="card shadow-none border"
-            style={{ maxWidth: "520px", width: "100%" }}
+            className="cvant-order-modal"
+            style={{ maxWidth: "480px", width: "100%" }}
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="card-body p-24">
-              <h6 className="mb-16">Ringkasan Estimasi</h6>
-              <table className="table table-borderless mb-12">
-                <tbody>
-                  <tr>
-                    <td className="text-secondary-light">Armada</td>
-                    <td className="text-end fw-semibold">{fleetLabel}</td>
-                  </tr>
-                  <tr>
-                    <td className="text-secondary-light">Rute</td>
-                    <td className="text-end fw-semibold">
-                      {primaryRincian.lokasi_muat || "-"} -{" "}
-                      {primaryRincian.lokasi_bongkar || "-"}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="text-secondary-light">Jarak</td>
-                    <td className="text-end fw-semibold">
-                      {distanceLoading
-                        ? "Menghitung..."
-                        : distanceText
-                        ? distanceText
-                        : distanceKm
-                        ? `${distanceKm} km`
-                        : "-"}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="text-secondary-light">Harga / km</td>
-                    <td className="text-end fw-semibold">
-                      {pricePerKm ? `${formatCurrency(pricePerKm)} / km` : "-"}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="text-secondary-light">Subtotal</td>
-                    <td className="text-end fw-semibold">
-                      {formatCurrency(subtotal)}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="text-secondary-light">PPH (2%)</td>
-                    <td className="text-end fw-semibold">
-                      {formatCurrency(pphFee)}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="text-secondary-light">Total Bayar</td>
-                    <td className="text-end fw-bold">
-                      {formatCurrency(totalBayar)}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-              <p className="text-secondary-light mb-0">
-                Estimasi dihitung berdasarkan rincian muat/bongkar & jarak.
+            <div className="cvant-order-modal-header">
+              <h6 className="mb-0">Confirm Order</h6>
+            </div>
+            <div className="cvant-order-modal-body text-center">
+              <p className="text-secondary-light mb-20">
+                Are you sure about your order?
               </p>
-              {submitError ? (
-                <div className="alert alert-danger mt-3 mb-0">{submitError}</div>
-              ) : null}
-              <div className="d-flex justify-content-end gap-2 mt-4">
+              <div className="d-flex justify-content-center gap-2 flex-wrap">
                 <button
                   type="button"
-                  className="btn btn-outline-primary px-16"
-                  onClick={() => setShowEstimate(false)}
+                  className="btn btn-outline-secondary px-24"
+                  onClick={() => setShowConfirm(false)}
                   disabled={submitting}
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
-                  className="btn btn-primary px-20"
+                  className="btn btn-primary px-24"
                   onClick={handleConfirmOrder}
                   disabled={submitting}
                 >
-                  {submitting ? "Menyimpan..." : "Oke"}
+                  {submitting ? "Processing..." : "Proceed to Payment"}
                 </button>
               </div>
             </div>
@@ -902,37 +647,25 @@ const CustomerOrderLayer = () => {
         </div>
       )}
 
-      {showThanks && (
-        <div
-          className="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center"
-          style={{
-            zIndex: 9999,
-            background: "rgba(0,0,0,0.55)",
-            padding: "16px",
-          }}
-          onClick={() => setShowThanks(false)}
-        >
-          <div
-            className="card shadow-none border"
-            style={{ maxWidth: "480px", width: "100%" }}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="card-body p-24 text-center">
-              <h6 className="mb-12">Terimakasih sudah order</h6>
-              <p className="text-secondary-light mb-20">
-                Ditunggu update selanjutnya.
-              </p>
-              <button
-                type="button"
-                className="btn btn-primary px-24"
-                onClick={() => setShowThanks(false)}
-              >
-                Oke
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <style jsx global>{`
+        .cvant-order-modal {
+          background: var(--white);
+          border-radius: 16px;
+          box-shadow: 0px 13px 30px 10px rgba(46, 45, 116, 0.05);
+          border: 0;
+          overflow: hidden;
+        }
+
+        .cvant-order-modal-header {
+          padding: 14px 18px;
+          background: var(--primary-50);
+          border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+        }
+
+        .cvant-order-modal-body {
+          padding: 22px 20px 24px;
+        }
+      `}</style>
     </div>
   );
 };

@@ -96,12 +96,12 @@ class CustomerOrderController extends Controller
                 'rincian.*.lokasi_bongkar' => ['required', 'string'],
                 'rincian.*.armada_id' => ['required', 'exists:armadas,id'],
                 'rincian.*.armada_start_date' => ['required', 'date'],
-                'rincian.*.armada_end_date' => ['required', 'date'],
-                'rincian.*.tonase' => ['required', 'numeric', 'gt:0'],
-                'rincian.*.harga' => ['required', 'numeric', 'gt:0'],
-                'total_biaya' => ['required', 'numeric', 'gte:0'],
-                'pph' => ['required', 'numeric', 'gte:0'],
-                'total_bayar' => ['required', 'numeric', 'gte:0'],
+                'rincian.*.armada_end_date' => ['nullable', 'date'],
+                'rincian.*.tonase' => ['nullable', 'numeric', 'gte:0'],
+                'rincian.*.harga' => ['nullable', 'numeric', 'gte:0'],
+                'total_biaya' => ['nullable', 'numeric', 'gte:0'],
+                'pph' => ['nullable', 'numeric', 'gte:0'],
+                'total_bayar' => ['nullable', 'numeric', 'gte:0'],
             ]);
 
             if ($invoiceValidator->fails()) {
@@ -119,9 +119,9 @@ class CustomerOrderController extends Controller
             $invoiceData['lokasi_bongkar'] = $first['lokasi_bongkar'];
             $invoiceData['armada_id'] = $first['armada_id'];
             $invoiceData['armada_start_date'] = $first['armada_start_date'];
-            $invoiceData['armada_end_date'] = $first['armada_end_date'];
-            $invoiceData['tonase'] = $first['tonase'];
-            $invoiceData['harga'] = $first['harga'];
+            $invoiceData['armada_end_date'] = $first['armada_end_date'] ?? null;
+            $invoiceData['tonase'] = $first['tonase'] ?? 0;
+            $invoiceData['harga'] = $first['harga'] ?? 0;
 
             $subtotal = collect($invoiceData['rincian'])->reduce(function ($sum, $row) {
                 $tonase = (float) ($row['tonase'] ?? 0);

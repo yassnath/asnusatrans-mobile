@@ -3,15 +3,15 @@ import CustomerLayout from "@/masterLayout/CustomerLayout";
 import CustomerOrdersLayer from "@/components/CustomerOrdersLayer";
 
 export const metadata = {
-  title: "Riwayat Order | CV ANT",
-  description: "Riwayat order customer CV ANT.",
+  title: "Order History | CV ANT",
+  description: "Customer order history for CV ANT.",
 };
 
 export default function CustomerOrdersPage() {
   return (
     <CustomerLayout>
       <Breadcrumb
-        title="Riwayat Pesanan"
+        title="Order History"
         rootHref="/customer/dashboard"
         rootLabel="Dashboard"
       />
