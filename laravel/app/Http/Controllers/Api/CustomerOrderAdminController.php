@@ -10,7 +10,7 @@ class CustomerOrderAdminController extends Controller
 {
     public function index(Request $request)
     {
-        $orders = CustomerOrder::with(['customer:id,name,email'])
+        $orders = CustomerOrder::with(['customer:id,name,email,phone'])
             ->orderByDesc('created_at')
             ->get();
 

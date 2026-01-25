@@ -27,6 +27,7 @@ export const getStoredInvoiceNotifications = () => {
 
 export const storeInvoiceNotification = ({
   invoiceId,
+  orderId,
   customerEmail,
   customerName,
   invoiceNumber,
@@ -43,6 +44,7 @@ export const storeInvoiceNotification = ({
   const entry = {
     id,
     invoiceId,
+    orderId: orderId ? String(orderId) : "",
     customerEmail: email,
     customerName: customerName || "",
     invoiceNumber: invoiceNumber || "",
@@ -109,12 +111,17 @@ export const buildCustomerNotifications = (
     if (!entryEmail || entryEmail !== customerEmail) return;
 
     const invoiceNumber = entry?.invoiceNumber || `#${entry?.invoiceId ?? "-"}`;
+    const params = new URLSearchParams();
+    if (entry?.orderId) params.set("id", entry.orderId);
+    if (entry?.invoiceId) params.set("invoice", entry.invoiceId);
+    const query = params.toString();
+    const paymentHref = query ? `/order/payment?${query}` : "/order/payment";
     items.push({
       id: entry?.id || `invoice-${entry?.invoiceId ?? "-"}`,
       title: "Invoice tersedia",
       message: `Invoice ${invoiceNumber} telah dikirim.`,
       time: entry?.time,
-      href: `/invoice/${entry?.invoiceId}`,
+      href: paymentHref,
     });
   });
 

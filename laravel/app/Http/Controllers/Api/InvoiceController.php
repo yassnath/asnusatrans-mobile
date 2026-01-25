@@ -23,6 +23,7 @@ class InvoiceController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
+            'order_id' => 'nullable|exists:customer_orders,id',
             'no_invoice' => 'required|string|unique:invoices,no_invoice',
             'nama_pelanggan' => 'required|string',
             'email' => 'required|string',
@@ -87,6 +88,7 @@ class InvoiceController extends Controller
         $invoice = Invoice::findOrFail($id);
 
         $validated = $request->validate([
+            'order_id' => 'nullable|exists:customer_orders,id',
             'no_invoice' => 'required|string|unique:invoices,no_invoice,' . $invoice->id,
             'nama_pelanggan' => 'required|string',
             'email' => 'required|string',

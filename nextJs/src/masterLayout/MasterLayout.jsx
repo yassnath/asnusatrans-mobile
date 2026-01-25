@@ -489,7 +489,7 @@ const MasterLayout = ({ children }) => {
                       />
                     </button>
 
-                    <div className="dropdown-menu to-top dropdown-menu-sm">
+                    <div className="dropdown-menu to-top dropdown-menu-sm cvant-profile-menu">
                       <div className="py-12 px-16 radius-8 bg-primary-50 mb-16 d-flex align-items-center justify-content-between gap-2">
                         <div>
                           <h6 className="text-lg text-primary-light fw-semibold mb-2">
@@ -771,7 +771,7 @@ const MasterLayout = ({ children }) => {
           right: 0;
           width: min(320px, 90vw);
           background: var(--white);
-          border: 0;
+          border: 1px solid var(--primary-600);
           border-radius: 16px;
           box-shadow: 0px 13px 30px 10px rgba(46, 45, 116, 0.05);
           z-index: 40;
@@ -845,6 +845,10 @@ const MasterLayout = ({ children }) => {
           text-align: center;
           font-size: 13px;
           color: rgba(148, 163, 184, 0.8);
+        }
+
+        .cvant-profile-menu {
+          border: 1px solid var(--primary-600) !important;
         }
       `}</style>
     </>

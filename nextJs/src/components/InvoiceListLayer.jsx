@@ -106,19 +106,50 @@ export default function InvoiceListLayer() {
 
   const closePopup = () => setPopup((p) => ({ ...p, show: false }));
   const popupAccent = popup.type === "success" ? "#22c55e" : "#ef4444";
+  const sendAccent = "#2563eb";
+  const deleteAccent = "#ef4444";
 
   const [deleteConfirm, setDeleteConfirm] = useState({
     show: false,
     item: null,
     deleting: false,
+    error: "",
+  });
+
+  const [sendConfirm, setSendConfirm] = useState({
+    show: false,
+    item: null,
+    sending: false,
+    result: "",
+    resultType: "",
   });
 
   const openDeleteConfirm = (item) => {
-    setDeleteConfirm({ show: true, item, deleting: false });
+    setDeleteConfirm({ show: true, item, deleting: false, error: "" });
   };
 
   const closeDeleteConfirm = () =>
-    setDeleteConfirm({ show: false, item: null, deleting: false });
+    setDeleteConfirm({ show: false, item: null, deleting: false, error: "" });
+
+  const openSendConfirm = (item) => {
+    setSendConfirm({
+      show: true,
+      item,
+      sending: false,
+      result: "",
+      resultType: "",
+    });
+  };
+
+  const closeSendConfirm = () => {
+    setSendConfirm({
+      show: false,
+      item: null,
+      sending: false,
+      result: "",
+      resultType: "",
+    });
+  };
 
   const normalizeDate = (value) => {
     if (!value) return "";
@@ -260,28 +291,76 @@ export default function InvoiceListLayer() {
     }).format(num || 0);
 
   const handleSendInvoice = (item) => {
-    if (item?.type !== "Income") return;
+    if (item?.type !== "Income") {
+      return { ok: false, error: "Data invoice tidak valid." };
+    }
     const email = String(item?.email || "").trim();
     if (!email) {
-      showPopup("danger", "Email customer tidak tersedia.", 2500);
-      return;
+      return { ok: false, error: "Email customer tidak tersedia." };
     }
 
     const stored = storeInvoiceNotification({
       invoiceId: item.id,
+      orderId: item?.order_id,
       customerEmail: email,
       customerName: item.nama,
       invoiceNumber: item.no,
       time: new Date().toISOString(),
     });
 
-    showPopup(
-      stored ? "success" : "danger",
-      stored
+    if (!stored) {
+      return { ok: false, error: "Gagal mengirim notifikasi invoice." };
+    }
+
+    return { ok: true };
+  };
+
+  const confirmSendInvoice = async () => {
+    const item = sendConfirm.item;
+    if (!item) return;
+
+    setSendConfirm((prev) => ({
+      ...prev,
+      sending: true,
+      result: "",
+      resultType: "",
+    }));
+
+    const result = handleSendInvoice(item);
+
+    setSendConfirm((prev) => ({
+      ...prev,
+      sending: false,
+      result: result.ok
         ? "Invoice dikirim ke notifikasi customer."
-        : "Gagal mengirim notifikasi invoice.",
-      2500
-    );
+        : result.error,
+      resultType: result.ok ? "success" : "error",
+    }));
+  };
+
+  const confirmDeleteItem = async () => {
+    const item = deleteConfirm.item;
+    if (!item) return;
+
+    setDeleteConfirm((prev) => ({ ...prev, deleting: true, error: "" }));
+    try {
+      if (item.type === "Income") {
+        await api.delete(`/invoices/${item.id}`);
+      } else {
+        await api.delete(`/expenses/${item.id}`);
+      }
+
+      setData((prev) =>
+        prev.filter((entry) => !(entry.id === item.id && entry.type === item.type))
+      );
+      closeDeleteConfirm();
+    } catch (e) {
+      setDeleteConfirm((prev) => ({
+        ...prev,
+        deleting: false,
+        error: e?.message || "Gagal menghapus data.",
+      }));
+    }
   };
 
   const handleGenerateReport = async (range) => {
@@ -427,6 +506,224 @@ export default function InvoiceListLayer() {
                   {printing && printingRange === "year"
                     ? "Creating..."
                     : "Yearly Report"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {sendConfirm.show && (
+          <div
+            className="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center"
+            style={{
+              zIndex: 9999,
+              background: "rgba(0,0,0,0.55)",
+              padding: "16px",
+            }}
+            onClick={() => {
+              if (!sendConfirm.sending) closeSendConfirm();
+            }}
+          >
+            <div
+              className="radius-12 shadow-sm p-24"
+              style={{
+                width: "100%",
+                maxWidth: "560px",
+                backgroundColor: "#1b2431",
+                border: `2px solid ${sendAccent}`,
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="d-flex align-items-start justify-content-between gap-2">
+                <div className="d-flex align-items-start gap-12">
+                  <span style={{ marginTop: "2px" }}>
+                    <Icon
+                      icon="mdi:send"
+                      style={{ fontSize: "28px", color: sendAccent }}
+                    />
+                  </span>
+
+                  <div>
+                    <h5 className="mb-8 fw-bold" style={{ color: "#ffffff" }}>
+                      Send Invoice to Customer
+                    </h5>
+                    <p
+                      className="mb-0"
+                      style={{ color: "#cbd5e1", fontSize: "15px" }}
+                    >
+                      Send {sendConfirm.item?.no || "invoice"} to{" "}
+                      <strong>{sendConfirm.item?.nama || "customer"}</strong>?
+                    </p>
+                    <p
+                      className="mb-0 mt-6"
+                      style={{ color: "#94a3b8", fontSize: "13px" }}
+                    >
+                      {sendConfirm.item?.email || "-"}
+                    </p>
+                    {sendConfirm.result ? (
+                      <p
+                        className="mb-0 mt-10"
+                        style={{
+                          color:
+                            sendConfirm.resultType === "success"
+                              ? "#86efac"
+                              : "#fca5a5",
+                          fontSize: "14px",
+                        }}
+                      >
+                        {sendConfirm.result}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  className="btn p-0"
+                  aria-label="Close"
+                  onClick={closeSendConfirm}
+                  style={{
+                    border: "none",
+                    background: "transparent",
+                    lineHeight: 1,
+                  }}
+                  disabled={sendConfirm.sending}
+                >
+                  <Icon
+                    icon="solar:close-circle-linear"
+                    style={{ fontSize: 24, color: "#94a3b8" }}
+                  />
+                </button>
+              </div>
+
+              <div className="d-flex justify-content-end mt-20 gap-2">
+                <button
+                  type="button"
+                  className="btn btn-outline-secondary radius-12 px-16"
+                  onClick={closeSendConfirm}
+                  disabled={sendConfirm.sending}
+                  style={{
+                    border: "2px solid #64748b",
+                    color: "#e2e8f0",
+                  }}
+                >
+                  {sendConfirm.resultType === "success" ? "Close" : "Cancel"}
+                </button>
+
+                {sendConfirm.resultType !== "success" && (
+                  <button
+                    type="button"
+                    className="btn btn-primary radius-12 px-16"
+                    onClick={confirmSendInvoice}
+                    disabled={sendConfirm.sending}
+                    style={{
+                      border: `2px solid ${sendAccent}`,
+                    }}
+                  >
+                    {sendConfirm.sending ? "Sending..." : "Send"}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {deleteConfirm.show && (
+          <div
+            className="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center"
+            style={{
+              zIndex: 9999,
+              background: "rgba(0,0,0,0.55)",
+              padding: "16px",
+            }}
+            onClick={() => {
+              if (!deleteConfirm.deleting) closeDeleteConfirm();
+            }}
+          >
+            <div
+              className="radius-12 shadow-sm p-24"
+              style={{
+                width: "100%",
+                maxWidth: "560px",
+                backgroundColor: "#1b2431",
+                border: `2px solid ${deleteAccent}`,
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="d-flex align-items-start justify-content-between gap-2">
+                <div className="d-flex align-items-start gap-12">
+                  <span style={{ marginTop: "2px" }}>
+                    <Icon
+                      icon="mdi:trash-can-outline"
+                      style={{ fontSize: "28px", color: deleteAccent }}
+                    />
+                  </span>
+
+                  <div>
+                    <h5 className="mb-8 fw-bold" style={{ color: "#ffffff" }}>
+                      Delete {deleteConfirm.item?.type || "Invoice"}
+                    </h5>
+                    <p
+                      className="mb-0"
+                      style={{ color: "#cbd5e1", fontSize: "15px" }}
+                    >
+                      Are you sure you want to delete{" "}
+                      <strong>{deleteConfirm.item?.no || "-"}</strong>?
+                    </p>
+                    {deleteConfirm.error ? (
+                      <p
+                        className="mb-0 mt-10"
+                        style={{ color: "#fca5a5", fontSize: "14px" }}
+                      >
+                        {deleteConfirm.error}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  className="btn p-0"
+                  aria-label="Close"
+                  onClick={closeDeleteConfirm}
+                  style={{
+                    border: "none",
+                    background: "transparent",
+                    lineHeight: 1,
+                  }}
+                  disabled={deleteConfirm.deleting}
+                >
+                  <Icon
+                    icon="solar:close-circle-linear"
+                    style={{ fontSize: 24, color: "#94a3b8" }}
+                  />
+                </button>
+              </div>
+
+              <div className="d-flex justify-content-end mt-20 gap-2">
+                <button
+                  type="button"
+                  className="btn btn-outline-secondary radius-12 px-16"
+                  onClick={closeDeleteConfirm}
+                  disabled={deleteConfirm.deleting}
+                  style={{
+                    border: "2px solid #64748b",
+                    color: "#e2e8f0",
+                  }}
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="button"
+                  className="btn btn-danger radius-12 px-16"
+                  onClick={confirmDeleteItem}
+                  disabled={deleteConfirm.deleting}
+                  style={{
+                    border: `2px solid ${deleteAccent}`,
+                  }}
+                >
+                  {deleteConfirm.deleting ? "Deleting..." : "Delete"}
                 </button>
               </div>
             </div>
@@ -624,7 +921,7 @@ export default function InvoiceListLayer() {
                               <button
                                 className="btn btn-sm btn-outline-info"
                                 style={mobileActionBtnStyle}
-                                onClick={() => handleSendInvoice(item)}
+                                onClick={() => openSendConfirm(item)}
                               >
                                 <Icon icon="mdi:send" width={18} height={18} />
                               </button>
@@ -771,7 +1068,7 @@ export default function InvoiceListLayer() {
                                       alignItems: "center",
                                       justifyContent: "center",
                                     }}
-                                    onClick={() => handleSendInvoice(item)}
+                                    onClick={() => openSendConfirm(item)}
                                   >
                                     <Icon icon="mdi:send" />
                                   </button>

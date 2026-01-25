@@ -4,12 +4,6 @@ import { useEffect, useState } from "react";
 import { Icon } from "@iconify/react/dist/iconify.js";
 import { customerApi } from "@/lib/customerApi";
 
-const formatCurrency = (value) => {
-  const parsed = Number(value);
-  const safeValue = Number.isFinite(parsed) ? parsed : 0;
-  return `Rp ${safeValue.toLocaleString("id-ID")}`;
-};
-
 const formatScheduleDate = (value) => {
   if (!value) return "-";
   const raw = String(value);
@@ -110,12 +104,6 @@ const CustomerOrdersLayer = () => {
                 </span>
               </div>
               <div className="cvant-mobile-card-row">
-                <span className="cvant-mobile-card-label">Total</span>
-                <span className="cvant-mobile-card-value">
-                  {formatCurrency(order.total)}
-                </span>
-              </div>
-              <div className="cvant-mobile-card-row">
                 <span className="cvant-mobile-card-label">Payment</span>
                 {canPay ? (
                   <a
@@ -189,13 +177,12 @@ const CustomerOrdersLayer = () => {
                         <th>Order ID</th>
                         <th>Route</th>
                         <th>Schedule</th>
-                      <th>Fleet</th>
-                      <th>Total</th>
-                      <th>Status</th>
-                      <th>Payment</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+                        <th>Fleet</th>
+                        <th>Status</th>
+                        <th>Payment</th>
+                      </tr>
+                    </thead>
+                    <tbody>
                     {orders.map((order) => {
                       const statusLabel = String(order.status || "").toLowerCase();
                       const canPay =
@@ -213,7 +200,6 @@ const CustomerOrdersLayer = () => {
                             {formatScheduleDate(order.pickup_date || order.date)}
                           </td>
                           <td>{order.fleet}</td>
-                          <td>{formatCurrency(order.total)}</td>
                           <td>
                             <span
                               className={`${statusBadge(

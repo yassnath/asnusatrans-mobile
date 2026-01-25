@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { Icon } from "@iconify/react/dist/iconify.js";
 
@@ -46,10 +47,12 @@ function isLightModeNow() {
 
 export default function InvoiceAddPage() {
   const pageIn = useCvAntPageIn();
+  const searchParams = useSearchParams();
 
   const [armadas, setArmadas] = useState([]);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
+  const [prefillArmadaName, setPrefillArmadaName] = useState("");
 
   const [isLightMode, setIsLightMode] = useState(false);
 
@@ -104,6 +107,7 @@ export default function InvoiceAddPage() {
     setWaitConfirm({ show: false, armadaLabel: "" });
 
   const [form, setForm] = useState({
+    order_id: "",
     no_invoice: "",
     tanggal: "",
     due_date: "",
@@ -173,6 +177,134 @@ export default function InvoiceAddPage() {
         }));
       });
   }, []);
+
+  const toInputDate = (raw) => {
+    if (!raw) return "";
+    const str = String(raw).trim();
+
+    if (/^\d{2}-\d{2}-\d{4}$/.test(str)) {
+      const [dd, mm, yyyy] = str.split("-");
+      return `${yyyy}-${mm}-${dd}`;
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+
+    if (/^\d{4}-\d{2}-\d{2}T/.test(str)) {
+      const d = new Date(str);
+      if (!isNaN(d)) {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        return `${y}-${m}-${day}`;
+      }
+      return str.split("T")[0];
+    }
+
+    if (/^\d{4}-\d{2}-\d{2}\s/.test(str)) return str.split(" ")[0];
+    return "";
+  };
+
+  useEffect(() => {
+    if (!searchParams) return;
+    const orderId = searchParams.get("orderId") || "";
+    const customerName = searchParams.get("customerName") || "";
+    const customerEmail = searchParams.get("customerEmail") || "";
+    const customerPhone = searchParams.get("customerPhone") || "";
+    const pickup = searchParams.get("pickup") || "";
+    const destination = searchParams.get("destination") || "";
+    const pickupDate = searchParams.get("pickupDate") || "";
+    const armadaName = searchParams.get("armadaName") || "";
+
+    if (
+      !orderId &&
+      !customerName &&
+      !customerEmail &&
+      !customerPhone &&
+      !pickup &&
+      !destination &&
+      !pickupDate &&
+      !armadaName
+    ) {
+      return;
+    }
+
+    setForm((prev) => {
+      const next = { ...prev };
+      if (orderId && !String(prev.order_id || "").trim()) {
+        next.order_id = orderId;
+      }
+      if (customerName && !String(prev.nama_pelanggan || "").trim()) {
+        next.nama_pelanggan = customerName;
+      }
+      if (customerEmail && !String(prev.email || "").trim()) {
+        next.email = customerEmail;
+      }
+      if (customerPhone && !String(prev.no_telp || "").trim()) {
+        next.no_telp = customerPhone;
+      }
+
+      const rincian = Array.isArray(prev.rincian) ? [...prev.rincian] : [];
+      if (rincian.length === 0) {
+        rincian.push({
+          lokasi_muat: "",
+          lokasi_bongkar: "",
+          armada_id: "",
+          armada_start_date: "",
+          armada_end_date: "",
+          tonase: "",
+          harga: "",
+        });
+      }
+
+      const first = { ...rincian[0] };
+      if (pickup && !String(first.lokasi_muat || "").trim()) {
+        first.lokasi_muat = pickup;
+      }
+      if (destination && !String(first.lokasi_bongkar || "").trim()) {
+        first.lokasi_bongkar = destination;
+      }
+      if (pickupDate && !String(first.armada_start_date || "").trim()) {
+        first.armada_start_date = toInputDate(pickupDate);
+      }
+      rincian[0] = first;
+      next.rincian = rincian;
+      return next;
+    });
+
+    if (armadaName) {
+      setPrefillArmadaName(armadaName);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!prefillArmadaName || armadas.length === 0) return;
+
+    const normalize = (value) =>
+      String(value || "")
+        .toLowerCase()
+        .replace(/\s+/g, " ")
+        .trim();
+
+    const target = normalize(prefillArmadaName);
+    if (!target) return;
+
+    const matched = armadas.find((armada) => {
+      const name = normalize(armada?.nama_truk);
+      if (!name) return false;
+      return name === target || name.includes(target) || target.includes(name);
+    });
+
+    if (!matched?.id) return;
+
+    setForm((prev) => {
+      const rincian = Array.isArray(prev.rincian) ? [...prev.rincian] : [];
+      if (rincian.length === 0) return prev;
+      if (String(rincian[0]?.armada_id || "").trim()) return prev;
+
+      const first = { ...rincian[0], armada_id: String(matched.id) };
+      rincian[0] = first;
+      return { ...prev, rincian };
+    });
+  }, [prefillArmadaName, armadas]);
 
   const updateRincian = (index, key, value) => {
     const updated = [...(form.rincian || [])];
@@ -322,6 +454,7 @@ export default function InvoiceAddPage() {
     const first = rincianClean[0];
 
     const payload = {
+      order_id: form.order_id ? Number(form.order_id) : null,
       no_invoice: form.no_invoice,
       nama_pelanggan: form.nama_pelanggan,
       email: form.email,

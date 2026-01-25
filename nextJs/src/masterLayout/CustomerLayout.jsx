@@ -13,6 +13,7 @@ import {
 } from "@/lib/notificationUtils";
 
 const lastSeenKey = "cvant_customer_notif_seen";
+const readKey = "cvant_customer_notif_read";
 
 const getTimeValue = (value) => {
   if (!value) return 0;
@@ -36,6 +37,7 @@ const CustomerLayout = ({ children }) => {
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [readIds, setReadIds] = useState([]);
   const profileRef = useRef(null);
   const notifRef = useRef(null);
 
@@ -66,6 +68,16 @@ const CustomerLayout = ({ children }) => {
     loadProfile();
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const stored = JSON.parse(window.localStorage.getItem(readKey) || "[]");
+      setReadIds(Array.isArray(stored) ? stored : []);
+    } catch {
+      setReadIds([]);
+    }
+  }, []);
+
   const loadNotifications = async () => {
     try {
       const orders = await customerApi.get("/customer/orders");
@@ -94,12 +106,33 @@ const CustomerLayout = ({ children }) => {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const handleStorage = (event) => {
+      if (event.type === "cvant-notif-read") {
+        try {
+          const stored = JSON.parse(window.localStorage.getItem(readKey) || "[]");
+          setReadIds(Array.isArray(stored) ? stored : []);
+        } catch {
+          setReadIds([]);
+        }
+        return;
+      }
       if (event.key === "cvant_customer_invoice_notifications") {
         loadNotifications();
       }
+      if (event.key === readKey) {
+        try {
+          const stored = JSON.parse(window.localStorage.getItem(readKey) || "[]");
+          setReadIds(Array.isArray(stored) ? stored : []);
+        } catch {
+          setReadIds([]);
+        }
+      }
     };
     window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
+    window.addEventListener("cvant-notif-read", handleStorage);
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener("cvant-notif-read", handleStorage);
+    };
   }, [customer]);
 
   useEffect(() => {
@@ -144,6 +177,26 @@ const CustomerLayout = ({ children }) => {
     const now = Date.now();
     window.localStorage.setItem(lastSeenKey, String(now));
     setUnreadCount(0);
+  };
+
+  const applyReadIds = (next) => {
+    setReadIds(next);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(readKey, JSON.stringify(next));
+      window.dispatchEvent(new CustomEvent("cvant-notif-read"));
+    }
+  };
+
+  const markNotificationRead = (event, id) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!id || readIds.includes(id)) return;
+    applyReadIds([...readIds, id]);
+  };
+
+  const markNotificationReadSilent = (id) => {
+    if (!id || readIds.includes(id)) return;
+    applyReadIds([...readIds, id]);
   };
 
   const toggleNotifications = () => {
@@ -364,20 +417,44 @@ const CustomerLayout = ({ children }) => {
                               No recent activity yet.
                             </div>
                           ) : (
-                            notifications.slice(0, 6).map((item) => (
-                              <Link
-                                key={item.id}
-                                href={item.href || "/customer/orders"}
-                                className="cvant-notify-item"
-                                onClick={() => setNotifOpen(false)}
-                              >
-                                <div className="cvant-notify-title">{item.title}</div>
-                                <div className="cvant-notify-text">{item.message}</div>
-                                <div className="cvant-notify-time">
-                                  {formatNotificationTime(item.time)}
-                                </div>
-                              </Link>
-                            ))
+                            notifications.slice(0, 6).map((item) => {
+                              const isRead = readIds.includes(item.id);
+                              return (
+                                <Link
+                                  key={item.id}
+                                  href={item.href || "/customer/orders"}
+                                  className={`cvant-notify-item${
+                                    isRead ? " is-read" : ""
+                                  }`}
+                                  onClick={() => {
+                                    markNotificationReadSilent(item.id);
+                                    setNotifOpen(false);
+                                  }}
+                                >
+                                  <div className="cvant-notify-title">
+                                    {item.title}
+                                  </div>
+                                  <div className="cvant-notify-text">
+                                    {item.message}
+                                  </div>
+                                  <div className="cvant-notify-time">
+                                    {formatNotificationTime(item.time)}
+                                  </div>
+                                  <div className="cvant-notify-actions">
+                                    <button
+                                      type="button"
+                                      className="cvant-notify-mark"
+                                      onClick={(event) =>
+                                        markNotificationRead(event, item.id)
+                                      }
+                                      disabled={isRead}
+                                    >
+                                      {isRead ? "Read" : "Mark as read"}
+                                    </button>
+                                  </div>
+                                </Link>
+                              );
+                            })
                           )}
                         </div>
 
@@ -641,7 +718,7 @@ const CustomerLayout = ({ children }) => {
           right: 0;
           width: min(320px, 90vw);
           background: var(--white);
-          border: 0;
+          border: 1px solid var(--primary-600);
           border-radius: 16px;
           box-shadow: 0px 13px 30px 10px rgba(46, 45, 116, 0.05);
           z-index: 40;
@@ -677,6 +754,10 @@ const CustomerLayout = ({ children }) => {
           transition: background-color 0.2s ease;
         }
 
+        .cvant-notify-item.is-read {
+          opacity: 0.75;
+        }
+
         .cvant-notify-item:last-child {
           border-bottom: none;
         }
@@ -701,6 +782,26 @@ const CustomerLayout = ({ children }) => {
           font-size: 11px;
           color: rgba(148, 163, 184, 0.7);
           margin-top: 6px;
+        }
+
+        .cvant-notify-actions {
+          display: flex;
+          justify-content: flex-end;
+          margin-top: 6px;
+        }
+
+        .cvant-notify-mark {
+          border: none;
+          background: transparent;
+          padding: 0;
+          font-weight: 600;
+          font-size: 12px;
+          color: var(--primary-600);
+        }
+
+        .cvant-notify-mark:disabled {
+          color: rgba(148, 163, 184, 0.85);
+          cursor: default;
         }
 
         html[data-theme="light"] .cvant-notify-text,
@@ -750,7 +851,7 @@ const CustomerLayout = ({ children }) => {
           width: 220px;
           border-radius: 16px;
           background: var(--white);
-          border: 0;
+          border: 1px solid var(--primary-600);
           box-shadow: 0px 13px 30px 10px rgba(46, 45, 116, 0.05);
           z-index: 40;
           padding: 12px 14px;

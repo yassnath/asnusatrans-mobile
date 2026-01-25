@@ -40,4 +40,9 @@ class CustomerOrder extends Model
     {
         return $this->belongsTo(Customer::class);
     }
+
+    public function invoice()
+    {
+        return $this->hasOne(Invoice::class, 'order_id');
+    }
 }

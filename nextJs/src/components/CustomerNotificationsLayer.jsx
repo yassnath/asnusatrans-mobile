@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { customerApi } from "@/lib/customerApi";
 import {
@@ -9,12 +9,34 @@ import {
   getStoredInvoiceNotifications,
 } from "@/lib/notificationUtils";
 
+const readKey = "cvant_customer_notif_read";
+
 const CustomerNotificationsLayer = () => {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [readIds, setReadIds] = useState([]);
+
+  const readSet = useMemo(() => new Set(readIds), [readIds]);
+
+  const saveReadIds = (next) => {
+    setReadIds(next);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(readKey, JSON.stringify(next));
+      window.dispatchEvent(new CustomEvent("cvant-notif-read"));
+    }
+  };
 
   useEffect(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = JSON.parse(window.localStorage.getItem(readKey) || "[]");
+        setReadIds(Array.isArray(stored) ? stored : []);
+      } catch {
+        setReadIds([]);
+      }
+    }
+
     const loadNotifications = async () => {
       try {
         const [orders, profile] = await Promise.all([
@@ -40,20 +62,51 @@ const CustomerNotificationsLayer = () => {
     loadNotifications();
 
     const handleStorage = (event) => {
+      if (event.type === "cvant-notif-read") {
+        try {
+          const stored = JSON.parse(window.localStorage.getItem(readKey) || "[]");
+          setReadIds(Array.isArray(stored) ? stored : []);
+        } catch {
+          setReadIds([]);
+        }
+        return;
+      }
       if (event.key === "cvant_customer_invoice_notifications") {
         loadNotifications();
+      }
+      if (event.key === readKey) {
+        try {
+          const stored = JSON.parse(window.localStorage.getItem(readKey) || "[]");
+          setReadIds(Array.isArray(stored) ? stored : []);
+        } catch {
+          setReadIds([]);
+        }
       }
     };
     if (typeof window !== "undefined") {
       window.addEventListener("storage", handleStorage);
+      window.addEventListener("cvant-notif-read", handleStorage);
     }
 
     return () => {
       if (typeof window !== "undefined") {
         window.removeEventListener("storage", handleStorage);
+        window.removeEventListener("cvant-notif-read", handleStorage);
       }
     };
   }, []);
+
+  const handleMarkRead = (event, id) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!id || readSet.has(id)) return;
+    saveReadIds([...readIds, id]);
+  };
+
+  const handleOpenNotification = (event, id) => {
+    if (!id || readSet.has(id)) return;
+    saveReadIds([...readIds, id]);
+  };
 
   return (
     <div className="container-fluid py-4">
@@ -68,20 +121,38 @@ const CustomerNotificationsLayer = () => {
           ) : (
             <div className="d-grid gap-3">
               {notifications.map((item) => {
+                const isRead = readSet.has(item.id);
                 const Wrapper = item.href ? Link : "div";
                 const wrapperProps = item.href
-                  ? { href: item.href, className: "cvant-notif-card" }
-                  : { className: "cvant-notif-card" };
+                  ? {
+                      href: item.href,
+                      className: `cvant-notif-card${isRead ? " is-read" : ""}`,
+                      onClick: (event) => handleOpenNotification(event, item.id),
+                    }
+                  : {
+                      className: `cvant-notif-card${isRead ? " is-read" : ""}`,
+                      onClick: (event) => handleOpenNotification(event, item.id),
+                    };
 
                 return (
                   <Wrapper key={item.id} {...wrapperProps}>
-                    <div className="d-flex align-items-start justify-content-between gap-3">
+                    <div className="cvant-notif-body">
                       <div>
                         <h6 className="mb-1">{item.title}</h6>
                         <p className="mb-1 text-secondary-light">{item.message}</p>
                         <span className="text-secondary-light text-sm">
                           {formatNotificationTime(item.time)}
                         </span>
+                      </div>
+                      <div className="cvant-notif-actions">
+                        <button
+                          type="button"
+                          className="cvant-mark-read-btn"
+                          onClick={(event) => handleMarkRead(event, item.id)}
+                          disabled={isRead}
+                        >
+                          {isRead ? "Read" : "Mark as read"}
+                        </button>
                       </div>
                     </div>
                   </Wrapper>
@@ -107,6 +178,36 @@ const CustomerNotificationsLayer = () => {
           background: rgba(91, 140, 255, 0.08);
           border-color: rgba(91, 140, 255, 0.35);
           outline: none;
+        }
+
+        .cvant-notif-card.is-read {
+          opacity: 0.75;
+        }
+
+        .cvant-notif-body {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .cvant-notif-actions {
+          display: flex;
+          justify-content: flex-end;
+        }
+
+        .cvant-mark-read-btn {
+          border: none;
+          background: transparent;
+          padding: 0;
+          font-weight: 600;
+          font-size: 12px;
+          color: var(--primary-600);
+          white-space: nowrap;
+        }
+
+        .cvant-mark-read-btn:disabled {
+          color: rgba(148, 163, 184, 0.85);
+          cursor: default;
         }
       `}</style>
     </div>

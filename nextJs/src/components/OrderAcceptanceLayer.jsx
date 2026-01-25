@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Icon } from "@iconify/react/dist/iconify.js";
+import Link from "next/link";
 import { api } from "@/lib/api";
 
 const isLightModeNow = () => {
@@ -77,12 +78,6 @@ const OrderAcceptanceLayer = () => {
     }
   };
 
-  const formatCurrency = (value) => {
-    const parsed = Number(value);
-    const safeValue = Number.isFinite(parsed) ? parsed : 0;
-    return `Rp ${safeValue.toLocaleString("id-ID")}`;
-  };
-
   const formatScheduleDate = (value) => {
     if (!value) return "-";
     const raw = String(value);
@@ -114,6 +109,21 @@ const OrderAcceptanceLayer = () => {
     return "bg-warning-focus text-warning-main";
   };
 
+  const buildInvoiceHref = (order) => {
+    const params = new URLSearchParams();
+    if (order?.id) params.set("orderId", String(order.id));
+    if (order?.customer?.name) params.set("customerName", order.customer.name);
+    if (order?.customer?.email) params.set("customerEmail", order.customer.email);
+    if (order?.customer?.phone) params.set("customerPhone", order.customer.phone);
+    if (order?.fleet) params.set("armadaName", order.fleet);
+    if (order?.pickup) params.set("pickup", order.pickup);
+    if (order?.destination) params.set("destination", order.destination);
+    if (order?.pickup_date) params.set("pickupDate", String(order.pickup_date));
+
+    const query = params.toString();
+    return query ? `/invoice-add?${query}` : "/invoice-add";
+  };
+
   const cardBg = isLightMode ? "#ffffff" : "#1b2431";
   const cardBorder = isLightMode ? "rgba(148,163,184,0.35)" : "#273142";
   const textMain = isLightMode ? "#0b1220" : "#ffffff";
@@ -124,6 +134,10 @@ const OrderAcceptanceLayer = () => {
       {orders.map((order) => {
         const schedule = formatScheduleDate(order.pickup_date);
         const isFinal = ["Accepted", "Rejected"].includes(order.status);
+        const canCreateInvoice = String(order.status || "")
+          .toLowerCase()
+          .includes("accepted");
+        const createHref = buildInvoiceHref(order);
 
         return (
           <div
@@ -177,12 +191,6 @@ const OrderAcceptanceLayer = () => {
                 <span style={{ color: textSub }}>Jadwal</span>
                 <span style={{ color: textMain, fontWeight: 600 }}>{schedule}</span>
               </div>
-              <div className="d-flex justify-content-between">
-                <span style={{ color: textSub }}>Total</span>
-                <span style={{ color: textMain, fontWeight: 700 }}>
-                  {formatCurrency(order.total)}
-                </span>
-              </div>
             </div>
 
             <div className="d-flex justify-content-end gap-2 mt-12 flex-wrap">
@@ -200,6 +208,21 @@ const OrderAcceptanceLayer = () => {
               >
                 Reject
               </button>
+            </div>
+            <div className="d-flex justify-content-end mt-10">
+              {canCreateInvoice ? (
+                <Link href={createHref} className="btn btn-primary btn-sm radius-8">
+                  Create
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-outline-secondary btn-sm radius-8"
+                  disabled
+                >
+                  Create
+                </button>
+              )}
             </div>
           </div>
         );
@@ -251,14 +274,18 @@ const OrderAcceptanceLayer = () => {
                         <th>Customer</th>
                         <th>Rute</th>
                         <th>Jadwal</th>
-                        <th>Total</th>
                         <th>Status</th>
                         <th>Action</th>
+                        <th>Create</th>
                       </tr>
                     </thead>
                     <tbody>
                       {orders.map((order) => {
                         const isFinal = ["Accepted", "Rejected"].includes(order.status);
+                        const canCreateInvoice = String(order.status || "")
+                          .toLowerCase()
+                          .includes("accepted");
+                        const createHref = buildInvoiceHref(order);
                         return (
                           <tr key={order.id}>
                             <td>{order.order_code || order.id}</td>
@@ -278,7 +305,6 @@ const OrderAcceptanceLayer = () => {
                             <td>
                               {formatScheduleDate(order.pickup_date)}
                             </td>
-                            <td>{formatCurrency(order.total)}</td>
                             <td>
                               <span
                                 className={`${statusBadge(
@@ -305,6 +331,21 @@ const OrderAcceptanceLayer = () => {
                                   Reject
                                 </button>
                               </div>
+                            </td>
+                            <td>
+                                {canCreateInvoice ? (
+                                  <Link href={createHref} className="btn btn-primary btn-sm radius-8">
+                                    Create
+                                  </Link>
+                                ) : (
+                                <button
+                                  type="button"
+                                  className="btn btn-outline-secondary btn-sm radius-8"
+                                  disabled
+                                >
+                                  Create
+                                </button>
+                              )}
                             </td>
                           </tr>
                         );

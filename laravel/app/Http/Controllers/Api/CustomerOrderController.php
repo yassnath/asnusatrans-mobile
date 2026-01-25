@@ -6,8 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\CustomerOrder;
 use App\Models\Invoice;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Database\QueryException;
 
 class CustomerOrderController extends Controller
 {
@@ -21,21 +22,6 @@ class CustomerOrderController extends Controller
         do {
             $code = 'ORD-' . strtoupper(Str::random(6));
         } while (CustomerOrder::where('order_code', $code)->exists());
-
-        return $code;
-    }
-
-    protected function generateInvoiceNumber(): string
-    {
-        $now = now();
-        $prefix = 'INC-' . $now->format('m') . '-' . $now->format('Y') . '-';
-        $next = Invoice::where('no_invoice', 'like', $prefix . '%')->count() + 1;
-
-        do {
-            $number = str_pad((string) $next, 4, '0', STR_PAD_LEFT);
-            $code = $prefix . $number;
-            $next++;
-        } while (Invoice::where('no_invoice', $code)->exists());
 
         return $code;
     }
@@ -81,60 +67,6 @@ class CustomerOrderController extends Controller
             'insurance_fee' => ['required', 'numeric', 'min:0'],
             'total' => ['required', 'numeric', 'min:0'],
         ]);
-
-        if ($request->has('rincian')) {
-            $invoiceValidator = Validator::make($request->all(), [
-                'tanggal' => ['required', 'date'],
-                'due_date' => ['required', 'date'],
-                'nama_pelanggan' => ['required', 'string'],
-                'email' => ['required', 'string'],
-                'no_telp' => ['required', 'string'],
-                'status' => ['required', 'string'],
-                'diterima_oleh' => ['required', 'string'],
-                'rincian' => ['required', 'array', 'min:1'],
-                'rincian.*.lokasi_muat' => ['required', 'string'],
-                'rincian.*.lokasi_bongkar' => ['required', 'string'],
-                'rincian.*.armada_id' => ['required', 'exists:armadas,id'],
-                'rincian.*.armada_start_date' => ['required', 'date'],
-                'rincian.*.armada_end_date' => ['nullable', 'date'],
-                'rincian.*.tonase' => ['nullable', 'numeric', 'gte:0'],
-                'rincian.*.harga' => ['nullable', 'numeric', 'gte:0'],
-                'total_biaya' => ['nullable', 'numeric', 'gte:0'],
-                'pph' => ['nullable', 'numeric', 'gte:0'],
-                'total_bayar' => ['nullable', 'numeric', 'gte:0'],
-            ]);
-
-            if ($invoiceValidator->fails()) {
-                return response()->json([
-                    'message' => 'Validasi invoice gagal.',
-                    'errors' => $invoiceValidator->errors(),
-                ], 422);
-            }
-
-            $invoiceData = $invoiceValidator->validated();
-            $invoiceData['no_invoice'] = $this->generateInvoiceNumber();
-
-            $first = $invoiceData['rincian'][0];
-            $invoiceData['lokasi_muat'] = $first['lokasi_muat'];
-            $invoiceData['lokasi_bongkar'] = $first['lokasi_bongkar'];
-            $invoiceData['armada_id'] = $first['armada_id'];
-            $invoiceData['armada_start_date'] = $first['armada_start_date'];
-            $invoiceData['armada_end_date'] = $first['armada_end_date'] ?? null;
-            $invoiceData['tonase'] = $first['tonase'] ?? 0;
-            $invoiceData['harga'] = $first['harga'] ?? 0;
-
-            $subtotal = collect($invoiceData['rincian'])->reduce(function ($sum, $row) {
-                $tonase = (float) ($row['tonase'] ?? 0);
-                $harga = (float) ($row['harga'] ?? 0);
-                return $sum + ($tonase * $harga);
-            }, 0);
-            $pph = $subtotal * 0.02;
-            $invoiceData['total_biaya'] = $subtotal;
-            $invoiceData['pph'] = $pph;
-            $invoiceData['total_bayar'] = $subtotal - $pph;
-
-            Invoice::create($invoiceData);
-        }
 
         $order = CustomerOrder::create([
             'customer_id' => $customer->id,
@@ -182,6 +114,7 @@ class CustomerOrderController extends Controller
 
         $data = $request->validate([
             'payment_method' => ['required', 'string', 'max:50'],
+            'invoice_id' => ['nullable', 'exists:invoices,id'],
         ]);
 
         $order = CustomerOrder::where('customer_id', $customer->id)
@@ -191,8 +124,111 @@ class CustomerOrderController extends Controller
         $order->status = 'Paid';
         $order->payment_method = $data['payment_method'];
         $order->paid_at = now();
+
+        $invoice = null;
+        $hasOrderColumn = Schema::hasColumn('invoices', 'order_id');
+        if (!empty($data['invoice_id'])) {
+            $invoice = Invoice::find($data['invoice_id']);
+            if (!$invoice) {
+                return response()->json(['message' => 'Invoice tidak ditemukan.'], 404);
+            }
+
+            $matchesEmail = strtolower(trim((string) $invoice->email)) === strtolower(trim((string) $customer->email));
+            $matchesOrder = $hasOrderColumn && $invoice->order_id && (int) $invoice->order_id === (int) $order->id;
+
+            if (!$matchesEmail && !$matchesOrder) {
+                return response()->json(['message' => 'Invoice tidak sesuai dengan customer.'], 403);
+            }
+        } else {
+            if ($hasOrderColumn) {
+                $invoice = Invoice::where('order_id', $order->id)->latest()->first();
+            }
+        }
+
+        if ($invoice) {
+            $order->total = (int) round($invoice->total_bayar ?? 0);
+        }
+
         $order->save();
 
+        if ($invoice) {
+            if ($hasOrderColumn && empty($invoice->order_id)) {
+                $invoice->order_id = $order->id;
+            }
+
+            $invoice->status = 'Paid';
+
+            try {
+                $invoice->save();
+            } catch (QueryException $ex) {
+                if (str_contains($ex->getMessage(), 'order_id')) {
+                    Invoice::whereKey($invoice->id)->update(['status' => 'Paid']);
+                } else {
+                    throw $ex;
+                }
+            }
+        }
+
         return response()->json($order);
+    }
+
+    public function invoice(Request $request, $id)
+    {
+        $customer = $this->getCustomer($request);
+        if (!$customer) {
+            return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
+
+        $order = CustomerOrder::where('customer_id', $customer->id)
+            ->where('id', $id)
+            ->firstOrFail();
+
+        if (!Schema::hasColumn('invoices', 'order_id')) {
+            return response()->json(null, 404);
+        }
+
+        $invoice = Invoice::with('armada')
+            ->where('order_id', $order->id)
+            ->latest()
+            ->first();
+        if (!$invoice) {
+            return response()->json(null, 404);
+        }
+
+        if (!is_array($invoice->rincian)) {
+            $invoice->rincian = $invoice->rincian ? json_decode($invoice->rincian, true) : [];
+        }
+
+        return response()->json($invoice);
+    }
+
+    public function invoiceById(Request $request, $id)
+    {
+        $customer = $this->getCustomer($request);
+        if (!$customer) {
+            return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
+
+        $invoice = Invoice::with('armada')->findOrFail($id);
+
+        $matchesEmail = strtolower(trim((string) $invoice->email)) === strtolower(trim((string) $customer->email));
+        $matchesOrder = false;
+
+        if (Schema::hasColumn('invoices', 'order_id') && $invoice->order_id) {
+            $order = CustomerOrder::where('customer_id', $customer->id)
+                ->where('id', $invoice->order_id)
+                ->first();
+            $matchesOrder = (bool) $order;
+        }
+
+        if (!$matchesEmail && !$matchesOrder) {
+            return response()->json(['message' => 'Invoice tidak sesuai dengan customer.'], 403);
+        }
+
+        if (!is_array($invoice->rincian)) {
+            $invoice->rincian = $invoice->rincian ? json_decode($invoice->rincian, true) : [];
+        }
+
+        return response()->json($invoice);
     }
 }

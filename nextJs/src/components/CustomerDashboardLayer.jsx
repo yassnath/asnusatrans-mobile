@@ -68,13 +68,14 @@ const CustomerDashboardLayer = () => {
 
   const stats = useMemo(() => {
     const total = orders.length;
-    const pending = orders.filter((o) => o.status === "Pending Payment").length;
-    const paid = orders.filter((o) => o.status === "Paid").length;
-    const totalSpend = orders.reduce(
-      (sum, order) => sum + (Number(order.total) || 0),
-      0
-    );
-    return { total, pending, paid, totalSpend };
+    const pending = orders.filter((o) => {
+      const label = String(o.status || "").toLowerCase();
+      return label.includes("pending") || label.includes("accepted");
+    }).length;
+    const totalSpend = orders
+      .filter((order) => String(order.status || "").toLowerCase().includes("paid"))
+      .reduce((sum, order) => sum + (Number(order.total) || 0), 0);
+    return { total, pending, totalSpend };
   }, [orders]);
 
   const recentOrders = useMemo(() => orders.slice(0, 5), [orders]);
@@ -84,6 +85,7 @@ const CustomerDashboardLayer = () => {
       {recentOrders.map((order) => {
         const scheduleDate = formatScheduleDate(order.pickup_date || order.date);
         const schedule = scheduleDate;
+        const isPaid = String(order.status || "").toLowerCase().includes("paid");
 
         return (
           <div key={order.id} className="cvant-order-card">
@@ -115,7 +117,7 @@ const CustomerDashboardLayer = () => {
               <div className="d-flex justify-content-between gap-3">
                 <span className="text-secondary-light">Total</span>
                 <span className="cvant-order-value">
-                  {formatCurrency(order.total)}
+                  {isPaid ? formatCurrency(order.total) : "-"}
                 </span>
               </div>
             </div>
@@ -127,12 +129,6 @@ const CustomerDashboardLayer = () => {
 
   return (
     <div className="container-fluid py-4 cvant-customer-dashboard">
-      <div className="d-flex justify-content-end mb-4 cvant-dashboard-header">
-        <Link href="/order" className="btn btn-primary btn-sm">
-          Buat Order
-        </Link>
-      </div>
-
       <div className="row row-cols-xxxl-3 row-cols-lg-3 row-cols-sm-2 row-cols-1 gy-4 cvant-stats-row">
         <div className="col">
           <div className="card shadow-none border bg-gradient-start-1 h-100">
@@ -233,28 +229,33 @@ const CustomerDashboardLayer = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        {recentOrders.map((order) => (
-                          <tr key={order.id}>
-                            <td>{order.order_code || `ORD-${order.id}`}</td>
-                            <td>
-                              {order.pickup || "-"} - {order.destination || "-"}
-                            </td>
-                            <td>
-                              {formatScheduleDate(order.pickup_date || order.date)}
-                            </td>
-                            <td>{order.service || "-"}</td>
-                            <td>{formatCurrency(order.total)}</td>
-                            <td>
-                              <span
-                                className={`cvant-status-badge ${statusBadge(
-                                  order.status
-                                )}`}
-                              >
-                                {formatStatusLabel(order.status)}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
+                        {recentOrders.map((order) => {
+                          const isPaid = String(order.status || "")
+                            .toLowerCase()
+                            .includes("paid");
+                          return (
+                            <tr key={order.id}>
+                              <td>{order.order_code || `ORD-${order.id}`}</td>
+                              <td>
+                                {order.pickup || "-"} - {order.destination || "-"}
+                              </td>
+                              <td>
+                                {formatScheduleDate(order.pickup_date || order.date)}
+                              </td>
+                              <td>{order.service || "-"}</td>
+                              <td>{isPaid ? formatCurrency(order.total) : "-"}</td>
+                              <td>
+                                <span
+                                  className={`cvant-status-badge ${statusBadge(
+                                    order.status
+                                  )}`}
+                                >
+                                  {formatStatusLabel(order.status)}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>

@@ -10,6 +10,7 @@ class Invoice extends Model
     use HasFactory;
 
     protected $fillable = [
+        'order_id',
         'no_invoice',
         'nama_pelanggan',
         'email',
@@ -107,5 +108,10 @@ class Invoice extends Model
     public function armada()
     {
         return $this->belongsTo(Armada::class);
+    }
+
+    public function order()
+    {
+        return $this->belongsTo(CustomerOrder::class, 'order_id');
     }
 }

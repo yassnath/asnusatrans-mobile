@@ -48,6 +48,8 @@ Route::prefix('customer')->group(function () {
         Route::get('/orders', [CustomerOrderController::class, 'index']);
         Route::post('/orders', [CustomerOrderController::class, 'store']);
         Route::get('/orders/{id}', [CustomerOrderController::class, 'show']);
+        Route::get('/orders/{id}/invoice', [CustomerOrderController::class, 'invoice']);
+        Route::get('/invoices/{id}', [CustomerOrderController::class, 'invoiceById']);
         Route::post('/orders/{id}/pay', [CustomerOrderController::class, 'pay']);
     });
 });

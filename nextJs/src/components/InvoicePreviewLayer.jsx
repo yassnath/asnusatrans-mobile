@@ -325,6 +325,7 @@ export default function InvoicePreviewLayer() {
     );
     const stored = storeInvoiceNotification({
       invoiceId: invoice.id,
+      orderId: invoice?.order_id,
       customerEmail,
       customerName: invoice.nama_pelanggan,
       invoiceNumber,

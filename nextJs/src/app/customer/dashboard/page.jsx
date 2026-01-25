@@ -10,11 +10,6 @@ export const metadata = {
 export default function CustomerDashboardPage() {
   return (
     <CustomerLayout>
-      <Breadcrumb
-        title="Customer Dashboard"
-        rootHref="/customer/dashboard"
-        rootLabel="Dashboard"
-      />
       <CustomerDashboardLayer />
     </CustomerLayout>
   );
