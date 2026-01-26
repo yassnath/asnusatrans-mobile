@@ -28,6 +28,15 @@ const getLastSeen = () => {
   return Number.isNaN(parsed) ? 0 : parsed;
 };
 
+const getUnreadCount = (items, readIds) => {
+  const list = Array.isArray(items) ? items : [];
+  const readSet = new Set(readIds || []);
+  const lastSeen = getLastSeen();
+  return list.filter(
+    (item) => getTimeValue(item.time) > lastSeen && !readSet.has(item.id)
+  ).length;
+};
+
 const CustomerLayout = ({ children }) => {
   const pathname = usePathname();
   const [sidebarActive, setSidebarActive] = useState(false);
@@ -72,7 +81,9 @@ const CustomerLayout = ({ children }) => {
     if (typeof window === "undefined") return;
     try {
       const stored = JSON.parse(window.localStorage.getItem(readKey) || "[]");
-      setReadIds(Array.isArray(stored) ? stored : []);
+      const next = Array.isArray(stored) ? stored : [];
+      setReadIds(next);
+      setUnreadCount(getUnreadCount(notifications, next));
     } catch {
       setReadIds([]);
     }
@@ -89,9 +100,7 @@ const CustomerLayout = ({ children }) => {
       );
       setNotifications(items);
 
-      const lastSeen = getLastSeen();
-      const unread = items.filter((item) => getTimeValue(item.time) > lastSeen);
-      setUnreadCount(unread.length);
+      setUnreadCount(getUnreadCount(items, readIds));
 
     } catch {
       setNotifications([]);
@@ -109,7 +118,9 @@ const CustomerLayout = ({ children }) => {
       if (event.type === "cvant-notif-read") {
         try {
           const stored = JSON.parse(window.localStorage.getItem(readKey) || "[]");
-          setReadIds(Array.isArray(stored) ? stored : []);
+          const next = Array.isArray(stored) ? stored : [];
+          setReadIds(next);
+          setUnreadCount(getUnreadCount(notifications, next));
         } catch {
           setReadIds([]);
         }
@@ -121,7 +132,9 @@ const CustomerLayout = ({ children }) => {
       if (event.key === readKey) {
         try {
           const stored = JSON.parse(window.localStorage.getItem(readKey) || "[]");
-          setReadIds(Array.isArray(stored) ? stored : []);
+          const next = Array.isArray(stored) ? stored : [];
+          setReadIds(next);
+          setUnreadCount(getUnreadCount(notifications, next));
         } catch {
           setReadIds([]);
         }
@@ -176,7 +189,7 @@ const CustomerLayout = ({ children }) => {
     if (typeof window === "undefined") return;
     const now = Date.now();
     window.localStorage.setItem(lastSeenKey, String(now));
-    setUnreadCount(0);
+    setUnreadCount(getUnreadCount(notifications, readIds));
   };
 
   const applyReadIds = (next) => {
@@ -185,6 +198,7 @@ const CustomerLayout = ({ children }) => {
       window.localStorage.setItem(readKey, JSON.stringify(next));
       window.dispatchEvent(new CustomEvent("cvant-notif-read"));
     }
+    setUnreadCount(getUnreadCount(notifications, next));
   };
 
   const markNotificationRead = (event, id) => {

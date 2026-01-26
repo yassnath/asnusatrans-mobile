@@ -19,6 +19,17 @@ const getTimeValue = (value) => {
   return Number.isNaN(date.getTime()) ? 0 : date.getTime();
 };
 
+const getPendingOrderCount = (orders) => {
+  const list = Array.isArray(orders) ? orders : [];
+  return list.filter((order) => {
+    const normalized = String(order?.status || "").toLowerCase();
+    const isPaid = normalized.includes("paid") && !normalized.includes("unpaid");
+    const isAccepted = normalized.includes("accepted");
+    const isRejected = normalized.includes("rejected");
+    return !isPaid && !isAccepted && !isRejected;
+  }).length;
+};
+
 const MasterLayout = ({ children }) => {
   let pathname = usePathname();
   let [sidebarActive, seSidebarActive] = useState(false);
@@ -30,6 +41,8 @@ const MasterLayout = ({ children }) => {
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [orderAcceptanceCount, setOrderAcceptanceCount] = useState(0);
+  const notifBadgeCount = orderAcceptanceCount;
   const notifRef = useRef(null);
 
   useEffect(() => {
@@ -75,6 +88,7 @@ const MasterLayout = ({ children }) => {
       ]);
       const items = buildAdminNotifications(customers, orders);
       setNotifications(items);
+      setOrderAcceptanceCount(getPendingOrderCount(orders));
 
       const lastSeen = getLastSeen();
       const unread = items.filter((item) => getTimeValue(item.time) > lastSeen);
@@ -82,11 +96,26 @@ const MasterLayout = ({ children }) => {
     } catch {
       setNotifications([]);
       setUnreadCount(0);
+      setOrderAcceptanceCount(0);
     }
   };
 
   useEffect(() => {
     loadNotifications();
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleOrdersUpdated = () => {
+      loadNotifications();
+    };
+    window.addEventListener("cvant:order-acceptance-updated", handleOrdersUpdated);
+    return () => {
+      window.removeEventListener(
+        "cvant:order-acceptance-updated",
+        handleOrdersUpdated
+      );
+    };
   }, []);
 
   useEffect(() => {
@@ -347,6 +376,11 @@ const MasterLayout = ({ children }) => {
                     className="menu-icon"
                   />
                   <span>Order Acceptance</span>
+                  {orderAcceptanceCount > 0 ? (
+                    <span className="cvant-menu-badge ms-auto">
+                      {orderAcceptanceCount}
+                    </span>
+                  ) : null}
                 </Link>
               </li>
 
@@ -422,8 +456,10 @@ const MasterLayout = ({ children }) => {
                       aria-expanded={notifOpen}
                     >
                       <Icon icon="solar:bell-linear" className="icon" />
-                      {unreadCount > 0 ? (
-                        <span className="cvant-notify-badge">{unreadCount}</span>
+                      {notifBadgeCount > 0 ? (
+                        <span className="cvant-notify-badge">
+                          {notifBadgeCount}
+                        </span>
                       ) : null}
                     </button>
 
@@ -763,6 +799,21 @@ const MasterLayout = ({ children }) => {
           padding: 2px 6px;
           min-width: 18px;
           text-align: center;
+        }
+
+        .cvant-menu-badge {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 20px;
+          height: 20px;
+          padding: 0 6px;
+          border-radius: 999px;
+          background: #ef4444;
+          color: #ffffff;
+          font-size: 10px;
+          font-weight: 700;
+          line-height: 1;
         }
 
         .cvant-notify-menu {

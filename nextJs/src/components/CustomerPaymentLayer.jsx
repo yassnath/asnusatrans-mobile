@@ -219,6 +219,36 @@ const CustomerPaymentLayer = () => {
     { id: "qris", label: "QRIS", icon: "solar:qr-code-linear" },
     { id: "ewallet", label: "E-Wallet", icon: "solar:wallet-linear" },
   ];
+  const resolvePopupTheme = (type) => {
+    const normalized = String(type || "").toLowerCase();
+    if (normalized.includes("success")) {
+      return {
+        accent: "var(--success-600, #16a34a)",
+        icon: "solar:check-circle-linear",
+        buttonClass: "btn-success",
+      };
+    }
+    if (
+      normalized.includes("error") ||
+      normalized.includes("danger") ||
+      normalized.includes("delete") ||
+      normalized.includes("hapus")
+    ) {
+      return {
+        accent: "var(--danger-600, #dc2626)",
+        icon: "solar:danger-triangle-linear",
+        buttonClass: "btn-danger",
+      };
+    }
+    return {
+      accent: "var(--primary-600, #487fff)",
+      icon: "solar:info-circle-linear",
+      buttonClass: "btn-primary",
+    };
+  };
+  const popupTheme = popup ? resolvePopupTheme(popup.type) : null;
+  const popupTitle =
+    popup?.type === "success" ? "Payment Success" : "Payment Failed";
 
   return (
     <div className="container-fluid py-4">
@@ -429,31 +459,67 @@ const CustomerPaymentLayer = () => {
           onClick={() => setPopup(null)}
         >
           <div
-            className={`cvant-order-modal ${
-              popup.type === "success" ? "is-success" : "is-error"
-            }`}
-            style={{ maxWidth: "420px", width: "100%" }}
+            className="radius-12 shadow-sm p-24"
+            style={{
+              width: "100%",
+              maxWidth: "600px",
+              backgroundColor: "#1b2431",
+              border: `2px solid ${popupTheme.accent}`,
+              boxShadow: "0 22px 55px rgba(0,0,0,0.55)",
+            }}
             onClick={(event) => event.stopPropagation()}
           >
-            <div
-              className={`cvant-order-modal-header ${
-                popup.type === "success"
-                  ? "cvant-order-modal-header-success"
-                  : "cvant-order-modal-header-error"
-              }`}
-            >
-              <h6 className="mb-0">
-                {popup.type === "success" ? "Payment Success" : "Payment Failed"}
-              </h6>
-            </div>
-            <div className="cvant-order-modal-body text-center">
-              <p className="text-secondary-light mb-20">{popup.text}</p>
+            <div className="d-flex align-items-start justify-content-between gap-2">
+              <div className="d-flex align-items-start gap-12">
+                <span style={{ marginTop: "2px" }}>
+                  <Icon
+                    icon={popupTheme.icon}
+                    style={{
+                      fontSize: "28px",
+                      color: popupTheme.accent,
+                    }}
+                  />
+                </span>
+
+                <div>
+                  <h5 className="mb-8 fw-bold" style={{ color: "#ffffff" }}>
+                    {popupTitle}
+                  </h5>
+                  <p
+                    className="mb-0"
+                    style={{ color: "#cbd5e1", fontSize: "15px" }}
+                  >
+                    {popup.text}
+                  </p>
+                </div>
+              </div>
+
               <button
                 type="button"
-                className={`btn px-24 ${
-                  popup.type === "success" ? "btn-success" : "btn-danger"
-                }`}
+                className="btn p-0"
+                aria-label="Close"
                 onClick={() => setPopup(null)}
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  lineHeight: 1,
+                }}
+              >
+                <Icon
+                  icon="solar:close-circle-linear"
+                  style={{ fontSize: 24, color: "#94a3b8" }}
+                />
+              </button>
+            </div>
+
+            <div className="d-flex justify-content-end mt-20">
+              <button
+                type="button"
+                className={`btn ${popupTheme.buttonClass} radius-12 px-16`}
+                onClick={() => setPopup(null)}
+                style={{
+                  border: `2px solid ${popupTheme.accent}`,
+                }}
               >
                 OK
               </button>
@@ -463,34 +529,6 @@ const CustomerPaymentLayer = () => {
       )}
 
       <style jsx global>{`
-        .cvant-order-modal {
-          background: var(--white);
-          border-radius: 16px;
-          box-shadow: 0px 13px 30px 10px rgba(46, 45, 116, 0.05);
-          border: 0;
-          overflow: hidden;
-        }
-
-        .cvant-order-modal-header {
-          padding: 14px 18px;
-          background: var(--primary-50);
-          border-bottom: 1px solid rgba(148, 163, 184, 0.2);
-        }
-
-        .cvant-order-modal-header-success {
-          background: rgba(34, 197, 94, 0.12);
-          color: #16a34a;
-        }
-
-        .cvant-order-modal-header-error {
-          background: rgba(239, 68, 68, 0.12);
-          color: #dc2626;
-        }
-
-        .cvant-order-modal-body {
-          padding: 22px 20px 24px;
-        }
-
         .cvant-summary-table,
         .cvant-summary-table td,
         .cvant-summary-table th {

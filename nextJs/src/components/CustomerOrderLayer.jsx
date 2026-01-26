@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Icon } from "@iconify/react/dist/iconify.js";
 import { customerApi } from "@/lib/customerApi";
 
 const userKey = "cvant_customer_user";
@@ -317,6 +318,35 @@ const CustomerOrderLayer = () => {
   const controlBorder = isLightMode ? "#c7c8ca" : "#6c757d";
   const optionBg = controlBg;
   const optionText = controlText;
+  const resolvePopupTheme = (type) => {
+    const normalized = String(type || "").toLowerCase();
+    if (normalized.includes("success")) {
+      return {
+        accent: "var(--success-600, #16a34a)",
+        icon: "solar:check-circle-linear",
+        buttonClass: "btn-success",
+      };
+    }
+    if (
+      normalized.includes("error") ||
+      normalized.includes("danger") ||
+      normalized.includes("delete") ||
+      normalized.includes("hapus")
+    ) {
+      return {
+        accent: "var(--danger-600, #dc2626)",
+        icon: "solar:danger-triangle-linear",
+        buttonClass: "btn-danger",
+      };
+    }
+    return {
+      accent: "var(--primary-600, #487fff)",
+      icon: "solar:info-circle-linear",
+      buttonClass: "btn-primary",
+    };
+  };
+  const confirmTheme = resolvePopupTheme("neutral");
+  const waitingTheme = resolvePopupTheme("success");
 
   return (
     <div className="container-fluid py-4">
@@ -555,35 +585,82 @@ const CustomerOrderLayer = () => {
           }}
         >
           <div
-            className="cvant-order-modal"
-            style={{ maxWidth: "480px", width: "100%" }}
+            className="radius-12 shadow-sm p-24"
+            style={{
+              width: "100%",
+              maxWidth: "600px",
+              backgroundColor: "#1b2431",
+              border: `2px solid ${confirmTheme.accent}`,
+              boxShadow: "0 22px 55px rgba(0,0,0,0.55)",
+            }}
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="cvant-order-modal-header">
-              <h6 className="mb-0">Confirm Order</h6>
-            </div>
-            <div className="cvant-order-modal-body text-center">
-              <p className="text-secondary-light mb-20">
-                Are you sure about your order?
-              </p>
-              <div className="d-flex justify-content-center gap-2 flex-wrap">
-                <button
-                  type="button"
-                  className="btn btn-outline-secondary px-24"
-                  onClick={() => setShowConfirm(false)}
-                  disabled={submitting}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-primary px-24"
-                  onClick={handleConfirmOrder}
-                  disabled={submitting}
-                >
-                  {submitting ? "Processing..." : "Submit Order"}
-                </button>
+            <div className="d-flex align-items-start justify-content-between gap-2">
+              <div className="d-flex align-items-start gap-12">
+                <span style={{ marginTop: "2px" }}>
+                  <Icon
+                    icon={confirmTheme.icon}
+                    style={{
+                      fontSize: "28px",
+                      color: confirmTheme.accent,
+                    }}
+                  />
+                </span>
+
+                <div>
+                  <h5 className="mb-8 fw-bold" style={{ color: "#ffffff" }}>
+                    Confirm Order
+                  </h5>
+                  <p
+                    className="mb-0"
+                    style={{ color: "#cbd5e1", fontSize: "15px" }}
+                  >
+                    Are you sure about your order?
+                  </p>
+                </div>
               </div>
+
+              <button
+                type="button"
+                className="btn p-0"
+                aria-label="Close"
+                onClick={() => {
+                  if (!submitting) setShowConfirm(false);
+                }}
+                disabled={submitting}
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  lineHeight: 1,
+                }}
+              >
+                <Icon
+                  icon="solar:close-circle-linear"
+                  style={{ fontSize: 24, color: "#94a3b8" }}
+                />
+              </button>
+            </div>
+
+            <div className="d-flex justify-content-end mt-20 gap-2 flex-wrap">
+              <button
+                type="button"
+                className="btn btn-outline-secondary radius-12 px-16"
+                onClick={() => setShowConfirm(false)}
+                disabled={submitting}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={`btn ${confirmTheme.buttonClass} radius-12 px-16`}
+                onClick={handleConfirmOrder}
+                disabled={submitting}
+                style={{
+                  border: `2px solid ${confirmTheme.accent}`,
+                }}
+              >
+                {submitting ? "Processing..." : "Submit Order"}
+              </button>
             </div>
           </div>
         </div>
@@ -600,22 +677,68 @@ const CustomerOrderLayer = () => {
           onClick={() => setShowWaiting(false)}
         >
           <div
-            className="cvant-order-modal"
-            style={{ maxWidth: "520px", width: "100%" }}
+            className="radius-12 shadow-sm p-24"
+            style={{
+              width: "100%",
+              maxWidth: "600px",
+              backgroundColor: "#1b2431",
+              border: `2px solid ${waitingTheme.accent}`,
+              boxShadow: "0 22px 55px rgba(0,0,0,0.55)",
+            }}
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="cvant-order-modal-header">
-              <h6 className="mb-0">Order submitted</h6>
-            </div>
-            <div className="cvant-order-modal-body text-center">
-              <p className="text-secondary-light mb-20">
-                Menunggu status acc dari owner/admin. Invoice akan dikirimkan ke
-                notifikasi Anda untuk melanjutkan pembayaran.
-              </p>
+            <div className="d-flex align-items-start justify-content-between gap-2">
+              <div className="d-flex align-items-start gap-12">
+                <span style={{ marginTop: "2px" }}>
+                  <Icon
+                    icon={waitingTheme.icon}
+                    style={{
+                      fontSize: "28px",
+                      color: waitingTheme.accent,
+                    }}
+                  />
+                </span>
+
+                <div>
+                  <h5 className="mb-8 fw-bold" style={{ color: "#ffffff" }}>
+                    Order submitted
+                  </h5>
+                  <p
+                    className="mb-0"
+                    style={{ color: "#cbd5e1", fontSize: "15px" }}
+                  >
+                    Menunggu status acc dari owner/admin. Invoice akan dikirimkan
+                    ke notifikasi Anda untuk melanjutkan pembayaran.
+                  </p>
+                </div>
+              </div>
+
               <button
                 type="button"
-                className="btn btn-primary px-24"
+                className="btn p-0"
+                aria-label="Close"
                 onClick={() => setShowWaiting(false)}
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  lineHeight: 1,
+                }}
+              >
+                <Icon
+                  icon="solar:close-circle-linear"
+                  style={{ fontSize: 24, color: "#94a3b8" }}
+                />
+              </button>
+            </div>
+
+            <div className="d-flex justify-content-end mt-20">
+              <button
+                type="button"
+                className={`btn ${waitingTheme.buttonClass} radius-12 px-16`}
+                onClick={() => setShowWaiting(false)}
+                style={{
+                  border: `2px solid ${waitingTheme.accent}`,
+                }}
               >
                 OK
               </button>
@@ -623,26 +746,6 @@ const CustomerOrderLayer = () => {
           </div>
         </div>
       )}
-
-      <style jsx global>{`
-        .cvant-order-modal {
-          background: var(--white);
-          border-radius: 16px;
-          box-shadow: 0px 13px 30px 10px rgba(46, 45, 116, 0.05);
-          border: 0;
-          overflow: hidden;
-        }
-
-        .cvant-order-modal-header {
-          padding: 14px 18px;
-          background: var(--primary-50);
-          border-bottom: 1px solid rgba(148, 163, 184, 0.2);
-        }
-
-        .cvant-order-modal-body {
-          padding: 22px 20px 24px;
-        }
-      `}</style>
     </div>
   );
 };

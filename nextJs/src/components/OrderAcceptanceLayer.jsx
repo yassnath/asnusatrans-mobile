@@ -35,11 +35,30 @@ const isLightModeNow = () => {
 const OrderAcceptanceLayer = () => {
   const [orders, setOrders] = useState([]);
   const [isLightMode, setIsLightMode] = useState(false);
+  const [popup, setPopup] = useState({
+    show: false,
+    type: "success",
+    title: "",
+    message: "",
+  });
+  const notifyOrdersUpdated = () => {
+    if (typeof window === "undefined") return;
+    window.dispatchEvent(new Event("cvant:order-acceptance-updated"));
+  };
+
+  const showPopup = (type, title, message) => {
+    setPopup({ show: true, type, title, message });
+  };
+
+  const closePopup = () => {
+    setPopup((prev) => ({ ...prev, show: false }));
+  };
 
   const loadOrders = async () => {
     try {
       const data = await api.get("/customer-orders");
       setOrders(Array.isArray(data) ? data : []);
+      notifyOrdersUpdated();
     } catch {
       setOrders([]);
     }
@@ -67,14 +86,31 @@ const OrderAcceptanceLayer = () => {
     return () => obs.disconnect();
   }, []);
 
-  const updateStatus = async (orderId, status) => {
+  const updateStatus = async (order, status) => {
+    if (!order?.id) return;
     try {
-      const updated = await api.patch(`/customer-orders/${orderId}/status`, { status });
+      const updated = await api.patch(`/customer-orders/${order.id}/status`, {
+        status,
+      });
       setOrders((prev) =>
-        prev.map((order) => (order.id === orderId ? { ...order, ...updated } : order))
+        prev.map((item) => (item.id === order.id ? { ...item, ...updated } : item))
       );
-    } catch {
-      // ignore for now
+      notifyOrdersUpdated();
+      const code = order.order_code || order.id;
+      const actionLabel = String(status).toLowerCase().includes("accept")
+        ? "diterima"
+        : "ditolak";
+      showPopup(
+        "success",
+        "Status diperbarui",
+        `Order ${code} berhasil ${actionLabel}.`
+      );
+    } catch (error) {
+      showPopup(
+        "error",
+        "Gagal memperbarui status",
+        error?.message || "Gagal memperbarui status order."
+      );
     }
   };
 
@@ -109,6 +145,30 @@ const OrderAcceptanceLayer = () => {
     return "bg-warning-focus text-warning-main";
   };
 
+  const isLongRoute = (value) => String(value || "").length > 32;
+  const resolvePopupTheme = (type) => {
+    const normalized = String(type || "").toLowerCase();
+    if (normalized.includes("success")) {
+      return {
+        accent: "var(--success-600, #16a34a)",
+        icon: "solar:check-circle-linear",
+        buttonClass: "btn-success",
+      };
+    }
+    if (normalized.includes("error") || normalized.includes("danger")) {
+      return {
+        accent: "var(--danger-600, #dc2626)",
+        icon: "solar:danger-triangle-linear",
+        buttonClass: "btn-danger",
+      };
+    }
+    return {
+      accent: "var(--primary-600, #487fff)",
+      icon: "solar:info-circle-linear",
+      buttonClass: "btn-primary",
+    };
+  };
+
   const buildInvoiceHref = (order) => {
     const params = new URLSearchParams();
     if (order?.id) params.set("orderId", String(order.id));
@@ -133,7 +193,13 @@ const OrderAcceptanceLayer = () => {
     <div className="d-md-none p-3 d-flex flex-column gap-12">
       {orders.map((order) => {
         const schedule = formatScheduleDate(order.pickup_date);
-        const isFinal = ["Accepted", "Rejected"].includes(order.status);
+        const routeLabel = `${order.pickup || "-"} - ${order.destination || "-"}`;
+        const routeClassName = isLongRoute(routeLabel)
+          ? "cvant-route-text cvant-route-text-long"
+          : "cvant-route-text";
+        const normalizedStatus = String(order.status || "").toLowerCase();
+        const isPaid =
+          normalizedStatus.includes("paid") && !normalizedStatus.includes("unpaid");
         const canCreateInvoice = String(order.status || "")
           .toLowerCase()
           .includes("accepted");
@@ -183,9 +249,26 @@ const OrderAcceptanceLayer = () => {
             >
               <div className="d-flex justify-content-between">
                 <span style={{ color: textSub }}>Rute</span>
-                <span style={{ color: textMain, fontWeight: 600 }}>
-                  {order.pickup || "-"} - {order.destination || "-"}
-                </span>
+                {isLongRoute(routeLabel) ? (
+                  <span
+                    className={routeClassName}
+                    style={{ color: textMain, fontWeight: 600 }}
+                  >
+                    <span className="cvant-route-line">
+                      {order.pickup || "-"} -
+                    </span>
+                    <span className="cvant-route-line">
+                      {order.destination || "-"}
+                    </span>
+                  </span>
+                ) : (
+                  <span
+                    className={routeClassName}
+                    style={{ color: textMain, fontWeight: 600 }}
+                  >
+                    {routeLabel}
+                  </span>
+                )}
               </div>
               <div className="d-flex justify-content-between">
                 <span style={{ color: textSub }}>Jadwal</span>
@@ -193,36 +276,41 @@ const OrderAcceptanceLayer = () => {
               </div>
             </div>
 
-            <div className="d-flex justify-content-end gap-2 mt-12 flex-wrap">
-              <button
-                className="btn btn-success btn-sm radius-8"
-                onClick={() => updateStatus(order.id, "Accepted")}
-                disabled={isFinal}
-              >
-                Accept
-              </button>
-              <button
-                className="btn btn-danger btn-sm radius-8"
-                onClick={() => updateStatus(order.id, "Rejected")}
-                disabled={isFinal}
-              >
-                Reject
-              </button>
-            </div>
-            <div className="d-flex justify-content-end mt-10">
-              {canCreateInvoice ? (
-                <Link href={createHref} className="btn btn-primary btn-sm radius-8">
-                  Create
-                </Link>
-              ) : (
+            <div className="cvant-order-actions mt-12">
+              <div className="cvant-order-actions-left">
                 <button
-                  type="button"
-                  className="btn btn-outline-secondary btn-sm radius-8"
-                  disabled
+                  className="btn btn-success btn-sm radius-8"
+                  onClick={() => updateStatus(order, "Accepted")}
+                  disabled={isPaid}
                 >
-                  Create
+                  Accept
                 </button>
-              )}
+                <button
+                  className="btn btn-danger btn-sm radius-8"
+                  onClick={() => updateStatus(order, "Rejected")}
+                  disabled={isPaid}
+                >
+                  Reject
+                </button>
+              </div>
+              <div className="cvant-order-actions-right">
+                {canCreateInvoice ? (
+                  <Link
+                    href={createHref}
+                    className="btn btn-primary btn-sm radius-8"
+                  >
+                    Create
+                  </Link>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn btn-outline-secondary btn-sm radius-8"
+                    disabled
+                  >
+                    Create
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         );
@@ -281,7 +369,16 @@ const OrderAcceptanceLayer = () => {
                     </thead>
                     <tbody>
                       {orders.map((order) => {
-                        const isFinal = ["Accepted", "Rejected"].includes(order.status);
+                        const routeLabel = `${order.pickup || "-"} - ${
+                          order.destination || "-"
+                        }`;
+                        const routeClassName = isLongRoute(routeLabel)
+                          ? "cvant-route-text cvant-route-text-long"
+                          : "cvant-route-text";
+                        const normalizedStatus = String(order.status || "").toLowerCase();
+                        const isPaid =
+                          normalizedStatus.includes("paid") &&
+                          !normalizedStatus.includes("unpaid");
                         const canCreateInvoice = String(order.status || "")
                           .toLowerCase()
                           .includes("accepted");
@@ -300,7 +397,18 @@ const OrderAcceptanceLayer = () => {
                               </div>
                             </td>
                             <td>
-                              {order.pickup || "-"} - {order.destination || "-"}
+                              {isLongRoute(routeLabel) ? (
+                                <span className={routeClassName}>
+                                  <span className="cvant-route-line">
+                                    {order.pickup || "-"} -
+                                  </span>
+                                  <span className="cvant-route-line">
+                                    {order.destination || "-"}
+                                  </span>
+                                </span>
+                              ) : (
+                                <span className={routeClassName}>{routeLabel}</span>
+                              )}
                             </td>
                             <td>
                               {formatScheduleDate(order.pickup_date)}
@@ -318,15 +426,15 @@ const OrderAcceptanceLayer = () => {
                               <div className="d-flex justify-content-center gap-2">
                                 <button
                                   className="btn btn-success btn-sm radius-8"
-                                  onClick={() => updateStatus(order.id, "Accepted")}
-                                  disabled={isFinal}
+                                  onClick={() => updateStatus(order, "Accepted")}
+                                  disabled={isPaid}
                                 >
                                   Accept
                                 </button>
                                 <button
                                   className="btn btn-danger btn-sm radius-8"
-                                  onClick={() => updateStatus(order.id, "Rejected")}
-                                  disabled={isFinal}
+                                  onClick={() => updateStatus(order, "Rejected")}
+                                  disabled={isPaid}
                                 >
                                   Reject
                                 </button>
@@ -358,7 +466,125 @@ const OrderAcceptanceLayer = () => {
           </div>
         </div>
       </div>
+      {popup.show && (
+        <div
+          className="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center"
+          style={{
+            zIndex: 9999,
+            background: "rgba(0,0,0,0.55)",
+            padding: "16px",
+          }}
+          onClick={closePopup}
+        >
+          <div
+            className="radius-12 shadow-sm p-24"
+            style={{
+              width: "100%",
+              maxWidth: "520px",
+              backgroundColor: "#1b2431",
+              border: `2px solid ${resolvePopupTheme(popup.type).accent}`,
+              boxShadow: "0 22px 55px rgba(0,0,0,0.55)",
+            }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="d-flex align-items-start justify-content-between gap-2">
+              <div className="d-flex align-items-start gap-12">
+                <span style={{ marginTop: "2px" }}>
+                  <Icon
+                    icon={resolvePopupTheme(popup.type).icon}
+                    style={{
+                      fontSize: "28px",
+                      color: resolvePopupTheme(popup.type).accent,
+                    }}
+                  />
+                </span>
+
+                <div>
+                  <h5 className="mb-8 fw-bold" style={{ color: "#ffffff" }}>
+                    {popup.title || "Informasi"}
+                  </h5>
+                  <p
+                    className="mb-0"
+                    style={{ color: "#cbd5e1", fontSize: "15px" }}
+                  >
+                    {popup.message}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className="btn p-0"
+                aria-label="Close"
+                onClick={closePopup}
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  lineHeight: 1,
+                }}
+              >
+                <Icon
+                  icon="solar:close-circle-linear"
+                  style={{ fontSize: 24, color: "#94a3b8" }}
+                />
+              </button>
+            </div>
+
+            <div className="d-flex justify-content-end mt-20">
+              <button
+                type="button"
+                className={`btn ${resolvePopupTheme(popup.type).buttonClass} radius-12 px-16`}
+                onClick={closePopup}
+                style={{
+                  border: `2px solid ${resolvePopupTheme(popup.type).accent}`,
+                }}
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <style jsx global>{`
+        .cvant-route-text {
+          display: inline-block;
+          max-width: 100%;
+          line-height: 1.3;
+          word-break: break-word;
+        }
+
+        .cvant-route-text-long {
+          font-size: clamp(10px, 0.8vw + 7px, 12px);
+        }
+
+        .cvant-route-line {
+          display: block;
+        }
+
+        @media (max-width: 767.98px) {
+          .cvant-route-text-long {
+            font-size: clamp(10px, 3vw, 11.5px);
+          }
+
+          .cvant-order-actions {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            flex-wrap: nowrap;
+          }
+
+          .cvant-order-actions-left {
+            display: flex;
+            gap: 8px;
+            flex-wrap: nowrap;
+          }
+
+          .cvant-order-actions-right {
+            margin-left: auto;
+          }
+        }
+
         @media (max-width: 767.98px) {
           .cvant-data-header {
             flex-wrap: nowrap !important;
