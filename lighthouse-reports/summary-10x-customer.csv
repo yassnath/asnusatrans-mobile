@@ -1,7 +1,0 @@
-"page","url","samples","performance","accessibility","best_practices","seo"
-"customer-dashboard","http://localhost:3000/customer/dashboard","10","38.5","92","96","92"
-"customer-notifications","http://localhost:3000/customer/notifications","10","38.1","96","96","92"
-"customer-orders","http://localhost:3000/customer/orders","10","39.2","92","96","92"
-"customer-settings","http://localhost:3000/customer/settings","10","39.4","90","96","92"
-"order","http://localhost:3000/order","10","38.8","86","96","92"
-"order-payment","http://localhost:3000/order/payment","10","30.9","96","96","92"

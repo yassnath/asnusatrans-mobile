@@ -20,42 +20,18 @@ Thumbs.db
 !**/.env.example
 
 ########################################
-# Next.js (folder: nextJs)
+# Flutter / Dart
 ########################################
-nextJs/node_modules/
-nextJs/.next/
-nextJs/out/
-nextJs/.vercel/
-nextJs/.turbo/
-nextJs/.cache/
-nextJs/.swc/
-
-# Next build artifacts / debug
-nextJs/npm-debug.log*
-nextJs/yarn-debug.log*
-nextJs/yarn-error.log*
-nextJs/pnpm-debug.log*
-
-########################################
-# Laravel (folder: laravel)
-########################################
-laravel/vendor/
-
-# Laravel storage (yang aman di-ignore)
-laravel/storage/logs/
-laravel/storage/framework/cache/
-laravel/storage/framework/sessions/
-laravel/storage/framework/views/
-
-# Kalau kamu pakai sqlite lokal
-laravel/database/*.sqlite
-laravel/database/*.sqlite-journal
-
-########################################
-# Docker / misc (optional)
-########################################
-# Jangan ignore folder _docker kalau itu memang dibutuhkan repo
-# _docker/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+ios/Pods/
+ios/.symlinks/
+android/.gradle/
+android/local.properties
+pubspec.lock
 
 ########################################
 # Backup / dump / zip besar

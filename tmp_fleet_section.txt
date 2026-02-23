@@ -1,0 +1,560 @@
+      },
+    );
+  }
+}
+
+class _AdminFleetListView extends StatefulWidget {
+  const _AdminFleetListView({required this.repository});
+
+  final DashboardRepository repository;
+
+  @override
+  State<_AdminFleetListView> createState() => _AdminFleetListViewState();
+}
+
+class _AdminFleetListViewState extends State<_AdminFleetListView> {
+  late Future<List<dynamic>> _future;
+  final _search = TextEditingController();
+  int _limit = 10;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _load();
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  Future<List<dynamic>> _load() {
+    return Future.wait([
+      widget.repository.fetchArmadas(),
+      widget.repository.fetchInvoices(),
+    ]);
+  }
+
+  Future<void> _refresh() async {
+    setState(() => _future = _load());
+    await _future;
+  }
+
+  Future<void> _openEdit(Map<String, dynamic> item) async {
+    final name = TextEditingController(text: '${item['nama_truk'] ?? ''}');
+    final plate = TextEditingController(text: '${item['plat_nomor'] ?? ''}');
+    final capacity = TextEditingController(
+      text: _toNum(item['kapasitas']).toStringAsFixed(0),
+    );
+    bool isActive = item['is_active'] != false;
+    bool saving = false;
+
+    await showDialog<void>(
+      context: context,
+      barrierColor: AppColors.popupOverlay,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text('Edit Armada'),
+              content: SizedBox(
+                width: 420,
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      TextField(
+                        controller: name,
+                        decoration:
+                            const InputDecoration(labelText: 'Nama Truk'),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: plate,
+                        decoration:
+                            const InputDecoration(labelText: 'Plat Nomor'),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: capacity,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration:
+                            const InputDecoration(labelText: 'Kapasitas'),
+                      ),
+                      const SizedBox(height: 10),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        value: isActive,
+                        title: Text('Status Aktif'),
+                        onChanged: (value) {
+                          setDialogState(() => isActive = value);
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: saving ? null : () => Navigator.pop(context),
+                  style: CvantButtonStyles.outlined(
+                    context,
+                    color: AppColors.isLight(context)
+                        ? AppColors.textSecondaryLight
+                        : const Color(0xFFE2E8F0),
+                    borderColor: AppColors.neutralOutline,
+                  ),
+                  child: Text('Batal'),
+                ),
+                FilledButton(
+                  onPressed: saving
+                      ? null
+                      : () async {
+                          if (name.text.trim().isEmpty ||
+                              plate.text.trim().isEmpty) {
+                            _snack('Nama dan plat nomor wajib diisi.',
+                                error: true);
+                            return;
+                          }
+                          setDialogState(() => saving = true);
+                          try {
+                            await widget.repository.updateArmada(
+                              id: '${item['id']}',
+                              name: name.text,
+                              plate: plate.text,
+                              capacity: _toNum(capacity.text),
+                              active: isActive,
+                              status: isActive ? 'Ready' : 'Inactive',
+                            );
+                            if (!mounted) return;
+                            Navigator.of(this.context).pop();
+                            _snack('Armada berhasil diperbarui.');
+                            await _refresh();
+                          } catch (e) {
+                            if (!mounted) return;
+                            _snack(e.toString().replaceFirst('Exception: ', ''),
+                                error: true);
+                          } finally {
+                            if (mounted) {
+                              setDialogState(() => saving = false);
+                            }
+                          }
+                        },
+                  child: Text(saving ? 'Menyimpan...' : 'Simpan'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _delete(String id) async {
+    final ok = await showCvantConfirmPopup(
+      context: context,
+      title: 'Hapus Armada',
+      message: 'Armada akan dihapus permanen. Lanjutkan?',
+      type: CvantPopupType.error,
+      cancelLabel: 'Batal',
+      confirmLabel: 'Hapus',
+    );
+    if (!ok) return;
+
+    try {
+      await widget.repository.deleteArmada(id);
+      if (!mounted) return;
+      _snack('Armada berhasil dihapus.');
+      await _refresh();
+    } catch (e) {
+      if (!mounted) return;
+      _snack(e.toString().replaceFirst('Exception: ', ''), error: true);
+    }
+  }
+
+  void _snack(String msg, {bool error = false}) {
+    showCvantPopup(
+      context: context,
+      type: error ? CvantPopupType.error : CvantPopupType.success,
+      title: error ? 'Error' : 'Success',
+      message: msg,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<dynamic>>(
+      future: _future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const _LoadingView();
+        }
+        if (snapshot.hasError) {
+          return _ErrorView(
+            message: snapshot.error.toString().replaceFirst('Exception: ', ''),
+            onRetry: () => setState(() => _future = _load()),
+          );
+        }
+
+        final armadas =
+            (snapshot.data![0] as List).cast<Map<String, dynamic>>();
+        final invoices =
+            (snapshot.data![1] as List).cast<Map<String, dynamic>>();
+        final usage = <String, int>{};
+        for (final invoice in invoices) {
+          final armadaId = invoice['armada_id']?.toString();
+          if (armadaId == null || armadaId.isEmpty) continue;
+          usage[armadaId] = (usage[armadaId] ?? 0) + 1;
+        }
+
+        final q = _search.text.trim().toLowerCase();
+        final filtered = armadas
+            .where((item) {
+              if (q.isEmpty) return true;
+              final text = [
+                item['nama_truk'],
+                item['plat_nomor'],
+                item['status'],
+              ].join(' ').toLowerCase();
+              return text.contains(q);
+            })
+            .take(_limit)
+            .toList();
+
+        final data = filtered;
+        if (data.isEmpty) {
+          if (armadas.isEmpty) {
+            return const _SimplePlaceholderView(
+              title: 'Fleet belum tampil',
+              message:
+                  'Data armada kosong atau role akun belum memiliki akses staff (admin/owner).',
+            );
+          }
+          return const _SimplePlaceholderView(
+            title: 'Fleet tidak ditemukan',
+            message: 'Coba ubah keyword pencarian fleet.',
+          );
+        }
+
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+              child: Row(
+                children: [
+                  Text(
+                    'Show',
+                    style: TextStyle(color: AppColors.textMutedFor(context)),
+                  ),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 86,
+                    child: DropdownButtonFormField<int>(
+                      initialValue: _limit,
+                      decoration: const InputDecoration(
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                      items: const [10, 15, 20]
+                          .map((item) => DropdownMenuItem(
+                                value: item,
+                                child: Text('$item'),
+                              ))
+                          .toList(),
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setState(() => _limit = value);
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: _search,
+                      onChanged: (_) => setState(() {}),
+                      decoration: const InputDecoration(
+                        hintText: 'Search fleet...',
+                        prefixIcon: Icon(Icons.search),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: _refresh,
+                child: ListView.separated(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.all(12),
+                  itemCount: data.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  itemBuilder: (context, index) {
+                    final item = data[index];
+                    final status = (item['is_active'] == false) ||
+                            '${item['status']}'.toLowerCase() == 'inactive'
+                        ? 'Inactive'
+                        : '${item['status'] ?? 'Ready'}';
+                    final used = usage['${item['id']}'] ?? 0;
+                    return _PanelCard(
+                      child: Column(
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.local_shipping_outlined,
+                                color: AppColors.cyan,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '${item['nama_truk'] ?? '-'}',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Plat: ${item['plat_nomor'] ?? '-'}',
+                                      style: TextStyle(
+                                        color: AppColors.textMutedFor(context),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Kapasitas: ${_toNum(item['kapasitas']).toStringAsFixed(0)}',
+                                      style: TextStyle(
+                                        color: AppColors.textMutedFor(context),
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Penggunaan: ${used}x',
+                                      style: TextStyle(
+                                        color: AppColors.textMutedFor(context),
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              _StatusPill(label: status),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              OutlinedButton.icon(
+                                onPressed: () => _openEdit(item),
+                                style: CvantButtonStyles.outlined(
+                                  context,
+                                  color: AppColors.blue,
+                                  borderColor: AppColors.blue,
+                                ),
+                                icon: const Icon(Icons.edit_outlined, size: 16),
+                                label: Text('Edit'),
+                              ),
+                              const SizedBox(width: 8),
+                              OutlinedButton.icon(
+                                onPressed: () => _delete('${item['id']}'),
+                                style: CvantButtonStyles.outlined(
+                                  context,
+                                  color: AppColors.danger,
+                                  borderColor: AppColors.danger,
+                                ),
+                                icon:
+                                    const Icon(Icons.delete_outline, size: 16),
+                                label: Text('Hapus'),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _AdminOrderAcceptanceView extends StatefulWidget {
+  const _AdminOrderAcceptanceView({
+    required this.repository,
+    required this.onCreateInvoice,
+  });
+
+  final DashboardRepository repository;
+  final ValueChanged<_InvoicePrefillData> onCreateInvoice;
+
+  @override
+  State<_AdminOrderAcceptanceView> createState() =>
+      _AdminOrderAcceptanceViewState();
+}
+
+class _AdminOrderAcceptanceViewState extends State<_AdminOrderAcceptanceView> {
+  late Future<List<dynamic>> _future;
+  String? _updatingOrderId;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _load();
+  }
+
+  Future<List<dynamic>> _load() {
+    return Future.wait([
+      widget.repository.fetchOrders(),
+      widget.repository.fetchCustomerProfiles(),
+    ]);
+  }
+
+  Future<void> _updateStatus(String orderId, String status) async {
+    setState(() => _updatingOrderId = orderId);
+    try {
+      await widget.repository
+          .updateOrderStatus(orderId: orderId, status: status);
+      if (!mounted) return;
+      showCvantPopup(
+        context: context,
+        type: CvantPopupType.success,
+        title: 'Success',
+        message: 'Status order berhasil diupdate.',
+      );
+      setState(() => _future = _load());
+    } catch (e) {
+      if (!mounted) return;
+      showCvantPopup(
+        context: context,
+        type: CvantPopupType.error,
+        title: 'Error',
+        message: e.toString().replaceFirst('Exception: ', ''),
+      );
+    } finally {
+      if (mounted) setState(() => _updatingOrderId = null);
+    }
+  }
+
+  Future<void> _openInvoiceCreateForm(
+    Map<String, dynamic> order,
+    Map<String, dynamic>? customer,
+  ) async {
+    final customerName =
+        (customer?['name'] ?? customer?['username'] ?? 'Customer').toString();
+    final total = _toNum(order['total']);
+    if (total <= 0) {
+      showCvantPopup(
+        context: context,
+        type: CvantPopupType.error,
+        title: 'Error',
+        message: 'Total order belum valid untuk dibuat invoice.',
+      );
+      return;
+    }
+
+    try {
+      final existing =
+          await widget.repository.findInvoiceForOrder('${order['id']}');
+      if (existing != null) {
+        if (!mounted) return;
+        showCvantPopup(
+          context: context,
+          type: CvantPopupType.warning,
+          title: 'Warning',
+          message:
+              'Invoice sudah ada: ${existing['no_invoice'] ?? existing['id']}',
+        );
+        return;
+      }
+
+      widget.onCreateInvoice(
+        _InvoicePrefillData(
+          orderId: order['id']?.toString(),
+          customerId: customer?['id']?.toString(),
+          customerName: customerName,
+          customerEmail: customer?['email']?.toString(),
+          customerPhone: customer?['phone']?.toString(),
+          pickup: order['pickup']?.toString(),
+          destination: order['destination']?.toString(),
+          pickupDate: Formatters.parseDate(order['pickup_date']),
+          armadaName: order['fleet']?.toString(),
+        ),
+      );
+      if (!mounted) return;
+      showCvantPopup(
+        context: context,
+        type: CvantPopupType.info,
+        title: 'Invoice Add',
+        message: 'Membuka halaman Invoice Add dengan data order terpilih.',
+      );
+    } catch (e) {
+      if (!mounted) return;
+      showCvantPopup(
+        context: context,
+        type: CvantPopupType.error,
+        title: 'Error',
+        message: e.toString().replaceFirst('Exception: ', ''),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<dynamic>>(
+      future: _future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const _LoadingView();
+        }
+        if (snapshot.hasError || !snapshot.hasData) {
+          return _ErrorView(
+            message: snapshot.error.toString().replaceFirst('Exception: ', ''),
+            onRetry: () => setState(() => _future = _load()),
+          );
+        }
+
+        final orders = (snapshot.data![0] as List).cast<Map<String, dynamic>>();
+        final customers =
+            (snapshot.data![1] as List).cast<Map<String, dynamic>>();
+        final customerMap = <String, Map<String, dynamic>>{
+          for (final customer in customers) '${customer['id']}': customer,
+        };
+
+        if (orders.isEmpty) {
+          return const _SimplePlaceholderView(
+            title: 'Order belum ada',
+            message: 'Belum ada order customer yang perlu diproses.',
+          );
+        }
+
+        return ListView.separated(
+          padding: const EdgeInsets.all(12),
+          itemCount: orders.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 10),
+          itemBuilder: (context, index) {
+            final order = orders[index];
+            final status = '${order['status'] ?? 'Pending'}';
+            final statusLower = status.toLowerCase();
+            final isUpdating = _updatingOrderId == '${order['id']}';
+            final customer = customerMap['${order['customer_id']}'];
+            final isPaid =
+                statusLower.contains('paid') && !statusLower.contains('unpaid');
+            final canCreateInvoice = statusLower.contains('accepted');
+            final customerName =
+                customer?['name'] ?? customer?['username'] ?? '-';
+
+            return _PanelCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
