@@ -90,6 +90,16 @@ class DashboardBundle {
   final List<TransactionItem> recentTransactions;
 }
 
+class DashboardLiveSections {
+  const DashboardLiveSections({
+    required this.armadaUsages,
+    required this.recentActivities,
+  });
+
+  final List<ArmadaUsage> armadaUsages;
+  final List<ActivityItem> recentActivities;
+}
+
 class CustomerOrderSummary {
   const CustomerOrderSummary({
     required this.code,

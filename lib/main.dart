@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app.dart';
 import 'core/config/app_config.dart';
+import 'core/i18n/language_controller.dart';
 import 'core/theme/theme_controller.dart';
 
 Future<void> main() async {
@@ -19,6 +20,7 @@ Future<void> main() async {
     anonKey: AppConfig.supabaseAnonKey,
   );
   await ThemeController.init();
+  await LanguageController.init();
 
   runApp(const CvantApp());
 }

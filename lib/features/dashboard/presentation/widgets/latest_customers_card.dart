@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/i18n/language_controller.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../models/dashboard_models.dart';
@@ -31,6 +32,8 @@ class _LatestCustomersCardState extends State<LatestCustomersCard> {
     final muted = AppColors.textMutedFor(context);
     final border = AppColors.cardBorder(context);
     final inner = AppColors.innerSurface(context);
+    final isEn = LanguageController.language.value == AppLanguage.en;
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -44,14 +47,14 @@ class _LatestCustomersCardState extends State<LatestCustomersCard> {
                     child: Row(
                       children: [
                         _TabButton(
-                          label: 'Latest',
+                          label: isEn ? 'Latest' : 'Terbaru',
                           active: _showLatest,
                           count: widget.latestCustomers.length,
                           onTap: () => setState(() => _showLatest = true),
                         ),
                         const SizedBox(width: 8),
                         _TabButton(
-                          label: 'Biggest',
+                          label: isEn ? 'Biggest' : 'Terbesar',
                           active: !_showLatest,
                           count: widget.biggestTransactions.length,
                           onTap: () => setState(() => _showLatest = false),
@@ -64,11 +67,12 @@ class _LatestCustomersCardState extends State<LatestCustomersCard> {
                 InkWell(
                   onTap: widget.onViewAll,
                   borderRadius: BorderRadius.circular(8),
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
                     child: Text(
-                      'View All',
-                      style: TextStyle(
+                      isEn ? 'View All' : 'Lihat Semua',
+                      style: const TextStyle(
                         color: AppColors.blue,
                         fontWeight: FontWeight.w600,
                         fontSize: 13,
@@ -81,9 +85,9 @@ class _LatestCustomersCardState extends State<LatestCustomersCard> {
             const SizedBox(height: 12),
             if (source.isEmpty)
               Padding(
-                padding: EdgeInsets.symmetric(vertical: 18),
+                padding: const EdgeInsets.symmetric(vertical: 18),
                 child: Text(
-                  'Data belum tersedia.',
+                  isEn ? 'No data available yet.' : 'Data belum tersedia.',
                   style: TextStyle(color: muted),
                 ),
               )

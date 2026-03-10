@@ -78,19 +78,19 @@ class AppColors {
   static const Gradient cardGradientCyan = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [Color(0x223B82F6), Color(0x1622D3EE)],
+    colors: [Color(0x2A3B82F6), Color(0x2222D3EE)],
   );
 
   static const Gradient cardGradientGreen = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [Color(0x2222C55E), Color(0x1634D399)],
+    colors: [Color(0x2A22C55E), Color(0x2234D399)],
   );
 
   static const Gradient cardGradientRed = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [Color(0x22EF4444), Color(0x16FB7185)],
+    colors: [Color(0x2AEF4444), Color(0x22FB7185)],
   );
 
   static bool isLight(BuildContext context) =>
@@ -141,3 +141,4 @@ class AppColors {
       ? const Color.fromRGBO(91, 140, 255, 0.18)
       : const Color(0x335B8CFF);
 }
+

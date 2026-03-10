@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/i18n/language_controller.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../models/dashboard_models.dart';
@@ -20,6 +21,8 @@ class RecentTransactionsCard extends StatelessWidget {
     final muted = AppColors.textMutedFor(context);
     final border = AppColors.cardBorder(context);
     final inner = AppColors.innerSurface(context);
+    final isEn = LanguageController.language.value == AppLanguage.en;
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -28,20 +31,22 @@ class RecentTransactionsCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Expanded(
+                Expanded(
                   child: Text(
-                    'Recent Transactions',
-                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+                    isEn ? 'Recent Transactions' : 'Transaksi Terbaru',
+                    style: const TextStyle(
+                        fontSize: 17, fontWeight: FontWeight.w700),
                   ),
                 ),
                 InkWell(
                   onTap: onViewAll,
                   borderRadius: BorderRadius.circular(8),
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
                     child: Text(
-                      'View All',
-                      style: TextStyle(
+                      isEn ? 'View All' : 'Lihat Semua',
+                      style: const TextStyle(
                         color: AppColors.blue,
                         fontWeight: FontWeight.w600,
                         fontSize: 13,
@@ -54,9 +59,11 @@ class RecentTransactionsCard extends StatelessWidget {
             const SizedBox(height: 12),
             if (items.isEmpty)
               Padding(
-                padding: EdgeInsets.symmetric(vertical: 12),
+                padding: const EdgeInsets.symmetric(vertical: 12),
                 child: Text(
-                  'No recent transactions found.',
+                  isEn
+                      ? 'No recent transactions found.'
+                      : 'Belum ada transaksi terbaru.',
                   style: TextStyle(color: muted),
                 ),
               )
@@ -107,7 +114,9 @@ class RecentTransactionsCard extends StatelessWidget {
                         children: [
                           Expanded(
                             child: Text(
-                              'Customer: ${item.customer}',
+                              isEn
+                                  ? 'Customer: ${item.customer}'
+                                  : 'Pelanggan: ${item.customer}',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(

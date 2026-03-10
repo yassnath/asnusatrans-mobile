@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/i18n/language_controller.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../models/dashboard_models.dart';
@@ -20,6 +21,11 @@ class CustomerOrdersCard extends StatelessWidget {
     final muted = AppColors.textMutedFor(context);
     final border = AppColors.cardBorder(context);
     final inner = AppColors.innerSurface(context);
+    final isEn = LanguageController.language.value == AppLanguage.en;
+    final routeLabel = isEn ? 'Route' : 'Rute';
+    final scheduleLabel = isEn ? 'Schedule' : 'Jadwal';
+    final totalLabel = isEn ? 'Total' : 'Total';
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -28,20 +34,22 @@ class CustomerOrdersCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Expanded(
+                Expanded(
                   child: Text(
-                    'Latest Orders',
-                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+                    isEn ? 'Latest Orders' : 'Order Terbaru',
+                    style: const TextStyle(
+                        fontSize: 17, fontWeight: FontWeight.w700),
                   ),
                 ),
                 InkWell(
                   onTap: onViewAll,
                   borderRadius: BorderRadius.circular(8),
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
                     child: Text(
-                      'View All',
-                      style: TextStyle(
+                      isEn ? 'View All' : 'Lihat Semua',
+                      style: const TextStyle(
                         color: AppColors.blue,
                         fontWeight: FontWeight.w600,
                         fontSize: 13,
@@ -54,9 +62,9 @@ class CustomerOrdersCard extends StatelessWidget {
             const SizedBox(height: 12),
             if (orders.isEmpty)
               Padding(
-                padding: EdgeInsets.symmetric(vertical: 12),
+                padding: const EdgeInsets.symmetric(vertical: 12),
                 child: Text(
-                  'No orders yet.',
+                  isEn ? 'No orders yet.' : 'Belum ada order.',
                   style: TextStyle(color: muted),
                 ),
               )
@@ -98,14 +106,15 @@ class CustomerOrdersCard extends StatelessWidget {
                               ],
                             ),
                           ),
-                          StatusBadge(status: _statusLabel(order.status)),
+                          StatusBadge(status: _statusLabel(order.status, isEn)),
                         ],
                       ),
                       const SizedBox(height: 8),
-                      _MetaRow(label: 'Route', value: order.routeLabel),
-                      _MetaRow(label: 'Schedule', value: order.scheduleLabel),
+                      _MetaRow(label: routeLabel, value: order.routeLabel),
                       _MetaRow(
-                        label: 'Total',
+                          label: scheduleLabel, value: order.scheduleLabel),
+                      _MetaRow(
+                        label: totalLabel,
                         value: isPaid ? Formatters.rupiah(order.total) : '-',
                       ),
                     ],
@@ -118,12 +127,12 @@ class CustomerOrdersCard extends StatelessWidget {
     );
   }
 
-  String _statusLabel(String raw) {
+  String _statusLabel(String raw, bool isEn) {
     final s = raw.toLowerCase();
-    if (s.contains('pending')) return 'Pending';
-    if (s.contains('accepted')) return 'Accepted';
-    if (s.contains('rejected')) return 'Rejected';
-    if (s.contains('paid')) return 'Paid';
+    if (s.contains('pending')) return isEn ? 'Pending' : 'Menunggu';
+    if (s.contains('accepted')) return isEn ? 'Accepted' : 'Diterima';
+    if (s.contains('rejected')) return isEn ? 'Rejected' : 'Ditolak';
+    if (s.contains('paid')) return isEn ? 'Paid' : 'Lunas';
     return raw;
   }
 }

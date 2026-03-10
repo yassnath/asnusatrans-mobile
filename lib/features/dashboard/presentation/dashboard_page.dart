@@ -3,12 +3,17 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart' show rootBundle;
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/cvant_button_styles.dart';
 import '../../../core/theme/theme_controller.dart';
+import '../../../core/i18n/language_controller.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/cvant_dropdown_field.dart';
 import '../../../core/widgets/page_fade_in.dart';
@@ -47,6 +52,42 @@ class _InvoicePrefillData {
   final String? destination;
   final DateTime? pickupDate;
   final String? armadaName;
+}
+
+String _menuLabel(String key, AppLanguage language) {
+  final isEn = language == AppLanguage.en;
+  switch (key.toLowerCase()) {
+    case 'dashboard':
+      return isEn ? 'Dashboard' : 'Dashboard';
+    case 'invoice list':
+      return isEn ? 'Invoice List' : 'Daftar Invoice';
+    case 'invoice add income':
+      return isEn ? 'Invoice Add Income' : 'Tambah Invoice Pemasukan';
+    case 'invoice add expense':
+      return isEn ? 'Invoice Add Expense' : 'Tambah Invoice Pengeluaran';
+    case 'calendar':
+      return isEn ? 'Calendar' : 'Kalender';
+    case 'fleet list':
+      return isEn ? 'Fleet List' : 'Daftar Armada';
+    case 'fleet add new':
+      return isEn ? 'Fleet Add New' : 'Tambah Armada';
+    case 'order acceptance':
+      return isEn ? 'Order Acceptance' : 'Penerimaan Order';
+    case 'customer registrations':
+      return isEn ? 'Customer Registrations' : 'Registrasi Customer';
+    case 'add user':
+      return isEn ? 'Add User' : 'Tambah User';
+    case 'settings':
+      return isEn ? 'Settings' : 'Pengaturan';
+    case 'order':
+      return isEn ? 'Order' : 'Order';
+    case 'order history':
+      return isEn ? 'Order History' : 'Riwayat Order';
+    case 'notifications':
+      return isEn ? 'Notifications' : 'Notifikasi';
+    default:
+      return key;
+  }
 }
 
 class DashboardPage extends StatefulWidget {
@@ -92,6 +133,11 @@ class _DashboardPageState extends State<DashboardPage> {
 
   late Future<DashboardBundle> _adminFuture;
   late Future<CustomerDashboardBundle> _customerFuture;
+  Timer? _dashboardAutoRefreshTimer;
+  final ValueNotifier<List<ArmadaUsage>?> _armadaUsageNotifier =
+      ValueNotifier<List<ArmadaUsage>?>(null);
+  final ValueNotifier<List<ActivityItem>?> _recentActivitiesNotifier =
+      ValueNotifier<List<ActivityItem>?>(null);
   int _adminIndex = 0;
   int _customerIndex = 0;
   _InvoicePrefillData? _invoicePrefill;
@@ -100,95 +146,147 @@ class _DashboardPageState extends State<DashboardPage> {
   void initState() {
     super.initState();
     _reload();
+    _startDashboardAutoRefresh();
+  }
+
+  @override
+  void dispose() {
+    _dashboardAutoRefreshTimer?.cancel();
+    _armadaUsageNotifier.dispose();
+    _recentActivitiesNotifier.dispose();
+    super.dispose();
   }
 
   void _reload() {
-    _adminFuture = widget.repository.loadAdminDashboard();
+    final adminFuture = widget.repository.loadAdminDashboard();
+    _adminFuture = adminFuture;
     _customerFuture = widget.repository.loadCustomerDashboard();
+    adminFuture.then((bundle) {
+      if (!mounted) return;
+      _armadaUsageNotifier.value = List<ArmadaUsage>.from(
+        bundle.armadaUsages,
+      );
+      _recentActivitiesNotifier.value = List<ActivityItem>.from(
+        bundle.recentActivities,
+      );
+    }).catchError((_) {});
+  }
+
+  Future<void> _refreshDashboardLiveSections() async {
+    if (!mounted || widget.session.isCustomer || _adminIndex != 0) return;
+    try {
+      final live = await widget.repository.loadAdminLiveSections();
+      if (!mounted) return;
+      _armadaUsageNotifier.value = live.armadaUsages;
+      _recentActivitiesNotifier.value = live.recentActivities;
+    } catch (_) {
+      // Keep current data if live refresh fails.
+    }
+  }
+
+  void _startDashboardAutoRefresh() {
+    _dashboardAutoRefreshTimer?.cancel();
+    _dashboardAutoRefreshTimer = Timer.periodic(
+      const Duration(seconds: 12),
+      (_) {
+        _refreshDashboardLiveSections();
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final isCustomer = widget.session.isCustomer;
-    final menus = isCustomer ? _customerMenus : _adminMenus;
-    final selected = isCustomer ? _customerIndex : _adminIndex;
-    final isLightMode = AppColors.isLight(context);
-    final bodyKey = ValueKey<String>(
-      isCustomer ? 'customer-page-$_customerIndex' : 'admin-page-$_adminIndex',
-    );
-    final pageBody = isCustomer ? _buildCustomerBody() : _buildAdminBody();
+    return ValueListenableBuilder<AppLanguage>(
+      valueListenable: LanguageController.language,
+      builder: (context, language, _) {
+        final isCustomer = widget.session.isCustomer;
+        final menuKeys = isCustomer ? _customerMenus : _adminMenus;
+        final selected = isCustomer ? _customerIndex : _adminIndex;
+        final isLightMode = AppColors.isLight(context);
+        final bodyKey = ValueKey<String>(
+          '${language.code}-${isCustomer ? 'customer-page-$_customerIndex' : 'admin-page-$_adminIndex'}',
+        );
+        final pageBody = isCustomer ? _buildCustomerBody() : _buildAdminBody();
 
-    return Scaffold(
-      backgroundColor: AppColors.pageBackground(context),
-      drawer: _DashboardDrawer(
-        items: menus,
-        selectedIndex: selected,
-        onSelect: (index) {
-          setState(() {
-            if (isCustomer) {
-              _customerIndex = index;
-            } else {
-              _adminIndex = index;
-            }
-          });
-          Navigator.of(context).pop();
-        },
-        onLogout: widget.onLogout,
-      ),
-      appBar: AppBar(
-        titleSpacing: 6,
-        title: Text(
-          menus[selected],
-          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
-        ),
-        actions: [
-          IconButton(
-            tooltip: isLightMode ? 'Dark Mode' : 'Light Mode',
-            onPressed: ThemeController.toggle,
-            icon: Icon(
-              isLightMode
-                  ? Icons.dark_mode_outlined
-                  : Icons.light_mode_outlined,
-            ),
+        return Scaffold(
+          backgroundColor: AppColors.pageBackground(context),
+          drawer: _DashboardDrawer(
+            items: menuKeys,
+            language: language,
+            selectedIndex: selected,
+            onSelect: (index) {
+              setState(() {
+                final shouldReloadDashboard =
+                    (!isCustomer && index == 0) || (isCustomer && index == 0);
+                if (shouldReloadDashboard) {
+                  _reload();
+                }
+                if (isCustomer) {
+                  _customerIndex = index;
+                } else {
+                  _adminIndex = index;
+                }
+              });
+              Navigator.of(context).pop();
+            },
+            onLogout: widget.onLogout,
           ),
-          Padding(
-            padding: const EdgeInsets.only(right: 14, left: 2),
-            child: CircleAvatar(
-              radius: 18,
-              backgroundColor: AppColors.surfaceSoft(context),
-              backgroundImage: isCustomer
-                  ? const AssetImage('assets/images/icon.webp')
-                  : AssetImage(
-                      widget.session.role.toLowerCase() == 'owner'
-                          ? 'assets/images/pp-owner.webp'
-                          : 'assets/images/pp-admin.webp',
-                    ),
+          appBar: AppBar(
+            titleSpacing: 6,
+            title: Text(
+              _menuLabel(menuKeys[selected], language),
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
             ),
-          ),
-        ],
-      ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              AppColors.pageBackground(context),
-              AppColors.pageBackgroundDeep(context),
+            actions: [
+              IconButton(
+                tooltip: isLightMode ? 'Dark Mode' : 'Light Mode',
+                onPressed: ThemeController.toggle,
+                icon: Icon(
+                  isLightMode
+                      ? Icons.dark_mode_outlined
+                      : Icons.light_mode_outlined,
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(right: 14, left: 2),
+                child: CircleAvatar(
+                  radius: 18,
+                  backgroundColor: AppColors.surfaceSoft(context),
+                  backgroundImage: isCustomer
+                      ? const AssetImage('assets/images/icon.webp')
+                      : AssetImage(
+                          widget.session.role.toLowerCase() == 'owner'
+                              ? 'assets/images/pp-owner.webp'
+                              : 'assets/images/pp-admin.webp',
+                        ),
+                ),
+              ),
             ],
           ),
-        ),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            _DashboardBackgroundGlow(isLight: AppColors.isLight(context)),
-            PageFadeIn(
-              key: bodyKey,
-              child: pageBody,
+          body: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  AppColors.pageBackground(context),
+                  AppColors.pageBackgroundDeep(context),
+                ],
+              ),
             ),
-          ],
-        ),
-      ),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                _DashboardBackgroundGlow(isLight: AppColors.isLight(context)),
+                PageFadeIn(
+                  key: bodyKey,
+                  child: pageBody,
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -203,6 +301,7 @@ class _DashboardPageState extends State<DashboardPage> {
         return _AdminInvoiceListView(
           repository: widget.repository,
           isOwner: widget.session.role.toLowerCase() == 'owner',
+          onDataChanged: () => setState(_reload),
           onQuickMenuSelect: (index) {
             setState(() => _adminIndex = index);
           },
@@ -210,7 +309,10 @@ class _DashboardPageState extends State<DashboardPage> {
       case 2:
         return _AdminCreateIncomeView(
           repository: widget.repository,
-          onCreated: () => setState(_reload),
+          onCreated: () => setState(() {
+            _reload();
+            _adminIndex = 1;
+          }),
           prefill: _invoicePrefill,
           onPrefillConsumed: () {
             if (!mounted || _invoicePrefill == null) return;
@@ -220,7 +322,10 @@ class _DashboardPageState extends State<DashboardPage> {
       case 3:
         return _AdminCreateExpenseView(
           repository: widget.repository,
-          onCreated: () => setState(_reload),
+          onCreated: () => setState(() {
+            _reload();
+            _adminIndex = 1;
+          }),
         );
       case 4:
         return _AdminCalendarView(repository: widget.repository);
@@ -308,7 +413,7 @@ class _DashboardPageState extends State<DashboardPage> {
         final data = snapshot.data!;
         return ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
+          padding: const EdgeInsets.fromLTRB(10, 10, 10, 18),
           children: [
             _AutoLoopMetricStrip(
               height: 134,
@@ -339,33 +444,43 @@ class _DashboardPageState extends State<DashboardPage> {
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             IncomeExpenseChartCard(
               income: data.monthlySeries.income,
               expense: data.monthlySeries.expense,
             ),
-            const SizedBox(height: 12),
-            ArmadaOverviewCard(
-              items: data.armadaUsages,
-              onViewAll: () => setState(() => _adminIndex = 5),
+            const SizedBox(height: 10),
+            ValueListenableBuilder<List<ArmadaUsage>?>(
+              valueListenable: _armadaUsageNotifier,
+              builder: (context, liveItems, _) {
+                return ArmadaOverviewCard(
+                  items: liveItems ?? data.armadaUsages,
+                  onViewAll: () => setState(() => _adminIndex = 5),
+                );
+              },
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             LatestCustomersCard(
               latestCustomers: data.latestCustomers,
               biggestTransactions: data.biggestTransactions,
               onViewAll: () => setState(() => _adminIndex = 1),
             ),
-            const SizedBox(height: 12),
-            RecentActivityCard(
-              items: data.recentActivities,
-              onViewAll: () => setState(() => _adminIndex = 4),
+            const SizedBox(height: 10),
+            ValueListenableBuilder<List<ActivityItem>?>(
+              valueListenable: _recentActivitiesNotifier,
+              builder: (context, liveItems, _) {
+                return RecentActivityCard(
+                  items: liveItems ?? data.recentActivities,
+                  onViewAll: () => setState(() => _adminIndex = 4),
+                );
+              },
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             RecentTransactionsCard(
               items: data.recentTransactions,
               onViewAll: () => setState(() => _adminIndex = 1),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             const _DashboardContentFooter(),
           ],
         );
@@ -392,7 +507,7 @@ class _DashboardPageState extends State<DashboardPage> {
         final data = snapshot.data!;
         return ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
+          padding: const EdgeInsets.fromLTRB(10, 10, 10, 18),
           children: [
             _AutoLoopMetricStrip(
               height: 134,
@@ -427,12 +542,12 @@ class _DashboardPageState extends State<DashboardPage> {
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             CustomerOrdersCard(
               orders: data.latestOrders,
               onViewAll: () => setState(() => _customerIndex = 2),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             const _DashboardContentFooter(),
           ],
         );
@@ -620,12 +735,14 @@ class _DashboardGlowPainter extends CustomPainter {
 class _DashboardDrawer extends StatelessWidget {
   const _DashboardDrawer({
     required this.items,
+    required this.language,
     required this.selectedIndex,
     required this.onSelect,
     required this.onLogout,
   });
 
   final List<String> items;
+  final AppLanguage language;
   final int selectedIndex;
   final ValueChanged<int> onSelect;
   final Future<void> Function() onLogout;
@@ -675,6 +792,7 @@ class _DashboardDrawer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isEn = language == AppLanguage.en;
     final width = min(MediaQuery.sizeOf(context).width * 0.78, 320.0);
     final dividerColor = AppColors.divider(context);
     final mutedText = AppColors.textMutedFor(context);
@@ -722,7 +840,7 @@ class _DashboardDrawer extends StatelessWidget {
                         color: active ? Colors.white : mutedText,
                       ),
                       title: Text(
-                        items[index],
+                        _menuLabel(items[index], language),
                         style: TextStyle(
                           fontSize: 13,
                           color: active ? Colors.white : baseText,
@@ -746,12 +864,13 @@ class _DashboardDrawer extends StatelessWidget {
                   onPressed: () async {
                     final ok = await showCvantConfirmPopup(
                       context: context,
-                      title: 'Konfirmasi Logout',
-                      message:
-                          'Anda akan keluar dari aplikasi. Lanjutkan logout?',
+                      title: isEn ? 'Logout Confirmation' : 'Konfirmasi Logout',
+                      message: isEn
+                          ? 'You will be signed out from the application. Continue?'
+                          : 'Anda akan keluar dari aplikasi. Lanjutkan logout?',
                       type: CvantPopupType.error,
-                      cancelLabel: 'Batal',
-                      confirmLabel: 'Logout',
+                      cancelLabel: isEn ? 'Cancel' : 'Batal',
+                      confirmLabel: isEn ? 'Logout' : 'Logout',
                     );
                     if (!ok) return;
                     if (!context.mounted) return;
@@ -764,7 +883,7 @@ class _DashboardDrawer extends StatelessWidget {
                     borderColor: AppColors.danger.withValues(alpha: 0.8),
                   ),
                   icon: const Icon(Icons.power_settings_new),
-                  label: Text('Log Out'),
+                  label: Text(isEn ? 'Log Out' : 'Keluar'),
                 ),
               ),
             ),
@@ -1822,7 +1941,9 @@ class _AdminCalendarViewState extends State<_AdminCalendarView> {
   }
 
   Future<void> _refresh() async {
-    setState(() => _future = _load());
+    setState(() {
+      _future = _load();
+    });
     await _future;
   }
 
@@ -1838,6 +1959,33 @@ class _AdminCalendarViewState extends State<_AdminCalendarView> {
     };
     final today = DateTime.now();
     final todayOnly = DateTime(today.year, today.month, today.day);
+
+    List<Map<String, dynamic>> detailRows(dynamic value) {
+      if (value is List) {
+        return value
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList();
+      }
+      return const <Map<String, dynamic>>[];
+    }
+
+    String resolveArmadaLabel(
+        Map<String, dynamic> invoice, Map<String, dynamic>? row) {
+      final rowArmadaId = '${row?['armada_id'] ?? ''}'.trim();
+      final invoiceArmadaId = '${invoice['armada_id'] ?? ''}'.trim();
+      final armada =
+          armadaById[rowArmadaId.isNotEmpty ? rowArmadaId : invoiceArmadaId];
+      if (armada != null) {
+        return '${armada['nama_truk'] ?? 'Armada'} - ${armada['plat_nomor'] ?? '-'}';
+      }
+
+      final manual = '${row?['armada_manual'] ?? ''}'.trim();
+      if (manual.isNotEmpty) return manual;
+      final fallback = '${row?['armada_label'] ?? row?['armada'] ?? ''}'.trim();
+      if (fallback.isNotEmpty) return fallback;
+      return 'Other';
+    }
 
     for (final invoice in invoices) {
       final invoiceId = '${invoice['id'] ?? ''}';
@@ -1857,43 +2005,52 @@ class _AdminCalendarViewState extends State<_AdminCalendarView> {
         ),
       );
 
-      final startDate = Formatters.parseDate(invoice['armada_start_date']);
-      final endDate = Formatters.parseDate(invoice['armada_end_date']);
-      if (startDate == null || endDate == null) {
-        continue;
-      }
+      final details = detailRows(invoice['rincian']);
+      final scheduleRows =
+          details.isNotEmpty ? details : <Map<String, dynamic>>[invoice];
 
-      final armadaId = '${invoice['armada_id'] ?? ''}';
-      final armada = armadaById[armadaId];
-      final armadaName = '${armada?['nama_truk'] ?? 'Armada'}';
-      final armadaPlate = '${armada?['plat_nomor'] ?? '-'}';
-      final normalizedStart =
-          DateTime(startDate.year, startDate.month, startDate.day);
-      final normalizedEnd = DateTime(endDate.year, endDate.month, endDate.day);
-      final statusColor = todayOnly.isAfter(normalizedEnd)
-          ? AppColors.success
-          : (todayOnly.isBefore(normalizedStart)
-              ? AppColors.blue
-              : AppColors.warning);
-
-      for (var day = normalizedStart;
-          !day.isAfter(normalizedEnd);
-          day = day.add(const Duration(days: 1))) {
-        events.add(
-          _CalendarEvent(
-            id: invoiceId,
-            type: 'armada',
-            title: '$armadaName - $armadaPlate',
-            subtitle:
-                '${Formatters.dmy(normalizedStart)} -> ${Formatters.dmy(normalizedEnd)}',
-            status: 'Fleet Schedule',
-            total: 0,
-            date: day,
-            startDate: normalizedStart,
-            endDate: normalizedEnd,
-            dotColor: statusColor,
-          ),
+      for (var i = 0; i < scheduleRows.length; i++) {
+        final row = scheduleRows[i];
+        final startDate = Formatters.parseDate(
+          row['armada_start_date'] ?? invoice['armada_start_date'],
         );
+        final endDate = Formatters.parseDate(
+          row['armada_end_date'] ?? invoice['armada_end_date'],
+        );
+        if (startDate == null || endDate == null) {
+          continue;
+        }
+
+        final normalizedStart =
+            DateTime(startDate.year, startDate.month, startDate.day);
+        final normalizedEnd =
+            DateTime(endDate.year, endDate.month, endDate.day);
+        final statusColor = todayOnly.isAfter(normalizedEnd)
+            ? AppColors.success
+            : (todayOnly.isBefore(normalizedStart)
+                ? AppColors.blue
+                : AppColors.warning);
+        final armadaLabel = resolveArmadaLabel(invoice, row);
+
+        for (var day = normalizedStart;
+            !day.isAfter(normalizedEnd);
+            day = day.add(const Duration(days: 1))) {
+          events.add(
+            _CalendarEvent(
+              id: '$invoiceId-$i-${_dateKey(day)}',
+              type: 'armada',
+              title: armadaLabel,
+              subtitle:
+                  '${Formatters.dmy(normalizedStart)} -> ${Formatters.dmy(normalizedEnd)}',
+              status: 'Fleet Schedule',
+              total: 0,
+              date: day,
+              startDate: normalizedStart,
+              endDate: normalizedEnd,
+              dotColor: statusColor,
+            ),
+          );
+        }
       }
     }
 
@@ -2056,7 +2213,9 @@ class _AdminCalendarViewState extends State<_AdminCalendarView> {
         if (snapshot.hasError || !snapshot.hasData) {
           return _ErrorView(
             message: snapshot.error.toString().replaceFirst('Exception: ', ''),
-            onRetry: () => setState(() => _future = _load()),
+            onRetry: () => setState(() {
+              _future = _load();
+            }),
           );
         }
 
@@ -2074,7 +2233,7 @@ class _AdminCalendarViewState extends State<_AdminCalendarView> {
           onRefresh: _refresh,
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(10),
             children: [
               _PanelCard(
                 child: Row(
@@ -2151,7 +2310,7 @@ class _AdminCalendarViewState extends State<_AdminCalendarView> {
                 final key = _dateKey(dayDate);
                 final items = eventsByDate[key] ?? const <_CalendarEvent>[];
                 return Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.only(bottom: 8),
                   child: _PanelCard(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2184,7 +2343,7 @@ class _AdminCalendarViewState extends State<_AdminCalendarView> {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 6),
                         if (items.isEmpty)
                           Text(
                             'No data',
@@ -2197,7 +2356,7 @@ class _AdminCalendarViewState extends State<_AdminCalendarView> {
                           ...items.map((event) {
                             final color = _eventColor(event);
                             return Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
+                              padding: const EdgeInsets.only(bottom: 6),
                               child: InkWell(
                                 onTap: () => _openEvent(event),
                                 borderRadius: BorderRadius.circular(8),
@@ -2260,7 +2419,7 @@ class _AdminCalendarViewState extends State<_AdminCalendarView> {
                   ),
                 );
               }),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               const _DashboardContentFooter(),
             ],
           ),
@@ -2316,7 +2475,9 @@ class _CustomerNotificationsViewState
   }
 
   Future<void> _refresh() async {
-    setState(() => _future = _load());
+    setState(() {
+      _future = _load();
+    });
     await _future;
   }
 
@@ -2418,7 +2579,9 @@ class _CustomerNotificationsViewState
         if (snapshot.hasError) {
           return _ErrorView(
             message: snapshot.error.toString().replaceFirst('Exception: ', ''),
-            onRetry: () => setState(() => _future = _load()),
+            onRetry: () => setState(() {
+              _future = _load();
+            }),
           );
         }
 
@@ -2587,6 +2750,7 @@ class _AdminCreateIncomeView extends StatefulWidget {
 }
 
 class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
+  static const _customerManualOptionId = '__other__';
   final _customer = TextEditingController();
   final _email = TextEditingController();
   final _phone = TextEditingController();
@@ -2595,18 +2759,20 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
   String _status = 'Unpaid';
   String _acceptedBy = 'Admin';
   bool _loading = false;
-  late Future<List<Map<String, dynamic>>> _armadaFuture;
+  late Future<List<dynamic>> _formFuture;
   final List<Map<String, dynamic>> _details = [];
   bool _prefillApplied = false;
   bool _prefillArmadaResolved = false;
   String _prefillArmadaName = '';
+  String _selectedCustomerOptionId = _customerManualOptionId;
+  int _detailFieldRefreshToken = 0;
   String? _linkedCustomerId;
   String? _linkedOrderId;
 
   @override
   void initState() {
     super.initState();
-    _armadaFuture = widget.repository.fetchArmadas();
+    _formFuture = _loadFormData();
     _details.add(_newDetail());
     _applyPrefill(widget.prefill);
   }
@@ -2671,6 +2837,81 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
       if (!mounted) return;
       widget.onPrefillConsumed?.call();
     });
+  }
+
+  Future<List<dynamic>> _loadFormData() {
+    return Future.wait<dynamic>([
+      widget.repository.fetchArmadas(),
+      widget.repository.fetchInvoiceCustomerOptions(),
+    ]);
+  }
+
+  void _applySavedCustomerOption(
+    String? optionId,
+    List<Map<String, dynamic>> options,
+  ) {
+    if (optionId == null) return;
+    if (optionId == _customerManualOptionId) {
+      setState(() {
+        _selectedCustomerOptionId = _customerManualOptionId;
+        _linkedCustomerId = null;
+        _linkedOrderId = null;
+      });
+      return;
+    }
+
+    final selected = options.cast<Map<String, dynamic>?>().firstWhere(
+          (option) => '${option?['id'] ?? ''}' == optionId,
+          orElse: () => null,
+        );
+    if (selected == null) return;
+
+    setState(() {
+      _selectedCustomerOptionId = optionId;
+      _linkedCustomerId = '${selected['customer_id'] ?? ''}'.trim().isEmpty
+          ? null
+          : '${selected['customer_id']}'.trim();
+      _linkedOrderId = null;
+      _customer.text = '${selected['customer_name'] ?? ''}'.trim();
+      _email.text = '${selected['email'] ?? ''}'.trim();
+      _phone.text = '${selected['phone'] ?? ''}'.trim();
+
+      if (_details.isEmpty) {
+        _details.add(_newDetail());
+      }
+      final first = _details.first;
+      first['lokasi_muat'] = _safeInputText(selected['lokasi_muat']);
+      first['lokasi_bongkar'] = _safeInputText(selected['lokasi_bongkar']);
+      first['muatan'] = _safeInputText(selected['muatan']);
+      first['nama_supir'] = _safeInputText(selected['nama_supir']);
+      first['armada_id'] = _safeInputText(selected['armada_id']);
+      first['armada_start_date'] =
+          _safeInputText(selected['armada_start_date']);
+      first['armada_end_date'] = _safeInputText(selected['armada_end_date']);
+      first['tonase'] = _safeNumberInputText(selected['tonase']);
+      first['harga'] = _safeNumberInputText(selected['harga']);
+      _detailFieldRefreshToken++;
+    });
+  }
+
+  String _safeInputText(dynamic value) {
+    final raw = (value ?? '').toString().trim();
+    if (raw.toLowerCase() == 'null') return '';
+    return raw;
+  }
+
+  String _safeNumberInputText(dynamic value) {
+    if (value == null) return '';
+    if (value is num) {
+      final number = value.toDouble();
+      if (number == number.truncateToDouble()) {
+        return number.toInt().toString();
+      }
+      return number.toString();
+    }
+    final raw = value.toString().trim();
+    if (raw.isEmpty || raw.toLowerCase() == 'null') return '';
+    return raw;
   }
 
   String _normalizeText(String value) {
@@ -2748,6 +2989,8 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
     return {
       'lokasi_muat': '',
       'lokasi_bongkar': '',
+      'muatan': '',
+      'nama_supir': '',
       'armada_id': '',
       'armada_start_date': '',
       'armada_end_date': '',
@@ -2758,6 +3001,28 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
 
   double _detailSubtotal(Map<String, dynamic> row) {
     return _toNum(row['tonase']) * _toNum(row['harga']);
+  }
+
+  String? _nullableInputText(dynamic value) {
+    final raw = value?.toString().trim() ?? '';
+    if (raw.isEmpty) return null;
+    final lowered = raw.toLowerCase();
+    if (lowered == 'null' || lowered == 'undefined' || lowered == '-') {
+      return null;
+    }
+    return raw;
+  }
+
+  Color _armadaStatusColor(String status) {
+    final lower = status.toLowerCase();
+    if (lower.contains('full')) return AppColors.warning;
+    if (lower.contains('ready')) return AppColors.success;
+    if (lower.contains('inactive') ||
+        lower.contains('non active') ||
+        lower.contains('non-active')) {
+      return AppColors.neutralOutline;
+    }
+    return AppColors.textMutedFor(context);
   }
 
   double get _subtotal {
@@ -2834,6 +3099,8 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
       return <String, dynamic>{
         'lokasi_muat': '${row['lokasi_muat']}'.trim(),
         'lokasi_bongkar': '${row['lokasi_bongkar']}'.trim(),
+        'muatan': _nullableInputText(row['muatan']),
+        'nama_supir': _nullableInputText(row['nama_supir']),
         'armada_id':
             '${row['armada_id']}'.trim().isEmpty ? null : '${row['armada_id']}',
         'armada_start_date': '${row['armada_start_date']}'.trim().isEmpty
@@ -2846,6 +3113,17 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
         'harga': _toNum(row['harga']),
       };
     }).toList();
+    final driverNames = detailsPayload
+        .map((row) => _nullableInputText(row['nama_supir']))
+        .whereType<String>()
+        .expand(
+          (value) => value
+              .split(RegExp(r'[,;/]'))
+              .map((part) => _nullableInputText(part))
+              .whereType<String>(),
+        )
+        .toSet()
+        .join(', ');
 
     setState(() => _loading = true);
     try {
@@ -2859,11 +3137,13 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
         dueDate: Formatters.parseDate(_dueDate.text),
         pickup: '${first['lokasi_muat']}',
         destination: '${first['lokasi_bongkar']}',
+        muatan: _nullableInputText(first['muatan']),
         armadaId: '${first['armada_id']}',
         armadaStartDate: Formatters.parseDate(first['armada_start_date']),
         armadaEndDate: Formatters.parseDate(first['armada_end_date']),
         tonase: _toNum(first['tonase']),
         harga: _toNum(first['harga']),
+        namaSupir: driverNames.isEmpty ? null : driverNames,
         acceptedBy: _acceptedBy,
         customerId: _linkedCustomerId,
         orderId: _linkedOrderId,
@@ -2884,9 +3164,21 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
       _details
         ..clear()
         ..add(_newDetail());
-      _armadaFuture = widget.repository.fetchArmadas();
+      _selectedCustomerOptionId = _customerManualOptionId;
+      _formFuture = _loadFormData();
+      await showCvantPopup(
+        context: context,
+        type: CvantPopupType.success,
+        title: 'Success',
+        message: 'Invoice income berhasil ditambahkan.',
+        okLabel: 'OK',
+        showOkButton: true,
+        showCloseButton: true,
+        barrierDismissible: false,
+        autoCloseAfter: const Duration(seconds: 3),
+      );
+      if (!mounted) return;
       widget.onCreated();
-      _snack('Invoice income berhasil ditambahkan.');
       setState(() {});
     } catch (e) {
       if (!mounted) return;
@@ -2907,8 +3199,8 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<List<Map<String, dynamic>>>(
-      future: _armadaFuture,
+    return FutureBuilder<List<dynamic>>(
+      future: _formFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
           return const _LoadingView();
@@ -2916,13 +3208,41 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
         if (snapshot.hasError) {
           return _ErrorView(
             message: snapshot.error.toString().replaceFirst('Exception: ', ''),
-            onRetry: () => setState(
-                () => _armadaFuture = widget.repository.fetchArmadas()),
+            onRetry: () => setState(() {
+              _formFuture = _loadFormData();
+            }),
           );
         }
 
-        final armadas = snapshot.data ?? [];
+        final payload = snapshot.data;
+        if (payload == null || payload.length < 2) {
+          return _ErrorView(
+            message: 'Gagal memuat data form invoice.',
+            onRetry: () => setState(() {
+              _formFuture = _loadFormData();
+            }),
+          );
+        }
+        final armadas = (payload[0] is List
+                ? (payload[0] as List)
+                    .whereType<Map>()
+                    .map((item) => Map<String, dynamic>.from(item))
+                    .toList()
+                : const <Map<String, dynamic>>[])
+            .cast<Map<String, dynamic>>();
+        final customerOptions = (payload[1] is List
+                ? (payload[1] as List)
+                    .whereType<Map>()
+                    .map((item) => Map<String, dynamic>.from(item))
+                    .toList()
+                : const <Map<String, dynamic>>[])
+            .cast<Map<String, dynamic>>();
         _tryResolvePrefillArmada(armadas);
+        final selectedCustomerValue = customerOptions.any(
+                    (item) => '${item['id']}' == _selectedCustomerOptionId) ||
+                _selectedCustomerOptionId == _customerManualOptionId
+            ? _selectedCustomerOptionId
+            : _customerManualOptionId;
         return ListView(
           padding: const EdgeInsets.all(12),
           children: [
@@ -2976,6 +3296,27 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                     ],
                   ),
                   const SizedBox(height: 12),
+                  CvantDropdownField<String>(
+                    initialValue: selectedCustomerValue,
+                    decoration: const InputDecoration(
+                      labelText: 'Data Customer Tersimpan',
+                    ),
+                    items: [
+                      ...customerOptions.map(
+                        (option) => DropdownMenuItem<String>(
+                          value: '${option['id']}',
+                          child: Text('${option['label'] ?? '-'}'),
+                        ),
+                      ),
+                      const DropdownMenuItem<String>(
+                        value: _customerManualOptionId,
+                        child: Text('Other (Input Manual)'),
+                      ),
+                    ],
+                    onChanged: (value) =>
+                        _applySavedCustomerOption(value, customerOptions),
+                  ),
+                  const SizedBox(height: 10),
                   TextField(
                     controller: _customer,
                     decoration: const InputDecoration(
@@ -3023,6 +3364,9 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                       child: Column(
                         children: [
                           TextFormField(
+                            key: ValueKey(
+                              'lokasi_muat-$index-$_detailFieldRefreshToken',
+                            ),
                             initialValue: '${row['lokasi_muat']}',
                             decoration:
                                 const InputDecoration(hintText: 'Lokasi Muat'),
@@ -3030,11 +3374,36 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                           ),
                           const SizedBox(height: 8),
                           TextFormField(
+                            key: ValueKey(
+                              'lokasi_bongkar-$index-$_detailFieldRefreshToken',
+                            ),
                             initialValue: '${row['lokasi_bongkar']}',
                             decoration: const InputDecoration(
                               hintText: 'Lokasi Bongkar',
                             ),
                             onChanged: (value) => row['lokasi_bongkar'] = value,
+                          ),
+                          const SizedBox(height: 8),
+                          TextFormField(
+                            key: ValueKey(
+                              'muatan-$index-$_detailFieldRefreshToken',
+                            ),
+                            initialValue: '${row['muatan'] ?? ''}',
+                            decoration: const InputDecoration(
+                              hintText: 'Muatan (Opsional)',
+                            ),
+                            onChanged: (value) => row['muatan'] = value,
+                          ),
+                          const SizedBox(height: 8),
+                          TextFormField(
+                            key: ValueKey(
+                              'nama_supir-$index-$_detailFieldRefreshToken',
+                            ),
+                            initialValue: '${row['nama_supir'] ?? ''}',
+                            decoration: const InputDecoration(
+                              hintText: 'Nama Supir (Opsional)',
+                            ),
+                            onChanged: (value) => row['nama_supir'] = value,
                           ),
                           const SizedBox(height: 8),
                           CvantDropdownField<String>(
@@ -3051,8 +3420,24 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                               ...armadas.map(
                                 (a) => DropdownMenuItem(
                                   value: '${a['id']}',
-                                  child: Text(
-                                    '${a['nama_truk'] ?? '-'} - ${a['plat_nomor'] ?? '-'} (${a['status'] ?? 'Ready'})',
+                                  child: Text.rich(
+                                    TextSpan(
+                                      children: [
+                                        TextSpan(
+                                          text:
+                                              '${a['nama_truk'] ?? '-'} - ${a['plat_nomor'] ?? '-'} ',
+                                        ),
+                                        TextSpan(
+                                          text: '(${a['status'] ?? 'Ready'})',
+                                          style: TextStyle(
+                                            color: _armadaStatusColor(
+                                              '${a['status'] ?? 'Ready'}',
+                                            ),
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ),
@@ -3113,6 +3498,9 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                             children: [
                               Expanded(
                                 child: TextFormField(
+                                  key: ValueKey(
+                                    'tonase-$index-$_detailFieldRefreshToken',
+                                  ),
                                   initialValue: '${row['tonase']}',
                                   keyboardType:
                                       const TextInputType.numberWithOptions(
@@ -3129,6 +3517,9 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                               const SizedBox(width: 8),
                               Expanded(
                                 child: TextFormField(
+                                  key: ValueKey(
+                                    'harga-$index-$_detailFieldRefreshToken',
+                                  ),
                                   initialValue: '${row['harga']}',
                                   keyboardType:
                                       const TextInputType.numberWithOptions(
@@ -3263,6 +3654,8 @@ class _AdminCreateExpenseView extends StatefulWidget {
 class _AdminCreateExpenseViewState extends State<_AdminCreateExpenseView> {
   DateTime _date = DateTime.now();
   final List<Map<String, dynamic>> _details = [];
+  String _status = 'Unpaid';
+  String _recordedBy = 'Admin';
   bool _loading = false;
 
   @override
@@ -3336,19 +3729,33 @@ class _AdminCreateExpenseViewState extends State<_AdminCreateExpenseView> {
     try {
       await widget.repository.createExpense(
         total: _totalExpense,
-        status: 'Recorded',
+        status: _status,
         expenseDate: _date,
         note: note,
         kategori: detailsPayload.first['nama']?.toString(),
         keterangan: note,
+        recordedBy: _recordedBy,
         details: detailsPayload,
       );
       if (!mounted) return;
       _details
         ..clear()
         ..add(_newDetail());
+      _status = 'Unpaid';
+      _recordedBy = 'Admin';
+      await showCvantPopup(
+        context: context,
+        type: CvantPopupType.success,
+        title: 'Success',
+        message: 'Expense berhasil ditambahkan.',
+        okLabel: 'OK',
+        showOkButton: true,
+        showCloseButton: true,
+        barrierDismissible: false,
+        autoCloseAfter: const Duration(seconds: 3),
+      );
+      if (!mounted) return;
       widget.onCreated();
-      _snack('Expense berhasil ditambahkan.');
       setState(() {});
     } catch (e) {
       if (!mounted) return;
@@ -3461,6 +3868,36 @@ class _AdminCreateExpenseViewState extends State<_AdminCreateExpenseView> {
                 decoration:
                     const InputDecoration(labelText: 'Total Pengeluaran'),
                 child: Text(Formatters.rupiah(_totalExpense)),
+              ),
+              const SizedBox(height: 8),
+              CvantDropdownField<String>(
+                initialValue: _status,
+                decoration: const InputDecoration(labelText: 'Status'),
+                items: const ['Unpaid', 'Paid', 'Waiting', 'Cancelled']
+                    .map(
+                      (item) => DropdownMenuItem<String>(
+                        value: item,
+                        child: Text(item),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) =>
+                    setState(() => _status = value ?? _status),
+              ),
+              const SizedBox(height: 8),
+              CvantDropdownField<String>(
+                initialValue: _recordedBy,
+                decoration: const InputDecoration(labelText: 'Dicatat Oleh'),
+                items: const ['Admin', 'Owner']
+                    .map(
+                      (item) => DropdownMenuItem<String>(
+                        value: item,
+                        child: Text(item),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) =>
+                    setState(() => _recordedBy = value ?? _recordedBy),
               ),
               const SizedBox(height: 14),
               SizedBox(
@@ -3805,7 +4242,9 @@ class _CustomerCreateOrderViewState extends State<_CustomerCreateOrderView> {
         if (snapshot.hasError) {
           return _ErrorView(
             message: snapshot.error.toString().replaceFirst('Exception: ', ''),
-            onRetry: () => setState(() => _future = _load()),
+            onRetry: () => setState(() {
+              _future = _load();
+            }),
           );
         }
 
@@ -4066,6 +4505,11 @@ class _StatusPill extends StatelessWidget {
         lower.contains('non active') ||
         lower.contains('non-active');
     final isActive = lower.contains('active') && !isNonActive;
+    final isCancelled = lower.contains('cancel') || lower.contains('reject');
+    final isUnpaid = lower.contains('unpaid');
+    final isWaiting = lower.contains('waiting') || lower.contains('pending');
+    final isPaid = lower.contains('paid') && !isUnpaid;
+    final isRecorded = lower.contains('recorded');
     final color = lower.contains('ready')
         ? AppColors.success
         : lower.contains('full')
@@ -4074,13 +4518,19 @@ class _StatusPill extends StatelessWidget {
                 ? AppColors.success
                 : isNonActive
                     ? AppColors.neutralOutline
-                    : lower.contains('paid')
-                        ? AppColors.success
-                        : lower.contains('accept')
-                            ? AppColors.blue
-                            : lower.contains('reject')
-                                ? AppColors.danger
-                                : AppColors.warning;
+                    : isCancelled
+                        ? AppColors.danger
+                        : isUnpaid
+                            ? AppColors.neutralOutline
+                            : isWaiting
+                                ? AppColors.warning
+                                : isRecorded
+                                    ? AppColors.neutralOutline
+                                    : isPaid
+                                        ? AppColors.success
+                                        : lower.contains('accept')
+                                            ? AppColors.blue
+                                            : AppColors.warning;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -4106,11 +4556,13 @@ class _AdminInvoiceListView extends StatefulWidget {
     required this.repository,
     required this.onQuickMenuSelect,
     this.isOwner = false,
+    this.onDataChanged,
   });
 
   final DashboardRepository repository;
   final ValueChanged<int> onQuickMenuSelect;
   final bool isOwner;
+  final VoidCallback? onDataChanged;
 
   @override
   State<_AdminInvoiceListView> createState() => _AdminInvoiceListViewState();
@@ -4158,8 +4610,14 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
   }
 
   Future<void> _refresh() async {
-    setState(() => _future = _load());
+    setState(() {
+      _future = _load();
+    });
     await _future;
+  }
+
+  void _notifyDataChanged() {
+    widget.onDataChanged?.call();
   }
 
   Future<void> _deleteInvoice(String id) async {
@@ -4168,6 +4626,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
       if (!mounted) return;
       _snack('Invoice berhasil dihapus.');
       await _refresh();
+      _notifyDataChanged();
     } catch (e) {
       if (!mounted) return;
       _snack(e.toString().replaceFirst('Exception: ', ''), error: true);
@@ -4180,6 +4639,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
       if (!mounted) return;
       _snack('Expense berhasil dihapus.');
       await _refresh();
+      _notifyDataChanged();
     } catch (e) {
       if (!mounted) return;
       _snack(e.toString().replaceFirst('Exception: ', ''), error: true);
@@ -4403,10 +4863,13 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                     ...detailList.map((row) {
                       final tonase = _toNum(row['tonase']);
                       final harga = _toNum(row['harga']);
+                      final driver = '${row['nama_supir'] ?? ''}'.trim();
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 6),
                         child: Text(
-                          '- ${row['lokasi_muat'] ?? '-'} -> ${row['lokasi_bongkar'] ?? '-'} | ${tonase.toStringAsFixed(2)} x ${Formatters.rupiah(harga)}',
+                          driver.isEmpty
+                              ? '- ${row['lokasi_muat'] ?? '-'} -> ${row['lokasi_bongkar'] ?? '-'} | ${tonase.toStringAsFixed(2)} x ${Formatters.rupiah(harga)}'
+                              : '- ${row['lokasi_muat'] ?? '-'} -> ${row['lokasi_bongkar'] ?? '-'} | Supir: $driver | ${tonase.toStringAsFixed(2)} x ${Formatters.rupiah(harga)}',
                         ),
                       );
                     }),
@@ -4416,13 +4879,1094 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
             ),
           ),
           actions: [
+            OutlinedButton.icon(
+              onPressed: () => _printInvoicePdf(item, detailList),
+              style: CvantButtonStyles.outlined(
+                context,
+                color: AppColors.blue,
+                borderColor: AppColors.blue,
+                minimumSize: const Size(96, 40),
+              ),
+              icon: const Icon(Icons.print_outlined, size: 16),
+              label: const Text('Print'),
+            ),
             FilledButton(
+              style: CvantButtonStyles.filled(
+                context,
+                color: AppColors.blue,
+                minimumSize: const Size(96, 40),
+              ),
               onPressed: () => Navigator.pop(context),
-              child: Text('Tutup'),
+              child: const Text('Tutup'),
             ),
           ],
         );
       },
+    );
+  }
+
+  Future<void> _printInvoicePdf(
+    Map<String, dynamic> item,
+    List<Map<String, dynamic>> detailList,
+  ) async {
+    try {
+      // <= 13 detail rows: print in half-sheet layout (50:50 on portrait paper).
+      // > 13 detail rows: switch to full-sheet portrait layout.
+      final usePortrait = detailList.length > 13;
+      final subtotal = _toNum(item['total_biaya']);
+      final pph = _toNum(item['pph']);
+      final total = _toNum(item['total_bayar'] ?? item['total_biaya']);
+      final invoiceNumber = '${item['no_invoice'] ?? '-'}';
+      pw.MemoryImage? kopLogo;
+      try {
+        final logoBytes = await rootBundle.load('assets/images/iconapk.png');
+        kopLogo = pw.MemoryImage(logoBytes.buffer.asUint8List());
+      } catch (_) {
+        kopLogo = null;
+      }
+      final armadas = await widget.repository.fetchArmadas();
+      final armadaPlateById = <String, String>{
+        for (final armada in armadas)
+          '${armada['id'] ?? ''}':
+              '${armada['plat_nomor'] ?? ''}'.trim().toUpperCase(),
+      };
+
+      String resolveNoPolisi(Map<String, dynamic> row) {
+        final rowArmadaId = '${row['armada_id'] ?? item['armada_id'] ?? ''}';
+        final byArmada = armadaPlateById[rowArmadaId.trim()];
+        if (byArmada != null && byArmada.isNotEmpty && byArmada != '-') {
+          return byArmada;
+        }
+        final direct = '${row['plat_nomor'] ?? row['no_polisi'] ?? ''}'
+            .trim()
+            .toUpperCase();
+        if (direct.isNotEmpty && direct != '-') return direct;
+        final armadaManual = '${row['armada_manual'] ?? ''}'.trim();
+        final armadaLabel = armadaManual.isNotEmpty
+            ? armadaManual
+            : '${row['armada_label'] ?? row['armada'] ?? ''}';
+        final match = RegExp(
+          r'\b[A-Z]{1,2}\s?\d{1,4}\s?[A-Z]{1,3}\b',
+        ).firstMatch(armadaLabel.toUpperCase());
+        return (match?.group(0) ?? '-').trim();
+      }
+
+      String formatTonase(dynamic value) {
+        final tonase = _toNum(value);
+        if (tonase == tonase.roundToDouble()) {
+          return tonase.toStringAsFixed(0);
+        }
+        return tonase
+            .toStringAsFixed(3)
+            .replaceAll(RegExp(r'0+$'), '')
+            .replaceAll(RegExp(r'\.$'), '');
+      }
+
+      pw.Widget buildInvoiceContent({
+        required bool compact,
+      }) {
+        const infoFont = 9.5;
+        final signatureLeftOffset = compact ? 72.0 : 86.0;
+        final signatureNameOffset = compact ? 5.0 : 6.0;
+        final minRows = compact ? 13 : 35;
+        final printableRows = detailList.length >= minRows
+            ? detailList
+            : <Map<String, dynamic>>[
+                ...detailList,
+                ...List<Map<String, dynamic>>.generate(
+                  minRows - detailList.length,
+                  (_) => <String, dynamic>{},
+                ),
+              ];
+        String? printable(dynamic value) {
+          final raw = value?.toString().trim() ?? '';
+          if (raw.isEmpty || raw == '-' || raw.toLowerCase() == 'null') {
+            return null;
+          }
+          return raw;
+        }
+
+        final customerName = printable(item['nama_pelanggan']) ?? '-';
+        final tanggalRow = 'Tanggal: ${Formatters.dmy(item['tanggal'])}';
+        final logoHeight = compact ? 42.0 : 56.0;
+        const tableRowVPadding = 2.4;
+        const tableBodyRowHeight = 16.0;
+        final invoiceBlockWidth = compact ? 120.0 : 146.0;
+        final kopWordStyle = pw.TextStyle(
+          fontSize: compact ? 34.0 : 47.0,
+          fontWeight: pw.FontWeight.bold,
+          fontStyle: pw.FontStyle.italic,
+          letterSpacing: 5.0,
+          wordSpacing: 1.15,
+          color: PdfColors.blue900,
+        );
+        pw.Widget buildUltraBoldKop(String text) {
+          // Keep boldness very strong while avoiding vertical clipping.
+          // We bias thickness to the right (X) and keep Y spread thinner.
+          final maxX = compact ? 3.2 : 4.8;
+          final maxY = compact ? 0.62 : 0.90;
+          final stepX = compact ? 0.14 : 0.20;
+          final stepY = compact ? 0.14 : 0.20;
+          final layers = <pw.Widget>[
+            // Non-positioned base text keeps Stack intrinsic size valid.
+            pw.Text(text, style: kopWordStyle),
+          ];
+          for (double dx = 0; dx <= maxX + 0.0001; dx += stepX) {
+            for (double dy = 0; dy <= maxY + 0.0001; dy += stepY) {
+              if (dx.abs() < 0.0001 && dy.abs() < 0.0001) continue;
+              final ellipseNorm =
+                  ((dx * dx) / (maxX * maxX)) +
+                      ((dy * dy) / (maxY * maxY));
+              if (ellipseNorm > 1.0) continue;
+              layers.add(
+                pw.Positioned(
+                  left: dx,
+                  top: dy,
+                  child: pw.Text(text, style: kopWordStyle),
+                ),
+              );
+            }
+          }
+          return pw.Padding(
+            // Extra right/bottom room so ultra-bold layers never get clipped.
+            padding: pw.EdgeInsets.only(right: maxX + 0.8, bottom: maxY + 0.4),
+            child: pw.Stack(
+              children: layers,
+            ),
+          );
+        }
+
+        return pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Padding(
+              padding:
+                  const pw.EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+              child: pw.Row(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  if (kopLogo != null)
+                    pw.Image(
+                      kopLogo,
+                      height: logoHeight,
+                      width: logoHeight,
+                      fit: pw.BoxFit.contain,
+                    )
+                  else
+                    pw.SizedBox(
+                      height: logoHeight,
+                      width: logoHeight,
+                    ),
+                  pw.SizedBox(width: 4),
+                  pw.Expanded(
+                    child: pw.Container(
+                      height: logoHeight,
+                      alignment: pw.Alignment.topLeft,
+                      child: buildUltraBoldKop('CV AS NUSA TRANS'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            pw.SizedBox(height: 1.5),
+            pw.Container(
+              width: double.infinity,
+              height: 1.2,
+              color: PdfColors.black,
+            ),
+            pw.SizedBox(height: 4),
+            pw.Row(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.SizedBox(
+                      width: invoiceBlockWidth,
+                      child: pw.Center(
+                        child: pw.Text(
+                          'I N V O I C E',
+                          style: pw.TextStyle(
+                            fontSize: compact ? 18 : 23,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                    pw.SizedBox(height: 1.5),
+                    pw.Container(
+                      width: invoiceBlockWidth,
+                      height: 0.9,
+                      color: PdfColors.grey700,
+                    ),
+                    pw.SizedBox(height: 2.5),
+                    pw.SizedBox(
+                      width: invoiceBlockWidth,
+                      child: pw.Center(
+                        child: pw.Text(
+                          'No : $invoiceNumber',
+                          style: pw.TextStyle(
+                            fontSize: compact ? 10 : 11,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.black,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                pw.Spacer(),
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.end,
+                  children: [
+                    pw.Text(
+                      tanggalRow,
+                      textAlign: pw.TextAlign.right,
+                      style: const pw.TextStyle(fontSize: infoFont),
+                    ),
+                    pw.SizedBox(height: 4),
+                    pw.Row(
+                      mainAxisSize: pw.MainAxisSize.min,
+                      crossAxisAlignment: pw.CrossAxisAlignment.end,
+                      children: [
+                        pw.Text(
+                          'Kepada Yth:',
+                          textAlign: pw.TextAlign.right,
+                          style: const pw.TextStyle(fontSize: infoFont),
+                        ),
+                        pw.SizedBox(width: 4),
+                        pw.Container(
+                          width: compact ? 106 : 148,
+                          alignment: pw.Alignment.center,
+                          padding: const pw.EdgeInsets.only(bottom: 1),
+                          decoration: const pw.BoxDecoration(
+                            border: pw.Border(
+                              bottom: pw.BorderSide(
+                                color: PdfColors.grey700,
+                                width: 0.9,
+                              ),
+                            ),
+                          ),
+                          child: pw.Text(
+                            customerName,
+                            textAlign: pw.TextAlign.center,
+                            style: pw.TextStyle(
+                              fontSize: infoFont,
+                              fontWeight: pw.FontWeight.bold,
+                              fontStyle: pw.FontStyle.italic,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            pw.SizedBox(height: 10),
+            pw.Table(
+              border: pw.TableBorder.all(color: PdfColors.grey400),
+              columnWidths: _buildIncomeTableColumnWidths(printableRows),
+              children: [
+                pw.TableRow(
+                  decoration: const pw.BoxDecoration(
+                    color: PdfColor(0.12, 0.13, 0.15),
+                  ),
+                  children: [
+                    _pdfCell(
+                      'NO',
+                      bold: true,
+                      alignCenter: true,
+                      textColor: PdfColors.white,
+                      fontSize: 9,
+                      hPadding: 4,
+                      vPadding: tableRowVPadding,
+                      singleLineAutoShrink: true,
+                      softLimitChars: 3,
+                      minFontSize: 7,
+                    ),
+                    _pdfCell(
+                      'TANGGAL',
+                      bold: true,
+                      alignCenter: true,
+                      textColor: PdfColors.white,
+                      fontSize: 9,
+                      hPadding: 4,
+                      vPadding: tableRowVPadding,
+                      singleLineAutoShrink: true,
+                      softLimitChars: 8,
+                      minFontSize: 6.8,
+                    ),
+                    _pdfCell(
+                      'PLAT',
+                      bold: true,
+                      alignCenter: true,
+                      textColor: PdfColors.white,
+                      fontSize: 9,
+                      hPadding: 4,
+                      vPadding: tableRowVPadding,
+                      singleLineAutoShrink: true,
+                      softLimitChars: 6,
+                      minFontSize: 6.8,
+                    ),
+                    _pdfCell(
+                      'MUATAN',
+                      bold: true,
+                      alignCenter: true,
+                      textColor: PdfColors.white,
+                      fontSize: 9,
+                      hPadding: 4,
+                      vPadding: tableRowVPadding,
+                      singleLineAutoShrink: true,
+                      softLimitChars: 8,
+                      minFontSize: 6.8,
+                    ),
+                    _pdfCell(
+                      'MUAT',
+                      bold: true,
+                      alignCenter: true,
+                      textColor: PdfColors.white,
+                      fontSize: 9,
+                      hPadding: 4,
+                      vPadding: tableRowVPadding,
+                      singleLineAutoShrink: true,
+                      softLimitChars: 6,
+                      minFontSize: 6.8,
+                    ),
+                    _pdfCell(
+                      'BONGKAR',
+                      bold: true,
+                      alignCenter: true,
+                      textColor: PdfColors.white,
+                      fontSize: 9,
+                      hPadding: 4,
+                      vPadding: tableRowVPadding,
+                      singleLineAutoShrink: true,
+                      softLimitChars: 8,
+                      minFontSize: 6.8,
+                    ),
+                    _pdfCell(
+                      'TONASE',
+                      bold: true,
+                      alignCenter: true,
+                      textColor: PdfColors.white,
+                      fontSize: 9,
+                      hPadding: 4,
+                      vPadding: tableRowVPadding,
+                      singleLineAutoShrink: true,
+                      softLimitChars: 8,
+                      minFontSize: 6.8,
+                    ),
+                    _pdfCell(
+                      'HARGA',
+                      bold: true,
+                      alignCenter: true,
+                      textColor: PdfColors.white,
+                      fontSize: 9,
+                      hPadding: 4,
+                      vPadding: tableRowVPadding,
+                      singleLineAutoShrink: true,
+                      softLimitChars: 7,
+                      minFontSize: 6.8,
+                    ),
+                    _pdfCell(
+                      'TOTAL',
+                      bold: true,
+                      alignCenter: true,
+                      textColor: PdfColors.white,
+                      fontSize: 9,
+                      hPadding: 4,
+                      vPadding: tableRowVPadding,
+                      singleLineAutoShrink: true,
+                      softLimitChars: 7,
+                      minFontSize: 6.8,
+                    ),
+                  ],
+                ),
+                ...List<pw.TableRow>.generate(printableRows.length, (index) {
+                  final row = printableRows[index];
+                  final hasData = index < detailList.length;
+                  const blankCell = '\u00A0';
+                  final tonase = hasData ? _toNum(row['tonase']) : 0;
+                  final harga = hasData ? _toNum(row['harga']) : 0;
+                  final rowSubtotal = tonase * harga;
+                  final tanggal = hasData
+                      ? Formatters.dmy(row['tanggal'] ?? item['tanggal'])
+                      : blankCell;
+                  return pw.TableRow(
+                    children: [
+                      _pdfCell(
+                        hasData ? '${index + 1}' : blankCell,
+                        alignCenter: true,
+                        hPadding: 4,
+                        vPadding: tableRowVPadding,
+                        fixedHeight: tableBodyRowHeight,
+                        singleLineAutoShrink: true,
+                        softLimitChars: 2,
+                        minFontSize: 7,
+                      ),
+                      _pdfCell(
+                        tanggal,
+                        alignCenter: true,
+                        hPadding: 4,
+                        vPadding: tableRowVPadding,
+                        fixedHeight: tableBodyRowHeight,
+                        singleLineAutoShrink: true,
+                        softLimitChars: 10,
+                      ),
+                      _pdfCell(
+                        hasData ? resolveNoPolisi(row) : blankCell,
+                        alignCenter: true,
+                        hPadding: 4,
+                        vPadding: tableRowVPadding,
+                        fixedHeight: tableBodyRowHeight,
+                        singleLineAutoShrink: true,
+                        softLimitChars: 12,
+                      ),
+                      _pdfCell(
+                        hasData ? '${row['muatan'] ?? '-'}' : blankCell,
+                        alignCenter: true,
+                        hPadding: 4,
+                        vPadding: tableRowVPadding,
+                        fixedHeight: tableBodyRowHeight,
+                        singleLineAutoShrink: true,
+                        softLimitChars: 14,
+                        minFontSize: 6.5,
+                      ),
+                      _pdfCell(
+                        hasData ? '${row['lokasi_muat'] ?? '-'}' : blankCell,
+                        alignCenter: true,
+                        hPadding: 4,
+                        vPadding: tableRowVPadding,
+                        fixedHeight: tableBodyRowHeight,
+                        singleLineAutoShrink: true,
+                        softLimitChars: 32,
+                        minFontSize: 6.5,
+                      ),
+                      _pdfCell(
+                        hasData ? '${row['lokasi_bongkar'] ?? '-'}' : blankCell,
+                        alignCenter: true,
+                        hPadding: 4,
+                        vPadding: tableRowVPadding,
+                        fixedHeight: tableBodyRowHeight,
+                        singleLineAutoShrink: true,
+                        softLimitChars: 32,
+                        minFontSize: 6.5,
+                      ),
+                      _pdfCell(
+                        hasData ? formatTonase(tonase) : blankCell,
+                        alignCenter: true,
+                        hPadding: 4,
+                        vPadding: tableRowVPadding,
+                        fixedHeight: tableBodyRowHeight,
+                        singleLineAutoShrink: true,
+                        softLimitChars: 8,
+                      ),
+                      _pdfCell(
+                        hasData ? Formatters.rupiah(harga) : blankCell,
+                        alignCenter: true,
+                        hPadding: 4,
+                        vPadding: tableRowVPadding,
+                        fixedHeight: tableBodyRowHeight,
+                        singleLineAutoShrink: true,
+                        softLimitChars: 10,
+                        minFontSize: 6.2,
+                      ),
+                      _pdfCell(
+                        hasData ? Formatters.rupiah(rowSubtotal) : blankCell,
+                        alignCenter: true,
+                        hPadding: 4,
+                        vPadding: tableRowVPadding,
+                        fixedHeight: tableBodyRowHeight,
+                        singleLineAutoShrink: true,
+                        softLimitChars: 10,
+                        minFontSize: 6.2,
+                      ),
+                    ],
+                  );
+                }),
+              ],
+            ),
+            pw.SizedBox(height: 12),
+            pw.Row(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Expanded(
+                  child: pw.Padding(
+                    padding: pw.EdgeInsets.only(left: signatureLeftOffset),
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text('Hormat kami,'),
+                        pw.SizedBox(height: compact ? 72 : 102),
+                        pw.Padding(
+                          padding:
+                              pw.EdgeInsets.only(left: signatureNameOffset),
+                          child: pw.Text(
+                            'A N T O K',
+                            style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                pw.SizedBox(width: 16),
+                pw.SizedBox(
+                  width: compact ? 200 : 220,
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                    children: [
+                      pw.Row(
+                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                        children: [
+                          pw.Text(
+                            'Subtotal',
+                            style: const pw.TextStyle(fontSize: infoFont),
+                          ),
+                          pw.Text(
+                            Formatters.rupiah(subtotal),
+                            style: const pw.TextStyle(fontSize: infoFont),
+                          ),
+                        ],
+                      ),
+                      pw.SizedBox(height: 3),
+                      pw.Row(
+                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                        children: [
+                          pw.Text(
+                            'PPH (2%)',
+                            style: const pw.TextStyle(fontSize: infoFont),
+                          ),
+                          pw.Text(
+                            Formatters.rupiah(pph),
+                            style: const pw.TextStyle(fontSize: infoFont),
+                          ),
+                        ],
+                      ),
+                      pw.Divider(height: 8),
+                      pw.Row(
+                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                        children: [
+                          pw.Text(
+                            'Total Bayar',
+                            style: pw.TextStyle(
+                              fontSize: infoFont,
+                              fontWeight: pw.FontWeight.bold,
+                            ),
+                          ),
+                          pw.Text(
+                            Formatters.rupiah(total),
+                            style: pw.TextStyle(
+                              fontSize: infoFont,
+                              fontWeight: pw.FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        );
+      }
+
+      await Printing.layoutPdf(
+        name: 'invoice-$invoiceNumber',
+        onLayout: (format) async {
+          final doc = pw.Document();
+          final margin = usePortrait ? 24.0 : 18.0;
+
+          if (usePortrait) {
+            doc.addPage(
+              pw.MultiPage(
+                pageFormat: format,
+                margin: pw.EdgeInsets.all(margin),
+                build: (_) => [
+                  buildInvoiceContent(compact: false),
+                ],
+              ),
+            );
+          } else {
+            final usableHeight = format.height - (margin * 2);
+            final halfHeight = usableHeight / 2;
+            doc.addPage(
+              pw.Page(
+                pageFormat: format,
+                margin: pw.EdgeInsets.all(margin),
+                build: (_) {
+                  return pw.Column(
+                    children: [
+                      pw.Container(
+                        height: halfHeight,
+                        padding: const pw.EdgeInsets.only(bottom: 8),
+                        decoration: const pw.BoxDecoration(
+                          border: pw.Border(
+                            bottom: pw.BorderSide(
+                              color: PdfColors.grey400,
+                              width: 0.7,
+                            ),
+                          ),
+                        ),
+                        child: buildInvoiceContent(compact: true),
+                      ),
+                      pw.SizedBox(
+                        height: halfHeight,
+                      ),
+                    ],
+                  );
+                },
+              ),
+            );
+          }
+          return doc.save();
+        },
+      );
+    } catch (e) {
+      if (!mounted) return;
+      _snack(
+        'Gagal print invoice: ${e.toString().replaceFirst('Exception: ', '')}',
+        error: true,
+      );
+    }
+  }
+
+  Map<int, pw.TableColumnWidth> _buildIncomeTableColumnWidths(
+    List<Map<String, dynamic>> detailList,
+  ) {
+    var maxMuat = 12;
+    var maxBongkar = 12;
+    var maxPlate = 8;
+    var maxMuatan = 8;
+    var maxHarga = 10;
+    var maxTotal = 10;
+    for (final row in detailList) {
+      maxMuat = max(maxMuat, '${row['lokasi_muat'] ?? ''}'.trim().length);
+      maxBongkar = max(
+        maxBongkar,
+        '${row['lokasi_bongkar'] ?? ''}'.trim().length,
+      );
+      maxMuatan = max(maxMuatan, '${row['muatan'] ?? ''}'.trim().length);
+      final plate = '${row['plat_nomor'] ?? row['no_polisi'] ?? ''}'.trim();
+      maxPlate = max(maxPlate, plate.length);
+      final hargaText = Formatters.rupiah(_toNum(row['harga']));
+      final totalText =
+          Formatters.rupiah(_toNum(row['tonase']) * _toNum(row['harga']));
+      maxHarga = max(maxHarga, hargaText.length);
+      maxTotal = max(maxTotal, totalText.length);
+    }
+
+    final totalRouteChars = max(1, maxMuat + maxBongkar);
+    final muatShare = maxMuat / totalRouteChars;
+    final bongkarShare = maxBongkar / totalRouteChars;
+    const routeBudgetFlex = 2.55;
+    final muatFlex = (routeBudgetFlex * muatShare).clamp(1.2, 1.9).toDouble();
+    final bongkarFlex =
+        (routeBudgetFlex * bongkarShare).clamp(1.2, 1.9).toDouble();
+    final plateFlex = (maxPlate / 9).clamp(1.0, 1.35).toDouble();
+    final muatanFlex = (maxMuatan / 8.5).clamp(0.95, 1.45).toDouble();
+    final hargaFlex = (maxHarga / 13).clamp(0.62, 0.9).toDouble();
+    final totalFlex = (maxTotal / 10).clamp(1.05, 1.45).toDouble();
+
+    return {
+      0: const pw.FixedColumnWidth(30), // No
+      1: const pw.FlexColumnWidth(1.05), // Tanggal
+      2: pw.FlexColumnWidth(plateFlex), // Plat
+      3: pw.FlexColumnWidth(muatanFlex), // Muatan
+      4: pw.FlexColumnWidth(muatFlex), // Muat
+      5: pw.FlexColumnWidth(bongkarFlex), // Bongkar
+      6: const pw.FlexColumnWidth(0.72), // Tonase
+      7: pw.FlexColumnWidth(hargaFlex), // Harga
+      8: pw.FlexColumnWidth(totalFlex), // Total
+    };
+  }
+
+  Map<int, pw.TableColumnWidth> _buildExpenseTableColumnWidths(
+    List<Map<String, dynamic>> detailList,
+  ) {
+    var maxDesc = 14;
+    for (final row in detailList) {
+      maxDesc =
+          max(maxDesc, '${row['nama'] ?? row['name'] ?? ''}'.trim().length);
+    }
+    final descFlex = (maxDesc / 8).clamp(2.4, 3.5).toDouble();
+    return {
+      0: const pw.FixedColumnWidth(24), // No
+      1: const pw.FlexColumnWidth(0.95), // Tanggal
+      2: pw.FlexColumnWidth(descFlex), // Keterangan
+      3: const pw.FlexColumnWidth(1.2), // Total
+    };
+  }
+
+  Future<void> _printExpensePdf(
+    Map<String, dynamic> item,
+    List<Map<String, dynamic>> detailList,
+  ) async {
+    try {
+      final rows = detailList.isNotEmpty
+          ? detailList
+          : <Map<String, dynamic>>[
+              {
+                'nama': '${item['kategori'] ?? item['keterangan'] ?? '-'}',
+                'jumlah': _toNum(item['total_pengeluaran']),
+              },
+            ];
+
+      final usePortrait = rows.length > 13;
+      final totalExpense = _toNum(item['total_pengeluaran']);
+      final expenseNumber = '${item['no_expense'] ?? '-'}';
+
+      pw.Widget buildExpenseContent({required bool compact}) {
+        const infoFont = 9.5;
+        const tableBodyRowHeight = 16.0;
+        final minRows = compact ? 13 : 35;
+        final printableRows = rows.length >= minRows
+            ? rows
+            : <Map<String, dynamic>>[
+                ...rows,
+                ...List<Map<String, dynamic>>.generate(
+                  minRows - rows.length,
+                  (_) => <String, dynamic>{},
+                ),
+              ];
+        return pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Padding(
+              padding:
+                  const pw.EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+              child: pw.Row(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Expanded(
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          'CV ANT',
+                          style: pw.TextStyle(
+                            fontSize: compact ? 15 : 18,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.blue900,
+                          ),
+                        ),
+                        pw.SizedBox(height: 2),
+                        pw.Text(
+                          'AS Nusa Trans',
+                          style: pw.TextStyle(
+                            fontSize: compact ? 10 : 11,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  pw.SizedBox(width: 12),
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+                    children: [
+                      pw.Text(
+                        'EXPENSE',
+                        style: pw.TextStyle(
+                          fontSize: compact ? 15 : 18,
+                          fontWeight: pw.FontWeight.bold,
+                        ),
+                      ),
+                      pw.SizedBox(height: 3),
+                      pw.Text(
+                        expenseNumber,
+                        style: pw.TextStyle(
+                          fontSize: compact ? 10 : 11,
+                          color: PdfColors.grey700,
+                        ),
+                      ),
+                      pw.SizedBox(height: 4),
+                      pw.Text(
+                        'Tanggal: ${Formatters.dmy(item['tanggal'])}',
+                        textAlign: pw.TextAlign.right,
+                        style: const pw.TextStyle(fontSize: infoFont),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            pw.SizedBox(height: 10),
+            pw.Row(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Expanded(
+                  child: pw.Padding(
+                    padding: const pw.EdgeInsets.all(2),
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          'Data Expense',
+                          style: pw.TextStyle(
+                            fontSize: infoFont,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
+                        pw.SizedBox(height: 4),
+                        pw.Text(
+                          'Kategori: ${item['kategori'] ?? '-'}',
+                          style: const pw.TextStyle(fontSize: infoFont),
+                        ),
+                        pw.Text(
+                          'Keterangan: ${item['keterangan'] ?? item['note'] ?? '-'}',
+                          style: const pw.TextStyle(fontSize: infoFont),
+                        ),
+                        pw.Text(
+                          'Dicatat oleh: ${item['dicatat_oleh'] ?? '-'}',
+                          style: const pw.TextStyle(fontSize: infoFont),
+                        ),
+                        pw.Text(
+                          'Status: ${item['status'] ?? '-'}',
+                          style: const pw.TextStyle(fontSize: infoFont),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                pw.SizedBox(width: 10),
+                pw.SizedBox(width: compact ? 130 : 160),
+              ],
+            ),
+            pw.SizedBox(height: 10),
+            pw.Table(
+              border: pw.TableBorder.all(color: PdfColors.grey400),
+              columnWidths: _buildExpenseTableColumnWidths(printableRows),
+              children: [
+                pw.TableRow(
+                  decoration: const pw.BoxDecoration(
+                    color: PdfColor(0.12, 0.13, 0.15),
+                  ),
+                  children: [
+                    _pdfCell('NO', bold: true, textColor: PdfColors.white),
+                    _pdfCell(
+                      'TANGGAL',
+                      bold: true,
+                      alignCenter: true,
+                      textColor: PdfColors.white,
+                    ),
+                    _pdfCell(
+                      'KETERANGAN',
+                      bold: true,
+                      alignCenter: true,
+                      textColor: PdfColors.white,
+                    ),
+                    _pdfCell(
+                      'TOTAL',
+                      bold: true,
+                      alignRight: true,
+                      textColor: PdfColors.white,
+                    ),
+                  ],
+                ),
+                ...List<pw.TableRow>.generate(printableRows.length, (index) {
+                  final row = printableRows[index];
+                  final hasData = index < rows.length;
+                  final amount = hasData ? _toNum(row['jumlah'] ?? row['amount']) : 0;
+                  final tanggal = hasData
+                      ? Formatters.dmy(
+                          row['tanggal'] ?? item['tanggal'],
+                        )
+                      : '';
+                  final name = hasData
+                      ? '${row['nama'] ?? row['name'] ?? '-'}'
+                      : '';
+                  return pw.TableRow(
+                    children: [
+                      _pdfCell(
+                        hasData ? '${index + 1}' : '',
+                        alignCenter: true,
+                        hPadding: 3,
+                        fixedHeight: tableBodyRowHeight,
+                        singleLineAutoShrink: true,
+                        softLimitChars: 2,
+                        minFontSize: 7,
+                      ),
+                      _pdfCell(
+                        tanggal,
+                        alignCenter: true,
+                        fixedHeight: tableBodyRowHeight,
+                        singleLineAutoShrink: true,
+                        softLimitChars: 10,
+                      ),
+                      _pdfCell(
+                        name,
+                        fixedHeight: tableBodyRowHeight,
+                        singleLineAutoShrink: true,
+                        softLimitChars: 34,
+                        minFontSize: 6.5,
+                      ),
+                      _pdfCell(
+                        hasData ? Formatters.rupiah(amount) : '',
+                        alignRight: true,
+                        fixedHeight: tableBodyRowHeight,
+                        singleLineAutoShrink: true,
+                        softLimitChars: 14,
+                      ),
+                    ],
+                  );
+                }),
+              ],
+            ),
+            pw.SizedBox(height: 12),
+            pw.Align(
+              alignment: pw.Alignment.centerRight,
+              child: pw.SizedBox(
+                width: compact ? 200 : 220,
+                child: pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text(
+                      'Total Pengeluaran',
+                      style: pw.TextStyle(
+                        fontSize: infoFont,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
+                    pw.Text(
+                      Formatters.rupiah(totalExpense),
+                      style: pw.TextStyle(
+                        fontSize: infoFont,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            pw.SizedBox(height: 20),
+            pw.Align(
+              alignment: pw.Alignment.centerRight,
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.center,
+                children: [
+                  pw.Text('Hormat kami,'),
+                  pw.SizedBox(height: compact ? 72 : 102),
+                  pw.Text(
+                    'A N T O K',
+                    style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      }
+
+      await Printing.layoutPdf(
+        name: 'expense-$expenseNumber',
+        onLayout: (format) async {
+          final doc = pw.Document();
+          final margin = usePortrait ? 24.0 : 18.0;
+
+          if (usePortrait) {
+            doc.addPage(
+              pw.MultiPage(
+                pageFormat: format,
+                margin: pw.EdgeInsets.all(margin),
+                build: (_) => [
+                  buildExpenseContent(compact: false),
+                ],
+              ),
+            );
+          } else {
+            final usableHeight = format.height - (margin * 2);
+            final halfHeight = usableHeight / 2;
+            doc.addPage(
+              pw.Page(
+                pageFormat: format,
+                margin: pw.EdgeInsets.all(margin),
+                build: (_) {
+                  return pw.Column(
+                    children: [
+                      pw.Container(
+                        height: halfHeight,
+                        padding: const pw.EdgeInsets.only(bottom: 8),
+                        decoration: const pw.BoxDecoration(
+                          border: pw.Border(
+                            bottom: pw.BorderSide(
+                              color: PdfColors.grey400,
+                              width: 0.7,
+                            ),
+                          ),
+                        ),
+                        child: buildExpenseContent(compact: true),
+                      ),
+                      pw.SizedBox(height: halfHeight),
+                    ],
+                  );
+                },
+              ),
+            );
+          }
+          return doc.save();
+        },
+      );
+    } catch (e) {
+      if (!mounted) return;
+      _snack(
+        'Gagal print expense: ${e.toString().replaceFirst('Exception: ', '')}',
+        error: true,
+      );
+    }
+  }
+
+  pw.Widget _pdfCell(
+    String text, {
+    bool bold = false,
+    bool alignRight = false,
+    bool alignCenter = false,
+    PdfColor? textColor,
+    double fontSize = 9.5,
+    double minFontSize = 7.0,
+    double hPadding = 6,
+    double vPadding = 5,
+    double? fixedHeight,
+    bool singleLineAutoShrink = false,
+    int softLimitChars = 24,
+  }) {
+    final textAlign = alignRight
+        ? pw.TextAlign.right
+        : alignCenter
+            ? pw.TextAlign.center
+            : pw.TextAlign.left;
+    var resolvedFontSize = fontSize;
+    if (singleLineAutoShrink) {
+      final safeLimit = max(1, softLimitChars);
+      final textLength = text.trim().length;
+      if (textLength > safeLimit) {
+        final ratio = safeLimit / textLength;
+        resolvedFontSize = max(minFontSize, fontSize * ratio);
+      }
+    }
+    return pw.Container(
+      height: fixedHeight,
+      alignment: alignCenter
+          ? pw.Alignment.center
+          : alignRight
+              ? pw.Alignment.centerRight
+              : pw.Alignment.centerLeft,
+      child: pw.Padding(
+        padding:
+            pw.EdgeInsets.symmetric(horizontal: hPadding, vertical: vPadding),
+        child: pw.Text(
+          text,
+          maxLines: singleLineAutoShrink ? 1 : null,
+          textAlign: textAlign,
+          style: pw.TextStyle(
+            fontSize: resolvedFontSize,
+            fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+            color: textColor,
+          ),
+        ),
+      ),
     );
   }
 
@@ -4445,6 +5989,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                       'Keterangan: ${item['keterangan'] ?? item['note'] ?? '-'}'),
                   Text('Tanggal: ${Formatters.dmy(item['tanggal'])}'),
                   Text('Status: ${item['status'] ?? '-'}'),
+                  Text('Dicatat oleh: ${item['dicatat_oleh'] ?? '-'}'),
                   const SizedBox(height: 8),
                   Text(
                     'Total: ${Formatters.rupiah(_toNum(item['total_pengeluaran']))}',
@@ -4471,9 +6016,25 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
             ),
           ),
           actions: [
+            OutlinedButton.icon(
+              onPressed: () => _printExpensePdf(item, detailList),
+              style: CvantButtonStyles.outlined(
+                context,
+                color: AppColors.blue,
+                borderColor: AppColors.blue,
+                minimumSize: const Size(96, 40),
+              ),
+              icon: const Icon(Icons.print_outlined, size: 16),
+              label: const Text('Print'),
+            ),
             FilledButton(
+              style: CvantButtonStyles.filled(
+                context,
+                color: AppColors.blue,
+                minimumSize: const Size(96, 40),
+              ),
               onPressed: () => Navigator.pop(context),
-              child: Text('Tutup'),
+              child: const Text('Tutup'),
             ),
           ],
         );
@@ -4506,6 +6067,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
               (row) => <String, dynamic>{
                 'lokasi_muat': '${row['lokasi_muat'] ?? ''}',
                 'lokasi_bongkar': '${row['lokasi_bongkar'] ?? ''}',
+                'muatan': '${row['muatan'] ?? ''}',
+                'nama_supir': '${row['nama_supir'] ?? ''}',
                 'armada_id': '${row['armada_id'] ?? ''}',
                 'armada_start_date': _toInputDate(row['armada_start_date']),
                 'armada_end_date': _toInputDate(row['armada_end_date']),
@@ -4518,6 +6081,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
             {
               'lokasi_muat': '${item['lokasi_muat'] ?? ''}',
               'lokasi_bongkar': '${item['lokasi_bongkar'] ?? ''}',
+              'muatan': '${item['muatan'] ?? ''}',
+              'nama_supir': '${item['nama_supir'] ?? ''}',
               'armada_id': '${item['armada_id'] ?? ''}',
               'armada_start_date': _toInputDate(item['armada_start_date']),
               'armada_end_date': _toInputDate(item['armada_end_date']),
@@ -4531,6 +6096,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
     }
 
     if (!mounted) return;
+    bool dialogClosed = false;
 
     try {
       await showDialog<void>(
@@ -4614,6 +6180,23 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                   ),
                                   onChanged: (value) =>
                                       row['lokasi_bongkar'] = value,
+                                ),
+                                const SizedBox(height: 8),
+                                TextFormField(
+                                  initialValue: '${row['muatan'] ?? ''}',
+                                  decoration: const InputDecoration(
+                                    hintText: 'Muatan (Opsional)',
+                                  ),
+                                  onChanged: (value) => row['muatan'] = value,
+                                ),
+                                const SizedBox(height: 8),
+                                TextFormField(
+                                  initialValue: '${row['nama_supir'] ?? ''}',
+                                  decoration: const InputDecoration(
+                                    hintText: 'Nama Supir (Opsional)',
+                                  ),
+                                  onChanged: (value) =>
+                                      row['nama_supir'] = value,
                                 ),
                                 const SizedBox(height: 8),
                                 CvantDropdownField<String>(
@@ -4740,6 +6323,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                               <String, dynamic>{
                                 'lokasi_muat': '',
                                 'lokasi_bongkar': '',
+                                'muatan': '',
+                                'nama_supir': '',
                                 'armada_id': '',
                                 'armada_start_date': '',
                                 'armada_end_date': '',
@@ -4809,7 +6394,10 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                               child: OutlinedButton(
                                 onPressed: saving
                                     ? null
-                                    : () => Navigator.pop(context),
+                                    : () {
+                                        dialogClosed = true;
+                                        Navigator.of(context).pop();
+                                      },
                                 style: CvantButtonStyles.outlined(
                                   context,
                                   color: AppColors.isLight(context)
@@ -4852,6 +6440,21 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                           return;
                                         }
 
+                                        String? normalizeNullable(
+                                          dynamic value,
+                                        ) {
+                                          final raw =
+                                              value?.toString().trim() ?? '';
+                                          if (raw.isEmpty) return null;
+                                          final lowered = raw.toLowerCase();
+                                          if (lowered == 'null' ||
+                                              lowered == 'undefined' ||
+                                              lowered == '-') {
+                                            return null;
+                                          }
+                                          return raw;
+                                        }
+
                                         final detailsPayload =
                                             details.map((row) {
                                           return <String, dynamic>{
@@ -4860,6 +6463,12 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                             'lokasi_bongkar':
                                                 '${row['lokasi_bongkar']}'
                                                     .trim(),
+                                            'muatan': normalizeNullable(
+                                              row['muatan'],
+                                            ),
+                                            'nama_supir': normalizeNullable(
+                                              row['nama_supir'],
+                                            ),
                                             'armada_id': '${row['armada_id']}'
                                                     .trim()
                                                     .isEmpty
@@ -4885,6 +6494,21 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                             'harga': _toNum(row['harga']),
                                           };
                                         }).toList();
+                                        final driverNames = detailsPayload
+                                            .map(
+                                              (row) =>
+                                                  '${row['nama_supir'] ?? ''}'
+                                                      .trim(),
+                                            )
+                                            .where((value) => value.isNotEmpty)
+                                            .expand(
+                                              (value) => value
+                                                  .split(RegExp(r'[,;/]'))
+                                                  .map((part) => part.trim()),
+                                            )
+                                            .where((value) => value.isNotEmpty)
+                                            .toSet()
+                                            .join(', ');
 
                                         setDialogState(() => saving = true);
                                         try {
@@ -4904,6 +6528,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                             pickup: '${first['lokasi_muat']}',
                                             destination:
                                                 '${first['lokasi_bongkar']}',
+                                            muatan: normalizeNullable(
+                                              first['muatan'],
+                                            ),
                                             armadaId: '${first['armada_id']}',
                                             armadaStartDate:
                                                 '${first['armada_start_date']}'
@@ -4923,14 +6550,21 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                                       ),
                                             tonase: _toNum(first['tonase']),
                                             harga: _toNum(first['harga']),
+                                            namaSupir: driverNames.isEmpty
+                                                ? null
+                                                : driverNames,
                                             details: detailsPayload,
                                             acceptedBy: acceptedBy,
                                           );
-                                          if (!mounted) return;
-                                          Navigator.of(this.context).pop();
+                                          if (!mounted || !context.mounted) {
+                                            return;
+                                          }
+                                          dialogClosed = true;
+                                          Navigator.of(context).pop();
                                           _snack(
                                               'Invoice berhasil diperbarui.');
                                           await _refresh();
+                                          _notifyDataChanged();
                                         } catch (e) {
                                           if (!mounted) return;
                                           _snack(
@@ -4941,7 +6575,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                             error: true,
                                           );
                                         } finally {
-                                          if (mounted) {
+                                          if (mounted && !dialogClosed) {
                                             setDialogState(
                                                 () => saving = false);
                                           }
@@ -4970,9 +6604,16 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
   }
 
   Future<void> _openExpenseEdit(Map<String, dynamic> item) async {
-    String status = '${item['status'] ?? 'Recorded'}';
+    String status = '${item['status'] ?? 'Unpaid'}';
+    const statusOptions = <String>['Unpaid', 'Paid', 'Waiting', 'Cancelled'];
+    if (!statusOptions
+        .any((option) => option.toLowerCase() == status.toLowerCase())) {
+      status = 'Unpaid';
+    }
+    String recordedBy = '${item['dicatat_oleh'] ?? 'Admin'}';
     String tanggal = _toInputDate(item['tanggal']);
     bool saving = false;
+    bool dialogClosed = false;
 
     final noExpense =
         TextEditingController(text: '${item['no_expense'] ?? ''}');
@@ -5104,6 +6745,43 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                           ),
                           child: Text(Formatters.rupiah(totalAmount)),
                         ),
+                        const SizedBox(height: 8),
+                        CvantDropdownField<String>(
+                          initialValue: status,
+                          decoration: const InputDecoration(
+                            labelText: 'Status',
+                          ),
+                          items:
+                              const ['Unpaid', 'Paid', 'Waiting', 'Cancelled']
+                                  .map(
+                                    (item) => DropdownMenuItem<String>(
+                                      value: item,
+                                      child: Text(item),
+                                    ),
+                                  )
+                                  .toList(),
+                          onChanged: (value) => setDialogState(
+                            () => status = value ?? status,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        CvantDropdownField<String>(
+                          initialValue: recordedBy,
+                          decoration: const InputDecoration(
+                            labelText: 'Dicatat Oleh',
+                          ),
+                          items: const ['Admin', 'Owner']
+                              .map(
+                                (item) => DropdownMenuItem<String>(
+                                  value: item,
+                                  child: Text(item),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (value) => setDialogState(
+                            () => recordedBy = value ?? recordedBy,
+                          ),
+                        ),
                         const SizedBox(height: 14),
                         Row(
                           children: [
@@ -5111,7 +6789,10 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                               child: OutlinedButton(
                                 onPressed: saving
                                     ? null
-                                    : () => Navigator.pop(context),
+                                    : () {
+                                        dialogClosed = true;
+                                        Navigator.of(context).pop();
+                                      },
                                 style: CvantButtonStyles.outlined(
                                   context,
                                   color: AppColors.isLight(context)
@@ -5181,13 +6862,18 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                                 '${firstNamedRow['nama']}',
                                             keterangan: note,
                                             note: note,
+                                            recordedBy: recordedBy,
                                             details: detailsPayload,
                                           );
-                                          if (!mounted) return;
-                                          Navigator.of(this.context).pop();
+                                          if (!mounted || !context.mounted) {
+                                            return;
+                                          }
+                                          dialogClosed = true;
+                                          Navigator.of(context).pop();
                                           _snack(
                                               'Expense berhasil diperbarui.');
                                           await _refresh();
+                                          _notifyDataChanged();
                                         } catch (e) {
                                           if (!mounted) return;
                                           _snack(
@@ -5198,7 +6884,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                             error: true,
                                           );
                                         } finally {
-                                          if (mounted) {
+                                          if (mounted && !dialogClosed) {
                                             setDialogState(
                                                 () => saving = false);
                                           }
@@ -5383,9 +7069,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
       onRefresh: _refresh,
       child: ListView.separated(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(10),
         itemCount: rows.length + 1,
-        separatorBuilder: (_, __) => const SizedBox(height: 10),
+        separatorBuilder: (_, __) => const SizedBox(height: 8),
         itemBuilder: (context, index) {
           if (index == rows.length) {
             return const _DashboardContentFooter();
@@ -5411,12 +7097,12 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                     _StatusPill(label: '${item['__status'] ?? '-'}'),
                   ],
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 3),
                 Text(
                   '${item['__type']} • ${Formatters.dmy(item['__date'])}',
                   style: TextStyle(color: AppColors.textMutedFor(context)),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 4),
                 Text(
                   'Nama: ${isIncome ? item['__name'] ?? '-' : '-'}',
                   style: TextStyle(color: AppColors.textMutedFor(context)),
@@ -5426,12 +7112,12 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                   'Dicatat oleh: ${item['__recorded_by'] ?? '-'}',
                   style: TextStyle(color: AppColors.textMutedFor(context)),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 Text(
                   Formatters.rupiah(total),
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 Align(
                   alignment: Alignment.centerRight,
                   child: Wrap(
@@ -5501,7 +7187,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
         if (snapshot.hasError || !snapshot.hasData) {
           return _ErrorView(
             message: snapshot.error.toString().replaceFirst('Exception: ', ''),
-            onRetry: () => setState(() => _future = _load()),
+            onRetry: () => setState(() {
+              _future = _load();
+            }),
           );
         }
 
@@ -5515,7 +7203,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
         return Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
               child: Row(
                 children: [
                   Text(
@@ -5568,7 +7256,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+              padding: const EdgeInsets.fromLTRB(10, 6, 10, 0),
               child: Row(
                 children: [
                   if (widget.isOwner) ...[
@@ -5659,7 +7347,9 @@ class _AdminFleetListViewState extends State<_AdminFleetListView> {
   }
 
   Future<void> _refresh() async {
-    setState(() => _future = _load());
+    setState(() {
+      _future = _load();
+    });
     await _future;
   }
 
@@ -5671,6 +7361,7 @@ class _AdminFleetListViewState extends State<_AdminFleetListView> {
     );
     bool isActive = item['is_active'] != false;
     bool saving = false;
+    bool dialogClosed = false;
 
     await showDialog<void>(
       context: context,
@@ -5720,7 +7411,12 @@ class _AdminFleetListViewState extends State<_AdminFleetListView> {
               ),
               actions: [
                 TextButton(
-                  onPressed: saving ? null : () => Navigator.pop(context),
+                  onPressed: saving
+                      ? null
+                      : () {
+                          dialogClosed = true;
+                          Navigator.of(context).pop();
+                        },
                   style: CvantButtonStyles.outlined(
                     context,
                     color: AppColors.isLight(context)
@@ -5750,8 +7446,9 @@ class _AdminFleetListViewState extends State<_AdminFleetListView> {
                               active: isActive,
                               status: isActive ? 'Ready' : 'Inactive',
                             );
-                            if (!mounted) return;
-                            Navigator.of(this.context).pop();
+                            if (!mounted || !context.mounted) return;
+                            dialogClosed = true;
+                            Navigator.of(context).pop();
                             _snack('Armada berhasil diperbarui.');
                             await _refresh();
                           } catch (e) {
@@ -5759,7 +7456,7 @@ class _AdminFleetListViewState extends State<_AdminFleetListView> {
                             _snack(e.toString().replaceFirst('Exception: ', ''),
                                 error: true);
                           } finally {
-                            if (mounted) {
+                            if (mounted && !dialogClosed) {
                               setDialogState(() => saving = false);
                             }
                           }
@@ -5819,7 +7516,9 @@ class _AdminFleetListViewState extends State<_AdminFleetListView> {
             message:
                 snapshot.error?.toString().replaceFirst('Exception: ', '') ??
                     'Gagal memuat data fleet.',
-            onRetry: () => setState(() => _future = _load()),
+            onRetry: () => setState(() {
+              _future = _load();
+            }),
           );
         }
 
@@ -5838,9 +7537,29 @@ class _AdminFleetListViewState extends State<_AdminFleetListView> {
                 : const <Map<String, dynamic>>[])
             .cast<Map<String, dynamic>>();
         final usage = <String, int>{};
+        List<Map<String, dynamic>> detailRows(dynamic value) {
+          if (value is List) {
+            return value
+                .whereType<Map>()
+                .map((item) => Map<String, dynamic>.from(item))
+                .toList();
+          }
+          return const <Map<String, dynamic>>[];
+        }
+
         for (final invoice in invoices) {
-          final armadaId = invoice['armada_id']?.toString();
-          if (armadaId == null || armadaId.isEmpty) continue;
+          final details = detailRows(invoice['rincian']);
+          if (details.isNotEmpty) {
+            for (final row in details) {
+              final armadaId = row['armada_id']?.toString().trim() ?? '';
+              if (armadaId.isEmpty) continue;
+              usage[armadaId] = (usage[armadaId] ?? 0) + 1;
+            }
+            continue;
+          }
+
+          final armadaId = invoice['armada_id']?.toString().trim() ?? '';
+          if (armadaId.isEmpty) continue;
           usage[armadaId] = (usage[armadaId] ?? 0) + 1;
         }
 
@@ -5876,7 +7595,7 @@ class _AdminFleetListViewState extends State<_AdminFleetListView> {
         return Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
               child: Row(
                 children: [
                   Text(
@@ -5922,9 +7641,9 @@ class _AdminFleetListViewState extends State<_AdminFleetListView> {
                 onRefresh: _refresh,
                 child: ListView.separated(
                   physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(10),
                   itemCount: data.length + 1,
-                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  separatorBuilder: (_, __) => const SizedBox(height: 8),
                   itemBuilder: (context, index) {
                     if (index == data.length) {
                       return const _DashboardContentFooter();
@@ -5944,7 +7663,7 @@ class _AdminFleetListViewState extends State<_AdminFleetListView> {
                                 Icons.local_shipping_outlined,
                                 color: AppColors.cyan,
                               ),
-                              const SizedBox(width: 10),
+                              const SizedBox(width: 8),
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -5984,7 +7703,7 @@ class _AdminFleetListViewState extends State<_AdminFleetListView> {
                               _StatusPill(label: status),
                             ],
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 6),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.end,
                             children: [
@@ -6069,7 +7788,9 @@ class _AdminOrderAcceptanceViewState extends State<_AdminOrderAcceptanceView> {
         title: 'Success',
         message: 'Status order berhasil diupdate.',
       );
-      setState(() => _future = _load());
+      setState(() {
+        _future = _load();
+      });
     } catch (e) {
       if (!mounted) return;
       showCvantPopup(
@@ -6157,7 +7878,9 @@ class _AdminOrderAcceptanceViewState extends State<_AdminOrderAcceptanceView> {
         if (snapshot.hasError || !snapshot.hasData) {
           return _ErrorView(
             message: snapshot.error.toString().replaceFirst('Exception: ', ''),
-            onRetry: () => setState(() => _future = _load()),
+            onRetry: () => setState(() {
+              _future = _load();
+            }),
           );
         }
 
@@ -6319,8 +8042,9 @@ class _AdminCustomerRegistrationsViewState
         if (snapshot.hasError) {
           return _ErrorView(
             message: snapshot.error.toString().replaceFirst('Exception: ', ''),
-            onRetry: () => setState(
-                () => _future = widget.repository.fetchCustomerProfiles()),
+            onRetry: () => setState(() {
+              _future = widget.repository.fetchCustomerProfiles();
+            }),
           );
         }
 
@@ -6421,14 +8145,16 @@ class _CustomerOrderHistoryViewState extends State<_CustomerOrderHistoryView> {
   }
 
   Future<void> _refresh() async {
-    setState(
-        () => _future = widget.repository.fetchOrders(currentUserOnly: true));
+    setState(() {
+      _future = widget.repository.fetchOrders(currentUserOnly: true);
+    });
     await _future;
   }
 
   Future<void> _pay(Map<String, dynamic> order) async {
     String method = 'va';
     bool processing = false;
+    bool dialogClosed = false;
 
     await showDialog<void>(
       context: context,
@@ -6461,7 +8187,12 @@ class _CustomerOrderHistoryViewState extends State<_CustomerOrderHistoryView> {
               ),
               actions: [
                 TextButton(
-                  onPressed: processing ? null : () => Navigator.pop(context),
+                  onPressed: processing
+                      ? null
+                      : () {
+                          dialogClosed = true;
+                          Navigator.of(context).pop();
+                        },
                   style: CvantButtonStyles.outlined(
                     context,
                     color: AppColors.isLight(context)
@@ -6484,8 +8215,9 @@ class _CustomerOrderHistoryViewState extends State<_CustomerOrderHistoryView> {
                               method: method,
                               invoiceId: invoice?['id']?.toString(),
                             );
-                            if (!mounted) return;
-                            Navigator.of(this.context).pop();
+                            if (!mounted || !context.mounted) return;
+                            dialogClosed = true;
+                            Navigator.of(context).pop();
                             showCvantPopup(
                               context: this.context,
                               type: CvantPopupType.success,
@@ -6503,7 +8235,7 @@ class _CustomerOrderHistoryViewState extends State<_CustomerOrderHistoryView> {
                                   e.toString().replaceFirst('Exception: ', ''),
                             );
                           } finally {
-                            if (mounted) {
+                            if (mounted && !dialogClosed) {
                               setDialogState(() => processing = false);
                             }
                           }
@@ -6529,10 +8261,9 @@ class _CustomerOrderHistoryViewState extends State<_CustomerOrderHistoryView> {
         if (snapshot.hasError) {
           return _ErrorView(
             message: snapshot.error.toString().replaceFirst('Exception: ', ''),
-            onRetry: () => setState(
-              () => _future =
-                  widget.repository.fetchOrders(currentUserOnly: true),
-            ),
+            onRetry: () => setState(() {
+              _future = widget.repository.fetchOrders(currentUserOnly: true);
+            }),
           );
         }
 
@@ -6668,6 +8399,9 @@ class _CustomerSettingsViewState extends State<_CustomerSettingsView> {
   bool _biometricEnrolled = false;
   bool _biometricManualBound = false;
   String _biometricLabel = 'Fingerprint';
+  bool _showCurrentPassword = false;
+  bool _showNewPassword = false;
+  bool _showConfirmPassword = false;
 
   @override
   void initState() {
@@ -6848,8 +8582,9 @@ class _CustomerSettingsViewState extends State<_CustomerSettingsView> {
         if (snapshot.hasError) {
           return _ErrorView(
             message: snapshot.error.toString().replaceFirst('Exception: ', ''),
-            onRetry: () =>
-                setState(() => _future = widget.repository.fetchMyProfile()),
+            onRetry: () => setState(() {
+              _future = widget.repository.fetchMyProfile();
+            }),
           );
         }
 
@@ -6945,6 +8680,53 @@ class _CustomerSettingsViewState extends State<_CustomerSettingsView> {
             ),
             const SizedBox(height: 10),
             _PanelCard(
+              child: ValueListenableBuilder<AppLanguage>(
+                valueListenable: LanguageController.language,
+                builder: (context, language, _) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Language / Bahasa',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Pilih bahasa tampilan dashboard.',
+                        style:
+                            TextStyle(color: AppColors.textMutedFor(context)),
+                      ),
+                      const SizedBox(height: 8),
+                      CvantDropdownField<AppLanguage>(
+                        initialValue: language,
+                        decoration: const InputDecoration(
+                          labelText: 'Bahasa',
+                        ),
+                        items: const [
+                          DropdownMenuItem<AppLanguage>(
+                            value: AppLanguage.id,
+                            child: Text('Bahasa Indonesia'),
+                          ),
+                          DropdownMenuItem<AppLanguage>(
+                            value: AppLanguage.en,
+                            child: Text('English'),
+                          ),
+                        ],
+                        onChanged: (value) async {
+                          if (value == null) return;
+                          await LanguageController.setLanguage(value);
+                        },
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 10),
+            _PanelCard(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -6980,23 +8762,58 @@ class _CustomerSettingsViewState extends State<_CustomerSettingsView> {
                   const SizedBox(height: 10),
                   TextField(
                     controller: _currentPassword,
-                    obscureText: true,
-                    decoration:
-                        const InputDecoration(labelText: 'Password Lama'),
+                    obscureText: !_showCurrentPassword,
+                    decoration: InputDecoration(
+                      labelText: 'Password Lama',
+                      suffixIcon: IconButton(
+                        onPressed: () => setState(() {
+                          _showCurrentPassword = !_showCurrentPassword;
+                        }),
+                        icon: Icon(
+                          _showCurrentPassword
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
+                          color: AppColors.textMutedFor(context),
+                        ),
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 8),
                   TextField(
                     controller: _newPassword,
-                    obscureText: true,
-                    decoration:
-                        const InputDecoration(labelText: 'Password Baru'),
+                    obscureText: !_showNewPassword,
+                    decoration: InputDecoration(
+                      labelText: 'Password Baru',
+                      suffixIcon: IconButton(
+                        onPressed: () => setState(() {
+                          _showNewPassword = !_showNewPassword;
+                        }),
+                        icon: Icon(
+                          _showNewPassword
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
+                          color: AppColors.textMutedFor(context),
+                        ),
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 8),
                   TextField(
                     controller: _confirmPassword,
-                    obscureText: true,
-                    decoration: const InputDecoration(
+                    obscureText: !_showConfirmPassword,
+                    decoration: InputDecoration(
                       labelText: 'Konfirmasi Password',
+                      suffixIcon: IconButton(
+                        onPressed: () => setState(() {
+                          _showConfirmPassword = !_showConfirmPassword;
+                        }),
+                        icon: Icon(
+                          _showConfirmPassword
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
+                          color: AppColors.textMutedFor(context),
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -7025,6 +8842,52 @@ class _CustomerSettingsViewState extends State<_CustomerSettingsView> {
 
 double _toNum(dynamic value) {
   if (value == null) return 0;
-  if (value is num) return value.toDouble();
-  return double.tryParse(value.toString()) ?? 0;
+  if (value is num) {
+    final number = value.toDouble();
+    return number.isFinite ? number : 0;
+  }
+
+  final raw = value.toString().trim();
+  if (raw.isEmpty) return 0;
+
+  // Keep numeric punctuation only so values like "Rp 1.250.000" stay parseable.
+  final sanitized = raw.replaceAll(RegExp(r'[^0-9,.\-]'), '');
+  if (sanitized.isEmpty ||
+      sanitized == '-' ||
+      sanitized == '.' ||
+      sanitized == ',') {
+    return 0;
+  }
+
+  double? parsed = double.tryParse(sanitized);
+
+  if (parsed == null) {
+    // 1.250.000,50 -> 1250000.50
+    if (sanitized.contains('.') && sanitized.contains(',')) {
+      parsed = double.tryParse(
+        sanitized.replaceAll('.', '').replaceAll(',', '.'),
+      );
+    }
+  }
+  if (parsed == null) {
+    // 1.250.000 -> 1250000
+    if (sanitized.contains('.') && sanitized.split('.').length > 2) {
+      parsed = double.tryParse(sanitized.replaceAll('.', ''));
+    }
+  }
+  if (parsed == null) {
+    // 1,250,000 -> 1250000
+    if (sanitized.contains(',') && sanitized.split(',').length > 2) {
+      parsed = double.tryParse(sanitized.replaceAll(',', ''));
+    }
+  }
+  if (parsed == null) {
+    // 1250,50 -> 1250.50
+    if (sanitized.contains(',') && !sanitized.contains('.')) {
+      parsed = double.tryParse(sanitized.replaceAll(',', '.'));
+    }
+  }
+
+  if (parsed == null || !parsed.isFinite) return 0;
+  return parsed;
 }

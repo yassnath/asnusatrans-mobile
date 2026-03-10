@@ -9,6 +9,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
   cupertino_icons: ^1.0.8
   fl_chart: ^0.69.2
   google_fonts: ^6.2.1
@@ -18,6 +20,12 @@ dependencies:
   supabase_flutter: ^2.10.3
   flutter_secure_storage: ^9.2.4
   url_launcher: ^6.3.1
+  pdf: ^3.11.3
+  printing: ^5.13.4
+
+dependency_overrides:
+  flutter_secure_storage_windows:
+    path: third_party/flutter_secure_storage_windows
 
 dev_dependencies:
   flutter_test:
@@ -41,3 +49,6 @@ flutter:
     - assets/images/iconapk.png
     - assets/images/pp-admin.webp
     - assets/images/pp-owner.webp
+
+
+

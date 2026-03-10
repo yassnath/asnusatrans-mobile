@@ -16,6 +16,7 @@ class CvantDropdownField<T> extends StatelessWidget {
     this.isExpanded = true,
     this.icon,
     this.menuMaxHeight,
+    this.itemHeight,
     this.borderRadius,
   });
 
@@ -30,6 +31,7 @@ class CvantDropdownField<T> extends StatelessWidget {
   final bool isExpanded;
   final Widget? icon;
   final double? menuMaxHeight;
+  final double? itemHeight;
   final BorderRadius? borderRadius;
 
   @override
@@ -71,6 +73,7 @@ class CvantDropdownField<T> extends StatelessWidget {
       isExpanded: isExpanded,
       borderRadius: radius,
       menuMaxHeight: menuMaxHeight ?? 320,
+      itemHeight: itemHeight,
       dropdownColor: dropdownColor ?? AppColors.surfaceSoft(context),
       icon: icon ??
           Icon(

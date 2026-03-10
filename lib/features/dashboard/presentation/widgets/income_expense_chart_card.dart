@@ -1,6 +1,7 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
+import '../../../../core/i18n/language_controller.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/formatters.dart';
 
@@ -19,6 +20,39 @@ class IncomeExpenseChartCard extends StatelessWidget {
     final maxY = _maxY(income, expense);
     final muted = AppColors.textMutedFor(context);
     final border = AppColors.cardBorder(context);
+    final isEn = LanguageController.language.value == AppLanguage.en;
+    final chartTitle = isEn ? 'Income Vs Expense' : 'Pemasukan vs Pengeluaran';
+    final incomeLabel = isEn ? 'Income' : 'Pemasukan';
+    final expenseLabel = isEn ? 'Expense' : 'Pengeluaran';
+    final months = isEn
+        ? const [
+            'Jan',
+            'Feb',
+            'Mar',
+            'Apr',
+            'May',
+            'Jun',
+            'Jul',
+            'Aug',
+            'Sep',
+            'Oct',
+            'Nov',
+            'Dec'
+          ]
+        : const [
+            'Jan',
+            'Feb',
+            'Mar',
+            'Apr',
+            'Mei',
+            'Jun',
+            'Jul',
+            'Agu',
+            'Sep',
+            'Okt',
+            'Nov',
+            'Des'
+          ];
     final grid = AppColors.isLight(context)
         ? const Color.fromRGBO(148, 163, 184, 0.2)
         : const Color(0x1FFFFFFF);
@@ -29,17 +63,17 @@ class IncomeExpenseChartCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Income Vs Expense',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+            Text(
+              chartTitle,
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 12),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                _Legend(color: AppColors.blue, label: 'Income'),
-                SizedBox(width: 18),
-                _Legend(color: AppColors.warning, label: 'Expense'),
+                _Legend(color: AppColors.blue, label: incomeLabel),
+                const SizedBox(width: 18),
+                _Legend(color: AppColors.warning, label: expenseLabel),
               ],
             ),
             const SizedBox(height: 14),
@@ -62,7 +96,7 @@ class IncomeExpenseChartCard extends StatelessWidget {
                       getTooltipItems: (spots) {
                         return spots.map((spot) {
                           final label =
-                              spot.barIndex == 0 ? 'Income' : 'Expense';
+                              spot.barIndex == 0 ? incomeLabel : expenseLabel;
                           return LineTooltipItem(
                             '$label\n${Formatters.rupiah(spot.y)}',
                             TextStyle(
@@ -101,20 +135,6 @@ class IncomeExpenseChartCard extends StatelessWidget {
                         showTitles: true,
                         interval: 1,
                         getTitlesWidget: (value, meta) {
-                          const months = [
-                            'Jan',
-                            'Feb',
-                            'Mar',
-                            'Apr',
-                            'Mei',
-                            'Jun',
-                            'Jul',
-                            'Agu',
-                            'Sep',
-                            'Okt',
-                            'Nov',
-                            'Des'
-                          ];
                           final idx = value.toInt();
                           if (idx < 0 || idx > 11) {
                             return const SizedBox.shrink();

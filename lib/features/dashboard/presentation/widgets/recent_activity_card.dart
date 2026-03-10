@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/i18n/language_controller.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../models/dashboard_models.dart';
 
@@ -17,6 +18,8 @@ class RecentActivityCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final muted = AppColors.textMutedFor(context);
     final divider = AppColors.divider(context);
+    final isEn = LanguageController.language.value == AppLanguage.en;
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -25,20 +28,22 @@ class RecentActivityCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Expanded(
+                Expanded(
                   child: Text(
-                    'Recent Activity',
-                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+                    isEn ? 'Recent Activity' : 'Aktivitas Terbaru',
+                    style: const TextStyle(
+                        fontSize: 17, fontWeight: FontWeight.w700),
                   ),
                 ),
                 InkWell(
                   onTap: onViewAll,
                   borderRadius: BorderRadius.circular(8),
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
                     child: Text(
-                      'View All',
-                      style: TextStyle(
+                      isEn ? 'View All' : 'Lihat Semua',
+                      style: const TextStyle(
                         color: AppColors.blue,
                         fontWeight: FontWeight.w600,
                         fontSize: 13,
@@ -51,9 +56,9 @@ class RecentActivityCard extends StatelessWidget {
             const SizedBox(height: 12),
             if (items.isEmpty)
               Padding(
-                padding: EdgeInsets.symmetric(vertical: 12),
+                padding: const EdgeInsets.symmetric(vertical: 12),
                 child: Text(
-                  'Tidak ada aktivitas.',
+                  isEn ? 'No activity yet.' : 'Tidak ada aktivitas.',
                   style: TextStyle(color: muted),
                 ),
               )
@@ -63,9 +68,7 @@ class RecentActivityCard extends StatelessWidget {
                 return Container(
                   padding: const EdgeInsets.symmetric(vertical: 10),
                   decoration: BoxDecoration(
-                    border: Border(
-                      bottom: BorderSide(color: divider),
-                    ),
+                    border: Border(bottom: BorderSide(color: divider)),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,

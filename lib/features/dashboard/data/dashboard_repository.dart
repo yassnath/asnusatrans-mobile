@@ -33,7 +33,8 @@ class DashboardRepository {
         _supabase
             .from('invoices')
             .select(
-              'id,no_invoice,tanggal,nama_pelanggan,status,total_bayar,total_biaya,pph,armada_id,armada_start_date,armada_end_date,created_at',
+              'id,no_invoice,tanggal,nama_pelanggan,status,total_bayar,total_biaya,pph,'
+              'armada_id,armada_start_date,armada_end_date,muatan,created_at,rincian',
             )
             .order('tanggal', ascending: false),
         _supabase
@@ -42,19 +43,20 @@ class DashboardRepository {
             .order('tanggal', ascending: false),
         _supabase
             .from('armadas')
-            .select('id,nama_truk,plat_nomor,created_at')
+            .select(
+              'id,nama_truk,plat_nomor,kapasitas,status,is_active,created_at,updated_at',
+            )
             .order('created_at', ascending: false),
-        _supabase.from('invoice_items').select('invoice_id,armada_id'),
       ]);
 
       final invoices = _toMapList(response[0]);
       final expenses = _toMapList(response[1]);
-      final armadas = _toMapList(response[2]);
-      final invoiceItems = _toMapList(response[3]);
+      final armadas = _toMapList(response[2]).map(_normalizeArmadaRow).toList();
+      await _syncArmadaStatusByEndDate(armadas);
 
       final metrics = _buildMetrics(invoices, expenses);
       final monthlySeries = _buildMonthlySeries(invoices, expenses);
-      final armadaUsage = _buildArmadaUsage(invoices, armadas, invoiceItems);
+      final armadaUsage = _buildArmadaUsage(invoices, armadas);
       final latestCustomers = _buildLatestCustomers(invoices);
       final biggestTransactions = _buildBiggestTransactions(invoices, expenses);
       final recentTransactions = _buildRecentTransactions(invoices, expenses);
@@ -73,6 +75,43 @@ class DashboardRepository {
     } on PostgrestException catch (e) {
       throw Exception(
         'Gagal memuat data dashboard dari Supabase: ${e.message}. Pastikan schema SQL sudah dijalankan.',
+      );
+    }
+  }
+
+  Future<DashboardLiveSections> loadAdminLiveSections() async {
+    try {
+      final response = await Future.wait<dynamic>([
+        _supabase
+            .from('invoices')
+            .select(
+              'id,no_invoice,tanggal,armada_id,armada_start_date,armada_end_date,created_at,rincian',
+            )
+            .order('tanggal', ascending: false),
+        _supabase
+            .from('expenses')
+            .select('id,no_expense,tanggal,created_at')
+            .order('tanggal', ascending: false),
+        _supabase
+            .from('armadas')
+            .select(
+              'id,nama_truk,plat_nomor,kapasitas,status,is_active,created_at,updated_at',
+            )
+            .order('created_at', ascending: false),
+      ]);
+
+      final invoices = _toMapList(response[0]);
+      final expenses = _toMapList(response[1]);
+      final armadas = _toMapList(response[2]).map(_normalizeArmadaRow).toList();
+      await _syncArmadaStatusByEndDate(armadas);
+
+      return DashboardLiveSections(
+        armadaUsages: _buildArmadaUsage(invoices, armadas),
+        recentActivities: _buildRecentActivities(invoices, expenses, armadas),
+      );
+    } on PostgrestException catch (e) {
+      throw Exception(
+        'Gagal memuat ringkasan armada/aktivitas terbaru: ${e.message}',
       );
     }
   }
@@ -145,7 +184,7 @@ class DashboardRepository {
           .select(
             'id,no_invoice,tanggal,nama_pelanggan,email,no_telp,due_date,'
             'lokasi_muat,lokasi_bongkar,armada_start_date,armada_end_date,'
-            'tonase,harga,status,total_bayar,total_biaya,pph,diterima_oleh,'
+            'tonase,harga,muatan,nama_supir,status,total_bayar,total_biaya,pph,diterima_oleh,'
             'customer_id,armada_id,order_id,rincian,created_at,updated_at',
           )
           .order('tanggal', ascending: false);
@@ -185,7 +224,9 @@ class DashboardRepository {
             .from('armadas')
             .select(columns)
             .order('created_at', ascending: false);
-        return _toMapList(res).map(_normalizeArmadaRow).toList();
+        final armadas = _toMapList(res).map(_normalizeArmadaRow).toList();
+        await _syncArmadaStatusByEndDate(armadas);
+        return armadas;
       } on PostgrestException catch (e) {
         lastError = e;
         final message = e.message.toLowerCase();
@@ -203,7 +244,7 @@ class DashboardRepository {
     try {
       final res = await _supabase
           .from('invoices')
-          .select('id,armada_id,created_at')
+          .select('id,armada_id,rincian,created_at')
           .order('created_at', ascending: false);
       return _toMapList(res);
     } on PostgrestException catch (e) {
@@ -211,7 +252,7 @@ class DashboardRepository {
       if (message.contains('column') || message.contains('does not exist')) {
         try {
           final fallback =
-              await _supabase.from('invoices').select('id,armada_id');
+              await _supabase.from('invoices').select('id,armada_id,rincian');
           return _toMapList(fallback);
         } on PostgrestException catch (fallbackError) {
           throw Exception(
@@ -220,6 +261,120 @@ class DashboardRepository {
         }
       }
       throw Exception('Gagal memuat pemakaian armada invoice: ${e.message}');
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchInvoiceCustomerOptions() async {
+    try {
+      final res = await _supabase
+          .from('invoices')
+          .select(
+            'customer_id,nama_pelanggan,email,no_telp,'
+            'lokasi_muat,lokasi_bongkar,muatan,nama_supir,'
+            'armada_id,armada_start_date,armada_end_date,tonase,harga,'
+            'rincian,created_at,updated_at',
+          )
+          .order('updated_at', ascending: false);
+      final rows = _toMapList(res);
+      final latestByKey = <String, Map<String, dynamic>>{};
+
+      String normalize(dynamic value) {
+        return (value ?? '').toString().trim().replaceAll(RegExp(r'\s+'), ' ');
+      }
+
+      String normalizeKey(dynamic value) {
+        return normalize(value).toLowerCase();
+      }
+
+      DateTime rowStamp(Map<String, dynamic> row) {
+        return Formatters.parseDate(row['updated_at'] ?? row['created_at']) ??
+            DateTime.fromMillisecondsSinceEpoch(0);
+      }
+
+      for (final row in rows) {
+        final customerName = normalize(row['nama_pelanggan']);
+        if (customerName.isEmpty) continue;
+
+        final email = normalize(row['email']);
+        final phone = normalize(row['no_telp']);
+        final detailRows = _toMapList(row['rincian']);
+
+        void addOption({
+          required String muat,
+          required String bongkar,
+          String? muatan,
+          Map<String, dynamic>? source,
+        }) {
+          final routeLabel = (muat.isEmpty && bongkar.isEmpty)
+              ? '-'
+              : '${muat.isEmpty ? '-' : muat}-${bongkar.isEmpty ? '-' : bongkar}';
+          final key =
+              '${normalizeKey(customerName)}|${normalizeKey(muat)}|${normalizeKey(bongkar)}';
+          final candidate = <String, dynamic>{
+            'id': key,
+            'label': '$customerName: $routeLabel',
+            'customer_id': '${row['customer_id'] ?? ''}'.trim(),
+            'customer_name': customerName,
+            'email': email,
+            'phone': phone,
+            'lokasi_muat': muat,
+            'lokasi_bongkar': bongkar,
+            'muatan': normalize(muatan),
+            'nama_supir': normalize(source?['nama_supir']),
+            'armada_id': '${source?['armada_id'] ?? ''}'.trim(),
+            'armada_start_date': normalize(source?['armada_start_date']),
+            'armada_end_date': normalize(source?['armada_end_date']),
+            'tonase': source?['tonase'],
+            'harga': source?['harga'],
+            '__stamp': rowStamp(row),
+          };
+          final existing = latestByKey[key];
+          if (existing == null) {
+            latestByKey[key] = candidate;
+            return;
+          }
+          final existingStamp = existing['__stamp'] as DateTime;
+          final candidateStamp = candidate['__stamp'] as DateTime;
+          if (candidateStamp.isAfter(existingStamp)) {
+            latestByKey[key] = candidate;
+          }
+        }
+
+        if (detailRows.isNotEmpty) {
+          for (final detail in detailRows) {
+            addOption(
+              muat: normalize(detail['lokasi_muat'] ?? row['lokasi_muat']),
+              bongkar:
+                  normalize(detail['lokasi_bongkar'] ?? row['lokasi_bongkar']),
+              muatan: '${detail['muatan'] ?? row['muatan'] ?? ''}',
+              source: detail,
+            );
+          }
+          continue;
+        }
+
+        addOption(
+          muat: normalize(row['lokasi_muat']),
+          bongkar: normalize(row['lokasi_bongkar']),
+          muatan: '${row['muatan'] ?? ''}',
+          source: row,
+        );
+      }
+
+      final options = latestByKey.values.toList()
+        ..sort((a, b) {
+          final aStamp = a['__stamp'] as DateTime;
+          final bStamp = b['__stamp'] as DateTime;
+          return bStamp.compareTo(aStamp);
+        });
+
+      return options.map((option) {
+        final cleaned = Map<String, dynamic>.from(option);
+        cleaned.remove('__stamp');
+        return cleaned;
+      }).toList();
+    } on PostgrestException catch (e) {
+      throw Exception('Gagal memuat opsi customer invoice: ${e.message}');
     }
   }
 
@@ -334,6 +489,8 @@ class DashboardRepository {
     DateTime? armadaEndDate,
     double? tonase,
     double? harga,
+    String? muatan,
+    String? namaSupir,
     String? acceptedBy,
     String? customerId,
     String? orderId,
@@ -349,6 +506,10 @@ class DashboardRepository {
         (issuedDate ?? DateTime.now()).toIso8601String().split('T').first;
     final selectedArmadaIds =
         _collectArmadaIds(primaryArmadaId: armadaId, details: details);
+    final driverNames = _resolveDriverNames(
+      explicitName: namaSupir,
+      details: details,
+    );
 
     try {
       final payload = <String, dynamic>{
@@ -367,6 +528,8 @@ class DashboardRepository {
             armadaEndDate == null ? null : _dateOnly(armadaEndDate),
         'tonase': tonase,
         'harga': harga,
+        'muatan': muatan?.trim().isEmpty == true ? null : muatan?.trim(),
+        'nama_supir': driverNames,
         'status': status,
         'total_biaya': total,
         'pph': max(0, (total * 0.02)),
@@ -396,6 +559,7 @@ class DashboardRepository {
           status: 'Full',
         );
       }
+      await _syncArmadaStatusNowBestEffort();
     } on PostgrestException catch (e) {
       throw Exception('Gagal menambah invoice: ${e.message}');
     }
@@ -403,11 +567,12 @@ class DashboardRepository {
 
   Future<void> createExpense({
     required double total,
-    String status = 'Recorded',
+    String status = 'Unpaid',
     DateTime? expenseDate,
     String? note,
     String? kategori,
     String? keterangan,
+    String? recordedBy,
     List<Map<String, dynamic>>? details,
   }) async {
     final user = _supabase.auth.currentUser;
@@ -428,10 +593,12 @@ class DashboardRepository {
             keterangan?.trim().isEmpty == true ? null : keterangan?.trim(),
         'total_pengeluaran': total,
         'status': status,
-        'dicatat_oleh': user.userMetadata?['username'] ??
-            user.userMetadata?['name'] ??
-            user.email ??
-            'unknown',
+        'dicatat_oleh': recordedBy?.trim().isNotEmpty == true
+            ? recordedBy!.trim()
+            : user.userMetadata?['username'] ??
+                user.userMetadata?['name'] ??
+                user.email ??
+                'unknown',
         'note': note?.trim().isEmpty == true ? null : note?.trim(),
         'rincian': details,
         'created_by': user.id,
@@ -481,7 +648,7 @@ class DashboardRepository {
           .select(
             'id,no_invoice,tanggal,nama_pelanggan,email,no_telp,due_date,'
             'lokasi_muat,lokasi_bongkar,armada_start_date,armada_end_date,'
-            'tonase,harga,status,total_biaya,pph,total_bayar,diterima_oleh,'
+            'tonase,harga,muatan,nama_supir,status,total_biaya,pph,total_bayar,diterima_oleh,'
             'customer_id,armada_id,order_id,rincian,created_at,updated_at',
           )
           .eq('id', id)
@@ -512,10 +679,16 @@ class DashboardRepository {
     String? armadaEndDate,
     double? tonase,
     double? harga,
+    String? muatan,
+    String? namaSupir,
     List<Map<String, dynamic>>? details,
   }) async {
     final selectedArmadaIds =
         _collectArmadaIds(primaryArmadaId: armadaId, details: details);
+    final driverNames = _resolveDriverNames(
+      explicitName: namaSupir,
+      details: details,
+    );
     try {
       final payload = <String, dynamic>{
         'nama_pelanggan': customerName.trim(),
@@ -540,6 +713,8 @@ class DashboardRepository {
             : armadaEndDate?.trim(),
         'tonase': tonase,
         'harga': harga,
+        'muatan': muatan?.trim().isEmpty == true ? null : muatan?.trim(),
+        'nama_supir': driverNames,
         'rincian': details,
         'updated_at': DateTime.now().toIso8601String(),
       };
@@ -557,6 +732,7 @@ class DashboardRepository {
           status: 'Full',
         );
       }
+      await _syncArmadaStatusNowBestEffort();
     } on PostgrestException catch (e) {
       throw Exception('Gagal update invoice: ${e.message}');
     }
@@ -565,6 +741,7 @@ class DashboardRepository {
   Future<void> deleteInvoice(String id) async {
     try {
       await _supabase.from('invoices').delete().eq('id', id);
+      await _syncArmadaStatusNowBestEffort();
     } on PostgrestException catch (e) {
       throw Exception('Gagal hapus invoice: ${e.message}');
     }
@@ -595,6 +772,7 @@ class DashboardRepository {
     String? kategori,
     String? keterangan,
     String? note,
+    String? recordedBy,
     List<Map<String, dynamic>>? details,
   }) async {
     try {
@@ -606,6 +784,8 @@ class DashboardRepository {
         'keterangan':
             keterangan?.trim().isEmpty == true ? null : keterangan?.trim(),
         'note': note?.trim().isEmpty == true ? null : note?.trim(),
+        'dicatat_oleh':
+            recordedBy?.trim().isEmpty == true ? null : recordedBy?.trim(),
         'rincian': details,
         'updated_at': DateTime.now().toIso8601String(),
       }).eq('id', id);
@@ -1079,44 +1259,80 @@ class DashboardRepository {
   List<ArmadaUsage> _buildArmadaUsage(
     List<Map<String, dynamic>> invoices,
     List<Map<String, dynamic>> armadas,
-    List<Map<String, dynamic>> invoiceItems,
   ) {
     final counts = <String, int>{};
-    final itemsByInvoice = <String, List<Map<String, dynamic>>>{};
+    var otherCount = 0;
+    final armadaByPlate = <String, String>{};
+    String normalizePlate(String value) {
+      return value.toUpperCase().replaceAll(RegExp(r'\s+'), ' ').trim();
+    }
 
-    for (final item in invoiceItems) {
-      final invoiceId = item['invoice_id']?.toString();
-      if (invoiceId == null || invoiceId.isEmpty) continue;
-      itemsByInvoice.putIfAbsent(invoiceId, () => []).add(item);
+    for (final armada in armadas) {
+      final id = '${armada['id'] ?? ''}'.trim();
+      final plate = normalizePlate('${armada['plat_nomor'] ?? ''}');
+      if (id.isEmpty || plate.isEmpty) continue;
+      armadaByPlate[plate] = id;
+    }
+
+    String? resolveArmadaId(Map<String, dynamic> row) {
+      final direct = '${row['armada_id'] ?? ''}'.trim();
+      if (direct.isNotEmpty) return direct;
+      final label = '${row['armada_label'] ?? row['armada'] ?? ''}'.trim();
+      if (label.isEmpty) return null;
+      final match = RegExp(
+        r'[A-Z]{1,2}\s?[0-9]{1,4}\s?[A-Z]{1,3}',
+      ).firstMatch(label.toUpperCase());
+      if (match == null) return null;
+      return armadaByPlate[normalizePlate(match.group(0) ?? '')];
     }
 
     for (final invoice in invoices) {
-      final invoiceId = invoice['id']?.toString();
-      final related = invoiceId == null
-          ? const <Map<String, dynamic>>[]
-          : itemsByInvoice[invoiceId] ?? const <Map<String, dynamic>>[];
-
-      if (related.isNotEmpty) {
-        for (final item in related) {
-          final armadaId = item['armada_id']?.toString();
-          if (armadaId == null || armadaId.isEmpty) continue;
-          counts[armadaId] = (counts[armadaId] ?? 0) + 1;
+      final detailRows = _toMapList(invoice['rincian']);
+      if (detailRows.isNotEmpty) {
+        for (final row in detailRows) {
+          final armadaId = resolveArmadaId(row) ?? '';
+          if (armadaId.isNotEmpty) {
+            counts[armadaId] = (counts[armadaId] ?? 0) + 1;
+            continue;
+          }
+          final manualArmada = (row['armada_manual'] ?? '').toString().trim();
+          if (manualArmada.isNotEmpty) {
+            otherCount += 1;
+          }
         }
-      } else {
-        final armadaId = invoice['armada_id']?.toString();
-        if (armadaId == null || armadaId.isEmpty) continue;
+        continue;
+      }
+
+      final armadaId = '${invoice['armada_id'] ?? ''}'.trim();
+      if (armadaId.isNotEmpty) {
         counts[armadaId] = (counts[armadaId] ?? 0) + 1;
+        continue;
+      }
+
+      final manualArmada = '${invoice['armada_manual'] ?? ''}'.trim();
+      if (manualArmada.isNotEmpty) {
+        otherCount += 1;
       }
     }
 
     final list = armadas.map((armada) {
-      final id = (armada['id'] ?? '').toString();
+      final id = '${armada['id'] ?? ''}'.trim();
       return ArmadaUsage(
         name: (armada['nama_truk'] ?? 'Armada').toString(),
         plate: (armada['plat_nomor'] ?? '-').toString(),
         count: counts[id] ?? 0,
       );
     }).toList();
+
+    if (otherCount > 0) {
+      list.add(
+        ArmadaUsage(
+          name: 'Other Armada',
+          plate: 'Manual Input',
+          count: otherCount,
+        ),
+      );
+    }
 
     list.sort((a, b) => b.count.compareTo(a.count));
     return list;
@@ -1251,37 +1467,82 @@ class DashboardRepository {
         'kind': 'income',
       });
 
-      final armadaId = (invoice['armada_id'] ?? '').toString();
-      final armada = armadaById[armadaId];
-      final armadaLabel = armada == null
-          ? 'Armada'
-          : '${armada['nama_truk'] ?? 'Armada'} (${armada['plat_nomor'] ?? '-'})';
       final invoiceLabel =
           Formatters.invoiceNumber(invoice['no_invoice'], invoice['tanggal']);
+      final details = _toMapList(invoice['rincian']);
+      if (details.isNotEmpty) {
+        for (var i = 0; i < details.length; i++) {
+          final row = details[i];
+          final rowArmadaId = '${row['armada_id'] ?? ''}'.trim();
+          final armada = rowArmadaId.isEmpty ? null : armadaById[rowArmadaId];
+          final manual = '${row['armada_manual'] ?? ''}'.trim();
+          final fallback =
+              '${row['armada_label'] ?? row['armada'] ?? ''}'.trim();
+          final armadaLabel = armada == null
+              ? (manual.isNotEmpty
+                  ? manual
+                  : (fallback.isNotEmpty ? fallback : 'Armada'))
+              : '${armada['nama_truk'] ?? 'Armada'} (${armada['plat_nomor'] ?? '-'})';
 
-      final startDate =
-          Formatters.parseDate(invoice['armada_start_date'] ?? '');
-      if (startDate != null) {
-        items.add({
-          'id': 'arm-start-$id',
-          'date': startDate,
-          'title': 'Keberangkatan armada',
-          'subtitle': '$armadaLabel • $invoiceLabel',
-          'dateLabel': Formatters.dmy(startDate),
-          'kind': 'armada_start',
-        });
-      }
+          final startDate = Formatters.parseDate(
+            row['armada_start_date'] ?? invoice['armada_start_date'],
+          );
+          if (startDate != null) {
+            items.add({
+              'id': 'arm-start-$id-$i',
+              'date': startDate,
+              'title': 'Keberangkatan armada',
+              'subtitle': '$armadaLabel • $invoiceLabel',
+              'dateLabel': Formatters.dmy(startDate),
+              'kind': 'armada_start',
+            });
+          }
 
-      final endDate = Formatters.parseDate(invoice['armada_end_date'] ?? '');
-      if (endDate != null) {
-        items.add({
-          'id': 'arm-done-$id',
-          'date': endDate,
-          'title': 'Armada selesai jalan',
-          'subtitle': '$armadaLabel • $invoiceLabel',
-          'dateLabel': Formatters.dmy(endDate),
-          'kind': 'armada_done',
-        });
+          final endDate = Formatters.parseDate(
+            row['armada_end_date'] ?? invoice['armada_end_date'],
+          );
+          if (endDate != null) {
+            items.add({
+              'id': 'arm-done-$id-$i',
+              'date': endDate,
+              'title': 'Armada selesai jalan',
+              'subtitle': '$armadaLabel • $invoiceLabel',
+              'dateLabel': Formatters.dmy(endDate),
+              'kind': 'armada_done',
+            });
+          }
+        }
+      } else {
+        final armadaId = (invoice['armada_id'] ?? '').toString().trim();
+        final armada = armadaById[armadaId];
+        final armadaLabel = armada == null
+            ? 'Armada'
+            : '${armada['nama_truk'] ?? 'Armada'} (${armada['plat_nomor'] ?? '-'})';
+
+        final startDate =
+            Formatters.parseDate(invoice['armada_start_date'] ?? '');
+        if (startDate != null) {
+          items.add({
+            'id': 'arm-start-$id',
+            'date': startDate,
+            'title': 'Keberangkatan armada',
+            'subtitle': '$armadaLabel • $invoiceLabel',
+            'dateLabel': Formatters.dmy(startDate),
+            'kind': 'armada_start',
+          });
+        }
+
+        final endDate = Formatters.parseDate(invoice['armada_end_date'] ?? '');
+        if (endDate != null) {
+          items.add({
+            'id': 'arm-done-$id',
+            'date': endDate,
+            'title': 'Armada selesai jalan',
+            'subtitle': '$armadaLabel • $invoiceLabel',
+            'dateLabel': Formatters.dmy(endDate),
+            'kind': 'armada_done',
+          });
+        }
       }
     }
 
@@ -1374,6 +1635,108 @@ class DashboardRepository {
     return value.toIso8601String().split('T').first;
   }
 
+  bool _isLikelyUuid(String value) {
+    final normalized = value.trim().toLowerCase();
+    final pattern = RegExp(
+        r'^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$');
+    return pattern.hasMatch(normalized);
+  }
+
+  Future<void> _syncArmadaStatusByEndDate(
+    List<Map<String, dynamic>> armadas,
+  ) async {
+    if (armadas.isEmpty) return;
+
+    try {
+      final rows = await _supabase
+          .from('invoices')
+          .select('armada_id,armada_end_date,status,rincian');
+
+      final usageRows = _toMapList(rows);
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final fullArmadaIds = <String>{};
+
+      bool isBlockedStatus(String status) {
+        final lower = status.toLowerCase();
+        if (lower.contains('cancel') || lower.contains('reject')) {
+          return false;
+        }
+        return lower.contains('full') ||
+            lower.contains('on the way') ||
+            lower.contains('waiting') ||
+            lower.contains('unpaid') ||
+            lower.contains('paid') ||
+            lower.contains('progress');
+      }
+
+      void markArmadaUsage(String armadaId, DateTime? endDate, String status) {
+        if (!_isLikelyUuid(armadaId)) return;
+
+        if (endDate == null) {
+          if (isBlockedStatus(status)) {
+            fullArmadaIds.add(armadaId);
+          }
+          return;
+        }
+
+        final releaseDate = DateTime(endDate.year, endDate.month, endDate.day);
+        if (today.isBefore(releaseDate)) {
+          fullArmadaIds.add(armadaId);
+        }
+      }
+
+      for (final row in usageRows) {
+        final status = '${row['status'] ?? ''}'.trim();
+        final detailRows = _toMapList(row['rincian']);
+
+        if (detailRows.isNotEmpty) {
+          for (final detail in detailRows) {
+            final detailArmadaId = '${detail['armada_id'] ?? ''}'.trim();
+            final detailEndDate = Formatters.parseDate(
+                detail['armada_end_date'] ?? row['armada_end_date']);
+            markArmadaUsage(detailArmadaId, detailEndDate, status);
+          }
+          continue;
+        }
+
+        final armadaId = '${row['armada_id'] ?? ''}'.trim();
+        final endDate = Formatters.parseDate(row['armada_end_date']);
+        markArmadaUsage(armadaId, endDate, status);
+      }
+
+      final updates = <MapEntry<String, String>>[];
+      for (final armada in armadas) {
+        final id = '${armada['id'] ?? ''}'.trim();
+        if (!_isLikelyUuid(id)) continue;
+
+        final isInactive = (armada['is_active'] == false) ||
+            '${armada['status'] ?? ''}'.trim().toLowerCase() == 'inactive';
+        if (isInactive) continue;
+
+        final nextStatus = fullArmadaIds.contains(id) ? 'Full' : 'Ready';
+        final currentStatus = '${armada['status'] ?? 'Ready'}'.trim();
+        if (currentStatus.toLowerCase() == nextStatus.toLowerCase()) continue;
+
+        armada['status'] = nextStatus;
+        updates.add(MapEntry(id, nextStatus));
+      }
+
+      for (final entry in updates) {
+        try {
+          await _supabase.from('armadas').update({
+            'status': entry.value,
+            'updated_at': DateTime.now().toIso8601String(),
+          }).eq('id', entry.key);
+        } catch (_) {
+          // Best effort: fetch tetap jalan walau update status gagal.
+        }
+      }
+    } catch (_) {
+      // Best effort: fetch armada tetap jalan walau sinkron status gagal.
+    }
+  }
+
   Map<String, dynamic> _normalizeArmadaRow(Map<String, dynamic> row) {
     final result = Map<String, dynamic>.from(row);
     result['nama_truk'] = '${row['nama_truk'] ?? '-'}';
@@ -1396,17 +1759,70 @@ class DashboardRepository {
   }) {
     final ids = <String>{};
     final primary = primaryArmadaId?.trim() ?? '';
-    if (primary.isNotEmpty) {
+    if (primary.isNotEmpty && _isLikelyUuid(primary)) {
       ids.add(primary);
     }
     for (final detail in details ?? const <Map<String, dynamic>>[]) {
       final value = detail['armada_id'];
       final id = value == null ? '' : value.toString().trim();
-      if (id.isNotEmpty) {
+      if (id.isNotEmpty && _isLikelyUuid(id)) {
         ids.add(id);
       }
     }
     return ids;
+  }
+
+  String? _resolveDriverNames({
+    String? explicitName,
+    List<Map<String, dynamic>>? details,
+  }) {
+    final direct = explicitName?.trim();
+    if (direct != null && direct.isNotEmpty) {
+      final lowered = direct.toLowerCase();
+      if (lowered != 'null' && lowered != 'undefined' && lowered != '-') {
+        return direct;
+      }
+    }
+    return _deriveDriverNames(details);
+  }
+
+  String? _deriveDriverNames(List<Map<String, dynamic>>? details) {
+    if (details == null || details.isEmpty) return null;
+    final names = <String>{};
+    for (final detail in details) {
+      final candidateValues = <String>[];
+      final primaryRaw =
+          '${detail['nama_supir'] ?? detail['namaSupir'] ?? detail['supir'] ?? detail['driver_name'] ?? detail['driver'] ?? detail['nama supir'] ?? ''}'
+              .trim();
+      if (primaryRaw.isNotEmpty) {
+        candidateValues.add(primaryRaw);
+      }
+
+      for (final entry in detail.entries) {
+        final key =
+            entry.key.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+        if (!key.contains('supir') && !key.contains('driver')) continue;
+        final raw = '${entry.value ?? ''}'.trim();
+        if (raw.isNotEmpty) {
+          candidateValues.add(raw);
+        }
+      }
+
+      for (final raw in candidateValues) {
+        for (final part in raw.split(RegExp(r'[,;/]'))) {
+          final name = part.trim();
+          final lowered = name.toLowerCase();
+          if (name.isNotEmpty &&
+              lowered != 'null' &&
+              lowered != 'undefined' &&
+              lowered != '-') {
+            names.add(name);
+          }
+        }
+      }
+    }
+    if (names.isEmpty) return null;
+    return names.join(', ');
   }
 
   Future<void> _setArmadaStatusBestEffort(
@@ -1425,6 +1841,21 @@ class DashboardRepository {
       } catch (_) {
         // Best effort: invoice tetap tersimpan walau status armada gagal di-sync.
       }
+    }
+  }
+
+  Future<void> _syncArmadaStatusNowBestEffort() async {
+    try {
+      const columns =
+          'id,nama_truk,plat_nomor,kapasitas,status,is_active,created_at,updated_at';
+      final res = await _supabase
+          .from('armadas')
+          .select(columns)
+          .order('created_at', ascending: false);
+      final armadas = _toMapList(res).map(_normalizeArmadaRow).toList();
+      await _syncArmadaStatusByEndDate(armadas);
+    } catch (_) {
+      // Best effort: status akan tersinkron saat fetch armada berikutnya.
     }
   }
 }
