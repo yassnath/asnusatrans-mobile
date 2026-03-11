@@ -26,6 +26,20 @@ class DashboardRepository {
   DashboardRepository(this._supabase);
 
   final SupabaseClient _supabase;
+  static const _companyKeywords = <String>[
+    r'\bcv\b',
+    r'\bpt\b',
+    r'\bfa\b',
+    r'\bud\b',
+    r'\bpo\b',
+    r'\byayasan\b',
+    r'\bbumn\b',
+    r'\bbumd\b',
+    r'\bperum\b',
+    r'\bkoperasi\b',
+    r'\bpersekutuan\s+perdata\b',
+    r'\bmaatschap\b',
+  ];
 
   Future<DashboardBundle> loadAdminDashboard() async {
     try {
@@ -182,7 +196,7 @@ class DashboardRepository {
       final res = await _supabase
           .from('invoices')
           .select(
-            'id,no_invoice,tanggal,nama_pelanggan,email,no_telp,due_date,'
+            'id,no_invoice,tanggal,tanggal_kop,lokasi_kop,nama_pelanggan,email,no_telp,due_date,'
             'lokasi_muat,lokasi_bongkar,armada_start_date,armada_end_date,'
             'tonase,harga,muatan,nama_supir,status,total_bayar,total_biaya,pph,diterima_oleh,'
             'customer_id,armada_id,order_id,rincian,created_at,updated_at',
@@ -270,6 +284,7 @@ class DashboardRepository {
           .from('invoices')
           .select(
             'customer_id,nama_pelanggan,email,no_telp,'
+            'tanggal_kop,lokasi_kop,'
             'lokasi_muat,lokasi_bongkar,muatan,nama_supir,'
             'armada_id,armada_start_date,armada_end_date,tonase,harga,'
             'rincian,created_at,updated_at',
@@ -317,6 +332,8 @@ class DashboardRepository {
             'customer_name': customerName,
             'email': email,
             'phone': phone,
+            'tanggal_kop': normalize(source?['tanggal_kop'] ?? row['tanggal_kop']),
+            'lokasi_kop': normalize(source?['lokasi_kop'] ?? row['lokasi_kop']),
             'lokasi_muat': muat,
             'lokasi_bongkar': bongkar,
             'muatan': normalize(muatan),
@@ -477,10 +494,14 @@ class DashboardRepository {
   Future<void> createInvoice({
     required String customerName,
     required double total,
+    String? noInvoice,
+    bool includePph = true,
     String status = 'Unpaid',
     DateTime? issuedDate,
     String? email,
     String? noTelp,
+    DateTime? kopDate,
+    String? kopLocation,
     DateTime? dueDate,
     String? pickup,
     String? destination,
@@ -501,7 +522,9 @@ class DashboardRepository {
       throw Exception('Session tidak ditemukan. Silakan login ulang.');
     }
 
-    final code = _makeDocumentCode('INC');
+    final code = (noInvoice ?? '').trim().isEmpty
+        ? _makeDocumentCode('INC')
+        : noInvoice!.trim();
     final date =
         (issuedDate ?? DateTime.now()).toIso8601String().split('T').first;
     final selectedArmadaIds =
@@ -511,10 +534,16 @@ class DashboardRepository {
       details: details,
     );
 
+    final pphValue = includePph ? max(0, (total * 0.02)) : 0.0;
+    final totalBayarValue = max(0, total - pphValue);
+
     try {
       final payload = <String, dynamic>{
         'no_invoice': code,
         'tanggal': date,
+        'tanggal_kop': kopDate == null ? null : _dateOnly(kopDate),
+        'lokasi_kop':
+            kopLocation?.trim().isEmpty == true ? null : kopLocation?.trim(),
         'nama_pelanggan': customerName.trim(),
         'email': email?.trim().isEmpty == true ? null : email?.trim(),
         'no_telp': noTelp?.trim().isEmpty == true ? null : noTelp?.trim(),
@@ -532,8 +561,8 @@ class DashboardRepository {
         'nama_supir': driverNames,
         'status': status,
         'total_biaya': total,
-        'pph': max(0, (total * 0.02)),
-        'total_bayar': max(0, total - (total * 0.02)),
+        'pph': pphValue,
+        'total_bayar': totalBayarValue,
         'diterima_oleh':
             acceptedBy?.trim().isEmpty == true ? null : acceptedBy?.trim(),
         'created_by': user.id,
@@ -562,6 +591,40 @@ class DashboardRepository {
       await _syncArmadaStatusNowBestEffort();
     } on PostgrestException catch (e) {
       throw Exception('Gagal menambah invoice: ${e.message}');
+    }
+  }
+
+  Future<String> generateIncomeInvoiceNumber({
+    required DateTime issuedDate,
+    required bool isCompany,
+  }) async {
+    try {
+      final monthStart = DateTime(issuedDate.year, issuedDate.month, 1);
+      final nextMonth = DateTime(issuedDate.year, issuedDate.month + 1, 1);
+      final res = await _supabase
+          .from('invoices')
+          .select('no_invoice,tanggal,nama_pelanggan')
+          .gte('tanggal', _dateOnly(monthStart))
+          .lt('tanggal', _dateOnly(nextMonth));
+
+      final rows = _toMapList(res);
+      final currentCount = rows.where((row) {
+        final no = '${row['no_invoice'] ?? ''}';
+        final customerName = '${row['nama_pelanggan'] ?? ''}'.trim();
+        final isCompanyEntry = customerName.isNotEmpty
+            ? _isCompanyCustomerName(customerName)
+            : _isCompanyInvoiceNumber(no);
+        return isCompany ? isCompanyEntry : !isCompanyEntry;
+      }).length;
+
+      final roman = _romanMonth(issuedDate.month);
+      final seq = currentCount + 1;
+      if (isCompany) {
+        return '480 / CV.ANT / $roman / $seq';
+      }
+      return '268 / ANT / $roman / $seq';
+    } on PostgrestException catch (e) {
+      throw Exception('Gagal menyiapkan nomor invoice: ${e.message}');
     }
   }
 
@@ -646,7 +709,7 @@ class DashboardRepository {
       final res = await _supabase
           .from('invoices')
           .select(
-            'id,no_invoice,tanggal,nama_pelanggan,email,no_telp,due_date,'
+            'id,no_invoice,tanggal,tanggal_kop,lokasi_kop,nama_pelanggan,email,no_telp,due_date,'
             'lokasi_muat,lokasi_bongkar,armada_start_date,armada_end_date,'
             'tonase,harga,muatan,nama_supir,status,total_biaya,pph,total_bayar,diterima_oleh,'
             'customer_id,armada_id,order_id,rincian,created_at,updated_at',
@@ -670,6 +733,8 @@ class DashboardRepository {
     required double totalBayar,
     String? email,
     String? noTelp,
+    String? kopDate,
+    String? kopLocation,
     String? dueDate,
     String? acceptedBy,
     String? pickup,
@@ -699,6 +764,9 @@ class DashboardRepository {
         'total_bayar': totalBayar,
         'email': email?.trim().isEmpty == true ? null : email?.trim(),
         'no_telp': noTelp?.trim().isEmpty == true ? null : noTelp?.trim(),
+        'tanggal_kop': kopDate?.trim().isEmpty == true ? null : kopDate?.trim(),
+        'lokasi_kop':
+            kopLocation?.trim().isEmpty == true ? null : kopLocation?.trim(),
         'due_date': dueDate?.trim().isEmpty == true ? null : dueDate?.trim(),
         'diterima_oleh':
             acceptedBy?.trim().isEmpty == true ? null : acceptedBy?.trim(),
@@ -1345,8 +1413,11 @@ class DashboardRepository {
       return TransactionItem(
         id: id,
         type: 'Income',
-        number:
-            Formatters.invoiceNumber(invoice['no_invoice'], invoice['tanggal']),
+        number: Formatters.invoiceNumber(
+          invoice['no_invoice'],
+          invoice['tanggal'],
+          customerName: invoice['nama_pelanggan'],
+        ),
         customer: (invoice['nama_pelanggan'] ?? '-').toString(),
         dateLabel: Formatters.dmy(invoice['tanggal'] ?? invoice['created_at']),
         total: _invoiceTotal(invoice),
@@ -1371,7 +1442,10 @@ class DashboardRepository {
           id: id,
           type: 'Income',
           number: Formatters.invoiceNumber(
-              invoice['no_invoice'], invoice['tanggal']),
+            invoice['no_invoice'],
+            invoice['tanggal'],
+            customerName: invoice['nama_pelanggan'],
+          ),
           customer: (invoice['nama_pelanggan'] ?? '-').toString(),
           dateLabel:
               Formatters.dmy(invoice['tanggal'] ?? invoice['created_at']),
@@ -1412,7 +1486,10 @@ class DashboardRepository {
           id: id,
           type: 'Income',
           number: Formatters.invoiceNumber(
-              invoice['no_invoice'], invoice['tanggal']),
+            invoice['no_invoice'],
+            invoice['tanggal'],
+            customerName: invoice['nama_pelanggan'],
+          ),
           customer: (invoice['nama_pelanggan'] ?? '-').toString(),
           dateLabel:
               Formatters.dmy(invoice['tanggal'] ?? invoice['created_at']),
@@ -1462,13 +1539,21 @@ class DashboardRepository {
         'date': Formatters.parseDate(tanggal) ??
             DateTime.fromMillisecondsSinceEpoch(0),
         'title': 'Pembuatan Income Invoice',
-        'subtitle': Formatters.invoiceNumber(invoice['no_invoice'], tanggal),
+        'subtitle': Formatters.invoiceNumber(
+          invoice['no_invoice'],
+          tanggal,
+          customerName: invoice['nama_pelanggan'],
+        ),
         'dateLabel': Formatters.dmy(tanggal),
         'kind': 'income',
       });
 
       final invoiceLabel =
-          Formatters.invoiceNumber(invoice['no_invoice'], invoice['tanggal']);
+          Formatters.invoiceNumber(
+        invoice['no_invoice'],
+        invoice['tanggal'],
+        customerName: invoice['nama_pelanggan'],
+      );
       final details = _toMapList(invoice['rincian']);
       if (details.isNotEmpty) {
         for (var i = 0; i < details.length; i++) {
@@ -1629,6 +1714,69 @@ class DashboardRepository {
     final tail =
         (now.microsecondsSinceEpoch % 10000).toString().padLeft(4, '0');
     return '$prefix-$mm-$yy-$tail';
+  }
+
+  bool _isCompanyInvoiceNumber(String number) {
+    final raw = number.toUpperCase().trim();
+    if (raw.isEmpty) return false;
+    final compact = raw.replaceAll(RegExp(r'\s+'), '');
+    if (compact.contains('CV.ANT') || compact.contains('/CV.ANT/')) {
+      return true;
+    }
+    if (_isPersonalInvoiceNumber(raw)) {
+      return false;
+    }
+    // Legacy pattern defaults to company to keep backward compatibility.
+    return raw.startsWith('INC-');
+  }
+
+  String _normalizeCompanyText(String value) {
+    return value
+        .toLowerCase()
+        .replaceAll('.', ' ')
+        .replaceAll(RegExp(r'[^a-z0-9\s]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  bool _isCompanyCustomerName(String value) {
+    final normalized = _normalizeCompanyText(value);
+    if (normalized.isEmpty) return false;
+    for (final keyword in _companyKeywords) {
+      if (RegExp(keyword).hasMatch(normalized)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool _isPersonalInvoiceNumber(String number) {
+    final raw = number.toUpperCase().trim();
+    if (raw.isEmpty) return false;
+    final compact = raw.replaceAll(RegExp(r'\s+'), '');
+    if (compact.contains('/ANT/') && !compact.contains('CV.ANT')) {
+      return true;
+    }
+    return compact.startsWith('NO:268/');
+  }
+
+  String _romanMonth(int month) {
+    const romans = <String>[
+      'I',
+      'II',
+      'III',
+      'IV',
+      'V',
+      'VI',
+      'VII',
+      'VIII',
+      'IX',
+      'X',
+      'XI',
+      'XII',
+    ];
+    final safe = month.clamp(1, 12);
+    return romans[safe - 1];
   }
 
   String _dateOnly(DateTime value) {
