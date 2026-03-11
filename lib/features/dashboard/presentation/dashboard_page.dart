@@ -8866,12 +8866,12 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(10, 6, 10, 0),
+              padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
               child: Row(
                 children: [
                   Expanded(
                     child: SizedBox(
-                      height: 42,
+                      height: 56,
                       child: OutlinedButton(
                         onPressed: () => _openReportSummary(
                           incomes: incomes,
@@ -8886,8 +8886,11 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                         ),
                         child: Center(
                           child: Text(
-                            _t('Cetak Laporan', 'Print Report'),
+                            _t('Cetak\nLaporan', 'Print\nReport'),
                             textAlign: TextAlign.center,
+                            maxLines: 2,
+                            softWrap: true,
+                            overflow: TextOverflow.visible,
                           ),
                         ),
                       ),
@@ -8896,7 +8899,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: SizedBox(
-                      height: 42,
+                      height: 56,
                       child: OutlinedButton(
                         onPressed: () => widget.onQuickMenuSelect(2),
                         style: CvantButtonStyles.outlined(
@@ -8908,8 +8911,11 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                         ),
                         child: Center(
                           child: Text(
-                            _t('Tambah Pemasukkan', 'Add Income'),
+                            _t('Tambah\nPemasukkan', 'Add\nIncome'),
                             textAlign: TextAlign.center,
+                            maxLines: 2,
+                            softWrap: true,
+                            overflow: TextOverflow.visible,
                           ),
                         ),
                       ),
@@ -8918,7 +8924,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: SizedBox(
-                      height: 42,
+                      height: 56,
                       child: OutlinedButton(
                         onPressed: () => widget.onQuickMenuSelect(3),
                         style: CvantButtonStyles.outlined(
@@ -8930,8 +8936,11 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                         ),
                         child: Center(
                           child: Text(
-                            _t('Tambah Pengeluaran', 'Add Expense'),
+                            _t('Tambah\nPengeluaran', 'Add\nExpense'),
                             textAlign: TextAlign.center,
+                            maxLines: 2,
+                            softWrap: true,
+                            overflow: TextOverflow.visible,
                           ),
                         ),
                       ),

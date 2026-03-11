@@ -34,19 +34,21 @@ AS Nusa Trans Mobile centralizes the full flow in one place:
 ## Feature Highlights
 
 - **Authentication & Access**
-  - Sign in, sign up, session handling, and role-aware navigation
+  - Sign in, sign up, session handling, biometric option, and role-aware navigation
 - **Dashboard Intelligence**
-  - Key metrics, charts, recent activities, and operational summaries
+  - Key metrics, charts, recent activities, and live operational summaries
 - **Invoice Module**
-  - Create, edit, preview, list, and distribute invoice records
+  - Create, edit, preview, list, distribute, and print invoice records
 - **Expense Module**
-  - Structured expense capture and financial tracking
+  - Structured expense capture, status tracking, and printable expense documentation
 - **Fleet Module**
-  - Fleet list, status management, and operational availability
+  - Fleet list, status management, and operational availability tracking
 - **Order Module**
   - Customer orders, acceptance flow, and payment status tracking
 - **Profile & Settings**
-  - User profile updates, password management, and account preferences
+  - User profile updates, password management, language preference, and account security controls
+ - **Reporting Module**
+  - Filterable PDF reporting (monthly/yearly), manual record selection, and finance-ready summaries
 
 ## User Experience Philosophy
 
@@ -56,6 +58,21 @@ AS Nusa Trans Mobile is built to be practical under real operational pressure:
 - Clear visual hierarchy for fast reading
 - Strong feedback patterns for user confidence
 - Reliable behavior across admin, owner, and customer journeys
+
+## Why Teams Choose It
+
+- Built around real transport workflows, not generic templates
+- Financial and operational data stay connected in one timeline
+- Multi-role access keeps each screen focused and controlled
+- Report and invoice outputs are structured for day-to-day execution
+- Mobile-first interaction supports field speed and office oversight
+
+## Operational Reliability
+
+- Role-aware data boundaries for safer daily operations
+- Consistent status-driven flows across invoices, expenses, and fleets
+- Structured validation to reduce manual entry mistakes
+- Performance-oriented UI for frequent high-volume actions
 
 ## Tech Foundation (Product Perspective)
 
