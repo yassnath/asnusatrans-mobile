@@ -58,7 +58,7 @@ void main() {
         '2026-03-11',
         customerName: 'PT Maju Terus',
       );
-      expect(out, '480 / CV.ANT / III / 15');
+      expect(out, '015 / CV.ANT / III / 26');
     });
 
     test('converts personal income pattern with month', () {
@@ -67,7 +67,7 @@ void main() {
         '2026-03-11',
         customerName: 'Budi Santoso',
       );
-      expect(out, '268 / ANT / III / 15');
+      expect(out, '015 / BS / III / 26');
     });
 
     test('converts old income pattern using tanggal month', () {
@@ -76,7 +76,23 @@ void main() {
         '2026-08-01',
         customerName: 'cv. nusa jaya',
       );
-      expect(out, '480 / CV.ANT / VIII / 20');
+      expect(out, '020 / CV.ANT / VIII / 26');
+    });
+
+    test('keeps new company format while syncing year from date', () {
+      final out = Formatters.invoiceNumber(
+        '017 / CV.ANT / I / 26',
+        '2027-01-10',
+      );
+      expect(out, '017 / CV.ANT / I / 27');
+    });
+
+    test('keeps new personal format while syncing year from date', () {
+      final out = Formatters.invoiceNumber(
+        '017 / BS / I / 26',
+        '2027-01-10',
+      );
+      expect(out, '017 / BS / I / 27');
     });
 
     test('strips NO: prefix for non-income values', () {
@@ -85,4 +101,3 @@ void main() {
     });
   });
 }
-

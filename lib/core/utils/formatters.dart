@@ -93,7 +93,10 @@ class Formatters {
   static bool _isCompanyByInvoicePattern(String value) {
     final compact = value.toUpperCase().replaceAll(RegExp(r'\s+'), '');
     if (compact.contains('/CV.ANT/') || compact.contains('CV.ANT')) return true;
-    if (compact.contains('/ANT/') && !compact.contains('CV.ANT')) return false;
+    if ((compact.contains('/BS/') || compact.contains('/ANT/')) &&
+        !compact.contains('CV.ANT')) {
+      return false;
+    }
     return true;
   }
 
@@ -117,8 +120,9 @@ class Formatters {
     if (cleaned.isEmpty) return '-';
 
     final upper = cleaned.toUpperCase();
-    final looksIncome = upper.startsWith('INC-');
-    if (!looksIncome) {
+
+    // Expense number normalization stays independent from income format rules.
+    if (upper.startsWith('EXP-')) {
       final alreadyPattern = RegExp(r'^EXP-\d{2}-\d{4}-\d{4}$');
       if (alreadyPattern.hasMatch(upper)) return upper;
 
@@ -139,13 +143,78 @@ class Formatters {
             ? _isCompanyCustomerName(customerRaw)
             : _isCompanyByInvoicePattern(cleaned));
 
+    String composeNumber({
+      required int sequence,
+      required int month,
+      required int yearTwoDigits,
+      required bool company,
+    }) {
+      final seq = sequence.toString().padLeft(3, '0');
+      final yy = yearTwoDigits.toString().padLeft(2, '0');
+      final code = company ? 'CV.ANT' : 'BS';
+      return '$seq / $code / ${_romanMonth(month)} / $yy';
+    }
+
+    // New preferred format:
+    // 017 / BS / I / 26
+    // 017 / CV.ANT / I / 26
+    final newPattern = RegExp(
+      r'^(\d{1,4})\s*\/\s*(CV\.ANT|BS|ANT)\s*\/\s*([IVX]+)\s*\/\s*(\d{2})$',
+      caseSensitive: false,
+    );
+    final newMatch = newPattern.firstMatch(upper);
+    if (newMatch != null) {
+      final dt = parseDate(tanggal);
+      final seq = int.tryParse(newMatch.group(1) ?? '') ?? 1;
+      final prefix = (newMatch.group(2) ?? '').toUpperCase().trim();
+      final companyFromPrefix = prefix == 'CV.ANT';
+      final month = dt?.month ?? _romanMonths.indexOf((newMatch.group(3) ?? '').toUpperCase());
+      final yearTwoDigits =
+          dt != null ? (dt.year % 100) : (int.tryParse(newMatch.group(4) ?? '') ?? (DateTime.now().year % 100));
+      return composeNumber(
+        sequence: seq,
+        month: month <= 0 ? DateTime.now().month : month,
+        yearTwoDigits: yearTwoDigits,
+        company: companyFromPrefix,
+      );
+    }
+
     final patternWithMonth = RegExp(r'^INC-(\d{2})-(\d{4})-(\d{1,})$');
     final matchWithMonth = patternWithMonth.firstMatch(upper);
     if (matchWithMonth != null) {
-      final month = int.tryParse(matchWithMonth.group(1) ?? '') ?? 0;
-      final seq = matchWithMonth.group(3) ?? '1';
-      final prefix = resolvedIsCompany ? '480 / CV.ANT' : '268 / ANT';
-      return '$prefix / ${_romanMonth(month)} / $seq';
+      final dt = parseDate(tanggal);
+      final month =
+          dt?.month ?? (int.tryParse(matchWithMonth.group(1) ?? '') ?? 0);
+      final year = dt?.year ??
+          (int.tryParse(matchWithMonth.group(2) ?? '') ?? DateTime.now().year);
+      final seq = int.tryParse(matchWithMonth.group(3) ?? '') ?? 1;
+      return composeNumber(
+        sequence: seq,
+        month: month <= 0 ? DateTime.now().month : month,
+        yearTwoDigits: year % 100,
+        company: resolvedIsCompany,
+      );
+    }
+
+    // Legacy converted format: keep sequence, but ensure Roman month follows
+    // the provided reference date when available (e.g. tanggal_kop).
+    final convertedPattern = RegExp(
+      r'^(480\s*\/\s*CV\.ANT|268\s*\/\s*ANT)\s*\/\s*([IVX]+)\s*\/\s*(\d+)\s*$',
+      caseSensitive: false,
+    );
+    final convertedMatch = convertedPattern.firstMatch(upper);
+    if (convertedMatch != null) {
+      final dt = parseDate(tanggal);
+      final month = dt?.month ??
+          _romanMonths.indexOf((convertedMatch.group(2) ?? '').toUpperCase());
+      final seq = int.tryParse(convertedMatch.group(3) ?? '') ?? 1;
+      final yearTwoDigits = dt != null ? (dt.year % 100) : (DateTime.now().year % 100);
+      return composeNumber(
+        sequence: seq,
+        month: month <= 0 ? DateTime.now().month : month,
+        yearTwoDigits: yearTwoDigits,
+        company: resolvedIsCompany,
+      );
     }
 
     final oldPattern = RegExp(r'^INC-(\d{4})-(\d{1,})$');
@@ -153,9 +222,14 @@ class Formatters {
     if (oldMatch != null) {
       final dt = parseDate(tanggal);
       final month = dt?.month ?? DateTime.now().month;
-      final seq = oldMatch.group(2) ?? '1';
-      final prefix = resolvedIsCompany ? '480 / CV.ANT' : '268 / ANT';
-      return '$prefix / ${_romanMonth(month)} / $seq';
+      final year = dt?.year ?? (int.tryParse(oldMatch.group(1) ?? '') ?? DateTime.now().year);
+      final seq = int.tryParse(oldMatch.group(2) ?? '') ?? 1;
+      return composeNumber(
+        sequence: seq,
+        month: month,
+        yearTwoDigits: year % 100,
+        company: resolvedIsCompany,
+      );
     }
 
     return cleaned;

@@ -47,7 +47,7 @@ class DashboardRepository {
         _supabase
             .from('invoices')
             .select(
-              'id,no_invoice,tanggal,nama_pelanggan,status,total_bayar,total_biaya,pph,'
+              'id,no_invoice,tanggal,tanggal_kop,nama_pelanggan,status,total_bayar,total_biaya,pph,'
               'armada_id,armada_start_date,armada_end_date,muatan,created_at,rincian',
             )
             .order('tanggal', ascending: false),
@@ -99,7 +99,7 @@ class DashboardRepository {
         _supabase
             .from('invoices')
             .select(
-              'id,no_invoice,tanggal,armada_id,armada_start_date,armada_end_date,created_at,rincian',
+              'id,no_invoice,tanggal,tanggal_kop,armada_id,armada_start_date,armada_end_date,created_at,rincian',
             )
             .order('tanggal', ascending: false),
         _supabase
@@ -280,10 +280,23 @@ class DashboardRepository {
 
   Future<List<Map<String, dynamic>>> fetchInvoiceCustomerOptions() async {
     try {
+      final armadaRows = await _supabase.from('armadas').select('id,plat_nomor');
+      final armadaIdByPlateKey = <String, String>{};
+      String plateKey(String value) {
+        return value.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '').trim();
+      }
+
+      for (final armada in _toMapList(armadaRows)) {
+        final id = '${armada['id'] ?? ''}'.trim();
+        final key = plateKey('${armada['plat_nomor'] ?? ''}');
+        if (id.isEmpty || key.isEmpty) continue;
+        armadaIdByPlateKey[key] = id;
+      }
+
       final res = await _supabase
           .from('invoices')
           .select(
-            'customer_id,nama_pelanggan,email,no_telp,'
+            'id,customer_id,nama_pelanggan,email,no_telp,'
             'tanggal_kop,lokasi_kop,'
             'lokasi_muat,lokasi_bongkar,muatan,nama_supir,'
             'armada_id,armada_start_date,armada_end_date,tonase,harga,'
@@ -295,6 +308,19 @@ class DashboardRepository {
 
       String normalize(dynamic value) {
         return (value ?? '').toString().trim().replaceAll(RegExp(r'\s+'), ' ');
+      }
+
+      String? resolveArmadaIdFromText(dynamic value) {
+        final text = normalize(value);
+        if (text.isEmpty) return null;
+        final direct = armadaIdByPlateKey[plateKey(text)];
+        if (direct != null && direct.isNotEmpty) return direct;
+        final matched = RegExp(
+          r'[A-Z]{1,2}[\s-]*[0-9]{1,4}[\s-]*[A-Z]{1,3}',
+        ).firstMatch(text.toUpperCase());
+        if (matched == null) return null;
+        final key = plateKey(matched.group(0) ?? '');
+        return armadaIdByPlateKey[key];
       }
 
       String normalizeKey(dynamic value) {
@@ -320,6 +346,39 @@ class DashboardRepository {
           String? muatan,
           Map<String, dynamic>? source,
         }) {
+          final rawArmadaId = '${source?['armada_id'] ?? ''}'.trim();
+          final rawManualArmada = normalize(
+            source?['armada_manual'] ?? source?['armada_label'] ?? source?['armada'],
+          );
+          final resolvedArmadaId = rawArmadaId.isNotEmpty
+              ? rawArmadaId
+              : (resolveArmadaIdFromText(rawManualArmada) ?? '');
+          final resolvedManualArmada =
+              resolvedArmadaId.isEmpty ? rawManualArmada : '';
+          final detailEntry = <String, dynamic>{
+            'lokasi_muat': muat,
+            'lokasi_bongkar': bongkar,
+            'muatan': normalize(muatan),
+            'nama_supir': normalize(source?['nama_supir']),
+            'armada_id': resolvedArmadaId,
+            'armada_manual': resolvedManualArmada,
+            'armada_start_date': normalize(source?['armada_start_date']),
+            'armada_end_date': normalize(source?['armada_end_date']),
+            'tonase': source?['tonase'],
+            'harga': source?['harga'],
+          };
+          final detailFingerprint = [
+            normalize(detailEntry['lokasi_muat']),
+            normalize(detailEntry['lokasi_bongkar']),
+            normalize(detailEntry['muatan']),
+            normalize(detailEntry['nama_supir']),
+            normalize(detailEntry['armada_id']),
+            normalize(detailEntry['armada_manual']),
+            normalize(detailEntry['armada_start_date']),
+            normalize(detailEntry['armada_end_date']),
+            normalize(detailEntry['tonase']),
+            normalize(detailEntry['harga']),
+          ].join('|');
           final routeLabel = (muat.isEmpty && bongkar.isEmpty)
               ? '-'
               : '${muat.isEmpty ? '-' : muat}-${bongkar.isEmpty ? '-' : bongkar}';
@@ -338,12 +397,15 @@ class DashboardRepository {
             'lokasi_bongkar': bongkar,
             'muatan': normalize(muatan),
             'nama_supir': normalize(source?['nama_supir']),
-            'armada_id': '${source?['armada_id'] ?? ''}'.trim(),
+            'armada_id': resolvedArmadaId,
+            'armada_manual': resolvedManualArmada,
             'armada_start_date': normalize(source?['armada_start_date']),
             'armada_end_date': normalize(source?['armada_end_date']),
             'tonase': source?['tonase'],
             'harga': source?['harga'],
+            'details': <Map<String, dynamic>>[detailEntry],
             '__stamp': rowStamp(row),
+            '__detail_fingerprints': <String>{detailFingerprint},
           };
           final existing = latestByKey[key];
           if (existing == null) {
@@ -354,6 +416,19 @@ class DashboardRepository {
           final candidateStamp = candidate['__stamp'] as DateTime;
           if (candidateStamp.isAfter(existingStamp)) {
             latestByKey[key] = candidate;
+            return;
+          }
+          if (candidateStamp.isAtSameMomentAs(existingStamp)) {
+            final fingerprints =
+                (existing['__detail_fingerprints'] as Set<String>? ??
+                        <String>{})
+                    .toSet();
+            if (fingerprints.add(detailFingerprint)) {
+              final details = _toMapList(existing['details']);
+              details.add(detailEntry);
+              existing['details'] = details;
+              existing['__detail_fingerprints'] = fingerprints;
+            }
           }
         }
 
@@ -388,6 +463,7 @@ class DashboardRepository {
       return options.map((option) {
         final cleaned = Map<String, dynamic>.from(option);
         cleaned.remove('__stamp');
+        cleaned.remove('__detail_fingerprints');
         return cleaned;
       }).toList();
     } on PostgrestException catch (e) {
@@ -522,11 +598,23 @@ class DashboardRepository {
       throw Exception('Session tidak ditemukan. Silakan login ulang.');
     }
 
+    final parsedIssueDate = issuedDate ?? DateTime.now();
     final code = (noInvoice ?? '').trim().isEmpty
-        ? _makeDocumentCode('INC')
-        : noInvoice!.trim();
+        ? _makeDocumentCode(
+            'INC',
+            referenceDate: parsedIssueDate,
+          )
+        : (() {
+            final normalized = Formatters.invoiceNumber(
+              noInvoice!.trim(),
+              kopDate ?? parsedIssueDate,
+              customerName: customerName,
+              isCompany: _isCompanyCustomerName(customerName),
+            );
+            return normalized == '-' ? noInvoice.trim() : normalized;
+          })();
     final date =
-        (issuedDate ?? DateTime.now()).toIso8601String().split('T').first;
+        parsedIssueDate.toIso8601String().split('T').first;
     final selectedArmadaIds =
         _collectArmadaIds(primaryArmadaId: armadaId, details: details);
     final driverNames = _resolveDriverNames(
@@ -537,61 +625,89 @@ class DashboardRepository {
     final pphValue = includePph ? max(0, (total * 0.02)) : 0.0;
     final totalBayarValue = max(0, total - pphValue);
 
-    try {
+    final basePayload = <String, dynamic>{
+      'tanggal': date,
+      'tanggal_kop': kopDate == null ? null : _dateOnly(kopDate),
+      'lokasi_kop':
+          kopLocation?.trim().isEmpty == true ? null : kopLocation?.trim(),
+      'nama_pelanggan': customerName.trim(),
+      'email': email?.trim().isEmpty == true ? null : email?.trim(),
+      'no_telp': noTelp?.trim().isEmpty == true ? null : noTelp?.trim(),
+      'due_date': dueDate == null ? null : _dateOnly(dueDate),
+      'lokasi_muat': pickup?.trim().isEmpty == true ? null : pickup?.trim(),
+      'lokasi_bongkar':
+          destination?.trim().isEmpty == true ? null : destination?.trim(),
+      'armada_start_date':
+          armadaStartDate == null ? null : _dateOnly(armadaStartDate),
+      'armada_end_date':
+          armadaEndDate == null ? null : _dateOnly(armadaEndDate),
+      'tonase': tonase,
+      'harga': harga,
+      'muatan': muatan?.trim().isEmpty == true ? null : muatan?.trim(),
+      'nama_supir': driverNames,
+      'status': status,
+      'total_biaya': total,
+      'pph': pphValue,
+      'total_bayar': totalBayarValue,
+      'diterima_oleh':
+          acceptedBy?.trim().isEmpty == true ? null : acceptedBy?.trim(),
+      'created_by': user.id,
+    };
+
+    if (customerId != null && customerId.trim().isNotEmpty) {
+      basePayload['customer_id'] = customerId.trim();
+    }
+    if (orderId != null && orderId.trim().isNotEmpty) {
+      basePayload['order_id'] = orderId.trim();
+    }
+    if (armadaId != null && armadaId.trim().isNotEmpty) {
+      basePayload['armada_id'] = armadaId.trim();
+    }
+    if (details != null && details.isNotEmpty) {
+      basePayload['rincian'] = details;
+    }
+
+    var currentCode = code;
+    var inserted = false;
+    for (var attempt = 0; attempt < 5; attempt++) {
       final payload = <String, dynamic>{
-        'no_invoice': code,
-        'tanggal': date,
-        'tanggal_kop': kopDate == null ? null : _dateOnly(kopDate),
-        'lokasi_kop':
-            kopLocation?.trim().isEmpty == true ? null : kopLocation?.trim(),
-        'nama_pelanggan': customerName.trim(),
-        'email': email?.trim().isEmpty == true ? null : email?.trim(),
-        'no_telp': noTelp?.trim().isEmpty == true ? null : noTelp?.trim(),
-        'due_date': dueDate == null ? null : _dateOnly(dueDate),
-        'lokasi_muat': pickup?.trim().isEmpty == true ? null : pickup?.trim(),
-        'lokasi_bongkar':
-            destination?.trim().isEmpty == true ? null : destination?.trim(),
-        'armada_start_date':
-            armadaStartDate == null ? null : _dateOnly(armadaStartDate),
-        'armada_end_date':
-            armadaEndDate == null ? null : _dateOnly(armadaEndDate),
-        'tonase': tonase,
-        'harga': harga,
-        'muatan': muatan?.trim().isEmpty == true ? null : muatan?.trim(),
-        'nama_supir': driverNames,
-        'status': status,
-        'total_biaya': total,
-        'pph': pphValue,
-        'total_bayar': totalBayarValue,
-        'diterima_oleh':
-            acceptedBy?.trim().isEmpty == true ? null : acceptedBy?.trim(),
-        'created_by': user.id,
+        ...basePayload,
+        'no_invoice': currentCode,
       };
+      try {
+        await _supabase.from('invoices').insert(payload);
+        inserted = true;
+        break;
+      } on PostgrestException catch (e) {
+        final msg = e.message.toLowerCase();
+        final duplicateNoInvoice = e.code == '23505' ||
+            msg.contains('duplicate key') ||
+            msg.contains('invoices_no_invoice_key') ||
+            msg.contains('no_invoice_key');
+        if (!duplicateNoInvoice || attempt >= 4) {
+          throw Exception('Gagal menambah invoice: ${e.message}');
+        }
 
-      if (customerId != null && customerId.trim().isNotEmpty) {
-        payload['customer_id'] = customerId.trim();
-      }
-      if (orderId != null && orderId.trim().isNotEmpty) {
-        payload['order_id'] = orderId.trim();
-      }
-      if (armadaId != null && armadaId.trim().isNotEmpty) {
-        payload['armada_id'] = armadaId.trim();
-      }
-      if (details != null && details.isNotEmpty) {
-        payload['rincian'] = details;
-      }
-
-      await _supabase.from('invoices').insert(payload);
-      if (selectedArmadaIds.isNotEmpty) {
-        await _setArmadaStatusBestEffort(
-          selectedArmadaIds,
-          status: 'Full',
+        final isCompanyInvoice = _isCompanyCustomerName(customerName.trim()) ||
+            _isCompanyInvoiceNumber(currentCode);
+        currentCode = await generateIncomeInvoiceNumber(
+          issuedDate: issuedDate ?? DateTime.now(),
+          isCompany: isCompanyInvoice,
         );
       }
-      await _syncArmadaStatusNowBestEffort();
-    } on PostgrestException catch (e) {
-      throw Exception('Gagal menambah invoice: ${e.message}');
     }
+
+    if (!inserted) {
+      throw Exception(
+        'Gagal menambah invoice: nomor invoice bentrok, silakan coba lagi.',
+      );
+    }
+
+    await _setArmadaStatusBestEffort(
+      selectedArmadaIds,
+      status: 'Full',
+    );
+    await _syncArmadaStatusNowBestEffort();
   }
 
   Future<String> generateIncomeInvoiceNumber({
@@ -599,30 +715,38 @@ class DashboardRepository {
     required bool isCompany,
   }) async {
     try {
-      final monthStart = DateTime(issuedDate.year, issuedDate.month, 1);
-      final nextMonth = DateTime(issuedDate.year, issuedDate.month + 1, 1);
       final res = await _supabase
           .from('invoices')
-          .select('no_invoice,tanggal,nama_pelanggan')
-          .gte('tanggal', _dateOnly(monthStart))
-          .lt('tanggal', _dateOnly(nextMonth));
+          .select('no_invoice,nama_pelanggan,tanggal_kop,tanggal');
 
       final rows = _toMapList(res);
-      final currentCount = rows.where((row) {
+      var maxSeq = 0;
+      final yearTwoDigits = issuedDate.year % 100;
+      for (final row in rows) {
         final no = '${row['no_invoice'] ?? ''}';
         final customerName = '${row['nama_pelanggan'] ?? ''}'.trim();
         final isCompanyEntry = customerName.isNotEmpty
             ? _isCompanyCustomerName(customerName)
             : _isCompanyInvoiceNumber(no);
-        return isCompany ? isCompanyEntry : !isCompanyEntry;
-      }).length;
+        if (isCompany != isCompanyEntry) continue;
+        final seq = _extractInvoiceSequenceForMonth(
+          noInvoice: no,
+          month: issuedDate.month,
+          yearTwoDigits: yearTwoDigits,
+          isCompany: isCompany,
+          referenceDate:
+              Formatters.parseDate(row['tanggal_kop'] ?? row['tanggal']),
+        );
+        if (seq > maxSeq) maxSeq = seq;
+      }
 
       final roman = _romanMonth(issuedDate.month);
-      final seq = currentCount + 1;
+      final seq = (maxSeq + 1).toString().padLeft(3, '0');
+      final yy = yearTwoDigits.toString().padLeft(2, '0');
       if (isCompany) {
-        return '480 / CV.ANT / $roman / $seq';
+        return '$seq / CV.ANT / $roman / $yy';
       }
-      return '268 / ANT / $roman / $seq';
+      return '$seq / BS / $roman / $yy';
     } on PostgrestException catch (e) {
       throw Exception('Gagal menyiapkan nomor invoice: ${e.message}');
     }
@@ -643,7 +767,10 @@ class DashboardRepository {
       throw Exception('Session tidak ditemukan. Silakan login ulang.');
     }
 
-    final code = _makeDocumentCode('EXP');
+    final code = _makeDocumentCode(
+      'EXP',
+      referenceDate: expenseDate ?? DateTime.now(),
+    );
     final date =
         (expenseDate ?? DateTime.now()).toIso8601String().split('T').first;
 
@@ -746,6 +873,7 @@ class DashboardRepository {
     double? harga,
     String? muatan,
     String? namaSupir,
+    String? noInvoice,
     List<Map<String, dynamic>>? details,
   }) async {
     final selectedArmadaIds =
@@ -786,6 +914,16 @@ class DashboardRepository {
         'rincian': details,
         'updated_at': DateTime.now().toIso8601String(),
       };
+
+      if (noInvoice != null && noInvoice.trim().isNotEmpty) {
+        final normalized = Formatters.invoiceNumber(
+          noInvoice.trim(),
+          (kopDate?.trim().isNotEmpty == true) ? kopDate : date,
+          customerName: customerName,
+          isCompany: _isCompanyCustomerName(customerName),
+        );
+        payload['no_invoice'] = normalized == '-' ? noInvoice.trim() : normalized;
+      }
 
       if (armadaId != null && armadaId.trim().isNotEmpty) {
         payload['armada_id'] = armadaId.trim();
@@ -837,6 +975,7 @@ class DashboardRepository {
     required String date,
     required String status,
     required double total,
+    String? noExpense,
     String? kategori,
     String? keterangan,
     String? note,
@@ -844,7 +983,7 @@ class DashboardRepository {
     List<Map<String, dynamic>>? details,
   }) async {
     try {
-      await _supabase.from('expenses').update({
+      final payload = <String, dynamic>{
         'tanggal': date,
         'status': status,
         'total_pengeluaran': total,
@@ -856,10 +995,18 @@ class DashboardRepository {
             recordedBy?.trim().isEmpty == true ? null : recordedBy?.trim(),
         'rincian': details,
         'updated_at': DateTime.now().toIso8601String(),
-      }).eq('id', id);
+      };
+      if (noExpense != null && noExpense.trim().isNotEmpty) {
+        payload['no_expense'] = noExpense.trim();
+      }
+      await _supabase.from('expenses').update(payload).eq('id', id);
     } on PostgrestException catch (e) {
       throw Exception('Gagal update expense: ${e.message}');
     }
+  }
+
+  String generateExpenseNumberForDate(DateTime issuedDate) {
+    return _makeDocumentCode('EXP', referenceDate: issuedDate);
   }
 
   Future<void> deleteExpense(String id) async {
@@ -1415,7 +1562,7 @@ class DashboardRepository {
         type: 'Income',
         number: Formatters.invoiceNumber(
           invoice['no_invoice'],
-          invoice['tanggal'],
+          invoice['tanggal_kop'] ?? invoice['tanggal'],
           customerName: invoice['nama_pelanggan'],
         ),
         customer: (invoice['nama_pelanggan'] ?? '-').toString(),
@@ -1443,7 +1590,7 @@ class DashboardRepository {
           type: 'Income',
           number: Formatters.invoiceNumber(
             invoice['no_invoice'],
-            invoice['tanggal'],
+            invoice['tanggal_kop'] ?? invoice['tanggal'],
             customerName: invoice['nama_pelanggan'],
           ),
           customer: (invoice['nama_pelanggan'] ?? '-').toString(),
@@ -1487,7 +1634,7 @@ class DashboardRepository {
           type: 'Income',
           number: Formatters.invoiceNumber(
             invoice['no_invoice'],
-            invoice['tanggal'],
+            invoice['tanggal_kop'] ?? invoice['tanggal'],
             customerName: invoice['nama_pelanggan'],
           ),
           customer: (invoice['nama_pelanggan'] ?? '-').toString(),
@@ -1534,6 +1681,7 @@ class DashboardRepository {
     for (final invoice in invoices) {
       final id = (invoice['id'] ?? '').toString();
       final tanggal = invoice['tanggal'] ?? invoice['created_at'];
+      final tanggalNomor = invoice['tanggal_kop'] ?? tanggal;
       items.add({
         'id': 'inc-$id',
         'date': Formatters.parseDate(tanggal) ??
@@ -1541,7 +1689,7 @@ class DashboardRepository {
         'title': 'Pembuatan Income Invoice',
         'subtitle': Formatters.invoiceNumber(
           invoice['no_invoice'],
-          tanggal,
+          tanggalNomor,
           customerName: invoice['nama_pelanggan'],
         ),
         'dateLabel': Formatters.dmy(tanggal),
@@ -1551,7 +1699,7 @@ class DashboardRepository {
       final invoiceLabel =
           Formatters.invoiceNumber(
         invoice['no_invoice'],
-        invoice['tanggal'],
+        invoice['tanggal_kop'] ?? invoice['tanggal'],
         customerName: invoice['nama_pelanggan'],
       );
       final details = _toMapList(invoice['rincian']);
@@ -1707,8 +1855,11 @@ class DashboardRepository {
     return DateTime(year, month, day);
   }
 
-  String _makeDocumentCode(String prefix) {
-    final now = DateTime.now();
+  String _makeDocumentCode(
+    String prefix, {
+    DateTime? referenceDate,
+  }) {
+    final now = referenceDate ?? DateTime.now();
     final mm = now.month.toString().padLeft(2, '0');
     final yy = now.year.toString();
     final tail =
@@ -1754,10 +1905,11 @@ class DashboardRepository {
     final raw = number.toUpperCase().trim();
     if (raw.isEmpty) return false;
     final compact = raw.replaceAll(RegExp(r'\s+'), '');
-    if (compact.contains('/ANT/') && !compact.contains('CV.ANT')) {
+    if ((compact.contains('/BS/') || compact.contains('/ANT/')) &&
+        !compact.contains('CV.ANT')) {
       return true;
     }
-    return compact.startsWith('NO:268/');
+    return compact.startsWith('NO:268/') || compact.startsWith('NO:BS/');
   }
 
   String _romanMonth(int month) {
@@ -1777,6 +1929,94 @@ class DashboardRepository {
     ];
     final safe = month.clamp(1, 12);
     return romans[safe - 1];
+  }
+
+  int _romanToMonth(String roman) {
+    const map = <String, int>{
+      'I': 1,
+      'II': 2,
+      'III': 3,
+      'IV': 4,
+      'V': 5,
+      'VI': 6,
+      'VII': 7,
+      'VIII': 8,
+      'IX': 9,
+      'X': 10,
+      'XI': 11,
+      'XII': 12,
+    };
+    return map[roman.trim().toUpperCase()] ?? 0;
+  }
+
+  int _extractInvoiceSequenceForMonth({
+    required String noInvoice,
+    required int month,
+    required int yearTwoDigits,
+    required bool isCompany,
+    DateTime? referenceDate,
+  }) {
+    final cleaned = noInvoice
+        .replaceFirst(RegExp(r'^\s*NO\s*:\s*', caseSensitive: false), '')
+        .trim();
+    if (cleaned.isEmpty) return 0;
+
+    // New pattern:
+    // 017 / BS / I / 26
+    // 017 / CV.ANT / I / 26
+    final newPattern = RegExp(
+      r'^(\d{1,4})\s*\/\s*(CV\.ANT|BS|ANT)\s*\/\s*([IVX]+)\s*\/\s*(\d{2})\s*$',
+      caseSensitive: false,
+    );
+    final newMatch = newPattern.firstMatch(cleaned);
+    if (newMatch != null) {
+      final seq = int.tryParse(newMatch.group(1) ?? '') ?? 0;
+      final prefix = (newMatch.group(2) ?? '').toUpperCase().trim();
+      final rowMonth = _romanToMonth(newMatch.group(3) ?? '');
+      final rowYear = int.tryParse(newMatch.group(4) ?? '') ?? -1;
+      final sameType = isCompany
+          ? prefix == 'CV.ANT'
+          : (prefix == 'BS' || prefix == 'ANT');
+      if (sameType && rowMonth == month && rowYear == yearTwoDigits) {
+        return seq;
+      }
+      return 0;
+    }
+
+    // Legacy converted pattern (without year):
+    final legacyPattern = RegExp(
+      r'^(480\s*\/\s*CV\.ANT|268\s*\/\s*ANT)\s*\/\s*([IVX]+)\s*\/\s*(\d+)\s*$',
+      caseSensitive: false,
+    );
+    final legacyMatch = legacyPattern.firstMatch(cleaned);
+    if (legacyMatch != null) {
+      final prefix =
+          (legacyMatch.group(1) ?? '').toUpperCase().replaceAll(' ', '');
+      final sameType = isCompany
+          ? prefix.startsWith('480/CV.ANT')
+          : prefix.startsWith('268/ANT');
+      if (!sameType) return 0;
+
+      final rowMonth = _romanToMonth(legacyMatch.group(2) ?? '');
+      if (rowMonth != month) return 0;
+      final rowYear =
+          referenceDate == null ? yearTwoDigits : (referenceDate.year % 100);
+      if (rowYear != yearTwoDigits) return 0;
+
+      return int.tryParse(legacyMatch.group(3) ?? '') ?? 0;
+    }
+
+    // Older INC-MM-YYYY-SEQ pattern.
+    final oldInc = RegExp(r'^INC-(\d{2})-(\d{4})-(\d{1,})$', caseSensitive: false)
+        .firstMatch(cleaned.toUpperCase());
+    if (oldInc != null) {
+      final rowMonth = int.tryParse(oldInc.group(1) ?? '') ?? 0;
+      final rowYear = (int.tryParse(oldInc.group(2) ?? '') ?? 0) % 100;
+      if (rowMonth != month || rowYear != yearTwoDigits) return 0;
+      return int.tryParse(oldInc.group(3) ?? '') ?? 0;
+    }
+
+    return 0;
   }
 
   String _dateOnly(DateTime value) {

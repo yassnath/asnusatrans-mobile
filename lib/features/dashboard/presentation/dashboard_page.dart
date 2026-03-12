@@ -2017,7 +2017,7 @@ class _AdminCalendarViewState extends State<_AdminCalendarView> {
           type: 'income',
           title: Formatters.invoiceNumber(
             invoice['no_invoice'],
-            invoice['tanggal'],
+            invoice['tanggal_kop'] ?? invoice['tanggal'],
             customerName: invoice['nama_pelanggan'],
           ),
           subtitle: '${invoice['nama_pelanggan'] ?? '-'}',
@@ -2813,6 +2813,7 @@ class _AdminCreateIncomeView extends StatefulWidget {
 
 class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
   static const _customerManualOptionId = '__other__';
+  static const _manualArmadaOptionId = '__other_manual_armada__';
   static const _companyKeywords = <String>[
     r'\bcv\b',
     r'\bpt\b',
@@ -2954,6 +2955,33 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
         );
     if (selected == null) return;
 
+    Map<String, dynamic> toDetailRow(Map<String, dynamic> option) {
+      return {
+        'lokasi_muat': _safeInputText(option['lokasi_muat']),
+        'lokasi_bongkar': _safeInputText(option['lokasi_bongkar']),
+        'muatan': _safeInputText(option['muatan']),
+        'nama_supir': _safeInputText(option['nama_supir']),
+        'armada_id': _safeInputText(option['armada_id']),
+        'armada_manual': _safeInputText(option['armada_manual']),
+        'armada_is_manual': _safeInputText(option['armada_manual']).isNotEmpty &&
+            _safeInputText(option['armada_id']).isEmpty,
+        'armada_start_date': _safeInputText(option['armada_start_date']),
+        'armada_end_date': _safeInputText(option['armada_end_date']),
+        'tonase': _safeNumberInputText(option['tonase']),
+        'harga': _safeNumberInputText(option['harga']),
+      };
+    }
+
+    final selectedDetails = (selected['details'] is List)
+        ? (selected['details'] as List)
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList()
+        : const <Map<String, dynamic>>[];
+    final sourceOptions = selectedDetails.isNotEmpty
+        ? selectedDetails
+        : <Map<String, dynamic>>[selected];
+
     setState(() {
       _selectedCustomerOptionId = optionId;
       _linkedCustomerId = '${selected['customer_id'] ?? ''}'.trim().isEmpty
@@ -2972,22 +3000,15 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
         _kopLocation.text = selectedKopLocation;
       }
 
+      _details
+        ..clear()
+        ..addAll(sourceOptions.map(toDetailRow));
       if (_details.isEmpty) {
         _details.add(_newDetail());
       }
-      final first = _details.first;
-      first['lokasi_muat'] = _safeInputText(selected['lokasi_muat']);
-      first['lokasi_bongkar'] = _safeInputText(selected['lokasi_bongkar']);
-      first['muatan'] = _safeInputText(selected['muatan']);
-      first['nama_supir'] = _safeInputText(selected['nama_supir']);
-      first['armada_id'] = _safeInputText(selected['armada_id']);
-      first['armada_start_date'] =
-          _safeInputText(selected['armada_start_date']);
-      first['armada_end_date'] = _safeInputText(selected['armada_end_date']);
-      first['tonase'] = _safeNumberInputText(selected['tonase']);
-      first['harga'] = _safeNumberInputText(selected['harga']);
       _detailFieldRefreshToken++;
     });
+    _refreshInvoiceNumberPreview();
   }
 
   String _safeInputText(dynamic value) {
@@ -3048,8 +3069,9 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
       setState(() => _invoiceNoLoading = true);
     }
     try {
+      final effectiveDate = Formatters.parseDate(_kopDate.text) ?? _date;
       final generated = await widget.repository.generateIncomeInvoiceNumber(
-        issuedDate: _date,
+        issuedDate: effectiveDate,
         isCompany: _isCompanyInvoice,
       );
       if (!mounted || requestToken != _invoiceNoRequestToken) return;
@@ -3134,7 +3156,14 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
       initialDate: _date,
     );
     if (picked != null) {
-      setState(() => _date = picked);
+      final previousDateText = _toInputDate(_date);
+      setState(() {
+        _date = picked;
+        final currentKop = _kopDate.text.trim();
+        if (currentKop.isEmpty || currentKop == previousDateText) {
+          _kopDate.text = _toInputDate(picked);
+        }
+      });
       _refreshInvoiceNumberPreview();
     }
   }
@@ -3175,6 +3204,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
     );
     if (picked == null) return;
     setState(() => _kopDate.text = _toInputDate(picked));
+    _refreshInvoiceNumberPreview();
   }
 
   Map<String, dynamic> _newDetail() {
@@ -3184,6 +3214,8 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
       'muatan': '',
       'nama_supir': '',
       'armada_id': '',
+      'armada_manual': '',
+      'armada_is_manual': false,
       'armada_start_date': '',
       'armada_end_date': '',
       'tonase': '',
@@ -3217,6 +3249,71 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
     return AppColors.textMutedFor(context);
   }
 
+  String _normalizePlateText(String value) {
+    return value.toUpperCase().replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  String? _extractPlateFromText(String value) {
+    final match = RegExp(
+      r'[A-Z]{1,2}\s?[0-9]{1,4}\s?[A-Z]{1,3}',
+    ).firstMatch(value.toUpperCase());
+    if (match == null) return null;
+    final plate = _normalizePlateText(match.group(0) ?? '');
+    return plate.isEmpty ? null : plate;
+  }
+
+  Map<String, String> _buildArmadaIdByPlate(
+    List<Map<String, dynamic>> armadas,
+  ) {
+    final map = <String, String>{};
+    for (final armada in armadas) {
+      final id = '${armada['id'] ?? ''}'.trim();
+      final plate = _normalizePlateText('${armada['plat_nomor'] ?? ''}');
+      if (id.isEmpty || plate.isEmpty) continue;
+      map[plate] = id;
+    }
+    return map;
+  }
+
+  String _resolveArmadaIdFromInput({
+    required String armadaId,
+    required String armadaManual,
+    required Map<String, String> armadaIdByPlate,
+  }) {
+    final direct = armadaId.trim();
+    if (direct.isNotEmpty) return direct;
+    final manual = armadaManual.trim();
+    if (manual.isEmpty) return '';
+    final extracted = _extractPlateFromText(manual);
+    final normalized = _normalizePlateText(manual);
+    return armadaIdByPlate[extracted ?? normalized] ?? '';
+  }
+
+  void _normalizeManualRowsToArmadaId(List<Map<String, dynamic>> armadas) {
+    if (_details.isEmpty) return;
+    final armadaIdByPlate = _buildArmadaIdByPlate(armadas);
+    if (armadaIdByPlate.isEmpty) return;
+    var changed = false;
+    for (final row in _details) {
+      final currentArmadaId = '${row['armada_id'] ?? ''}'.trim();
+      final currentManual = '${row['armada_manual'] ?? ''}'.trim();
+      if (currentArmadaId.isNotEmpty || currentManual.isEmpty) continue;
+      final resolvedArmadaId = _resolveArmadaIdFromInput(
+        armadaId: currentArmadaId,
+        armadaManual: currentManual,
+        armadaIdByPlate: armadaIdByPlate,
+      );
+      if (resolvedArmadaId.isEmpty) continue;
+      row['armada_id'] = resolvedArmadaId;
+      row['armada_manual'] = '';
+      row['armada_is_manual'] = false;
+      changed = true;
+    }
+    if (changed) {
+      _detailFieldRefreshToken++;
+    }
+  }
+
   double get _subtotal {
     return _details.fold<double>(
       0,
@@ -3247,9 +3344,19 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
       return;
     }
     final first = _details.first;
+    final firstArmadaId = '${first['armada_id']}'.trim();
+    final firstArmadaManual = '${first['armada_manual'] ?? ''}'.trim();
+    final armadaIdByPlate = _buildArmadaIdByPlate(armadas);
+    final firstResolvedArmadaId = _resolveArmadaIdFromInput(
+      armadaId: firstArmadaId,
+      armadaManual: firstArmadaManual,
+      armadaIdByPlate: armadaIdByPlate,
+    );
+    final hasArmadaSelection =
+        firstResolvedArmadaId.isNotEmpty || firstArmadaManual.isNotEmpty;
     if ('${first['lokasi_muat']}'.trim().isEmpty ||
         '${first['lokasi_bongkar']}'.trim().isEmpty ||
-        '${first['armada_id']}'.trim().isEmpty) {
+        !hasArmadaSelection) {
       _snack(
         _t(
           'Lokasi muat, lokasi bongkar, dan armada wajib diisi.',
@@ -3261,7 +3368,13 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
     }
 
     final selectedArmadaIds = _details
-        .map((row) => '${row['armada_id']}'.trim())
+        .map(
+          (row) => _resolveArmadaIdFromInput(
+            armadaId: '${row['armada_id']}'.trim(),
+            armadaManual: '${row['armada_manual'] ?? ''}'.trim(),
+            armadaIdByPlate: armadaIdByPlate,
+          ),
+        )
         .where((id) => id.isNotEmpty)
         .toSet();
     Map<String, dynamic>? busyArmada;
@@ -3293,13 +3406,22 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
     }
 
     final detailsPayload = _details.map((row) {
+      final armadaId = '${row['armada_id']}'.trim();
+      final armadaManualRaw = _nullableInputText(row['armada_manual']) ?? '';
+      final resolvedArmadaId = _resolveArmadaIdFromInput(
+        armadaId: armadaId,
+        armadaManual: armadaManualRaw,
+        armadaIdByPlate: armadaIdByPlate,
+      );
+      final useManual = resolvedArmadaId.isEmpty && armadaManualRaw.isNotEmpty;
       return <String, dynamic>{
         'lokasi_muat': '${row['lokasi_muat']}'.trim(),
         'lokasi_bongkar': '${row['lokasi_bongkar']}'.trim(),
         'muatan': _nullableInputText(row['muatan']),
         'nama_supir': _nullableInputText(row['nama_supir']),
-        'armada_id':
-            '${row['armada_id']}'.trim().isEmpty ? null : '${row['armada_id']}',
+        'armada_id': resolvedArmadaId.isEmpty ? null : resolvedArmadaId,
+        'armada_manual': useManual ? armadaManualRaw : null,
+        'armada_label': useManual ? armadaManualRaw : null,
         'armada_start_date': '${row['armada_start_date']}'.trim().isEmpty
             ? null
             : '${row['armada_start_date']}',
@@ -3324,8 +3446,9 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
 
     String generatedInvoiceNo;
     try {
+      final effectiveDate = Formatters.parseDate(_kopDate.text) ?? _date;
       generatedInvoiceNo = await widget.repository.generateIncomeInvoiceNumber(
-        issuedDate: _date,
+        issuedDate: effectiveDate,
         isCompany: _isCompanyInvoice,
       );
     } catch (e) {
@@ -3342,7 +3465,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
         noInvoice: generatedInvoiceNo,
         includePph: _isCompanyInvoice,
         status: _status,
-        issuedDate: _date,
+        issuedDate: Formatters.parseDate(_kopDate.text) ?? _date,
         email: _email.text,
         noTelp: _phone.text,
         kopDate: Formatters.parseDate(_kopDate.text) ?? _date,
@@ -3351,7 +3474,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
         pickup: '${first['lokasi_muat']}',
         destination: '${first['lokasi_bongkar']}',
         muatan: _nullableInputText(first['muatan']),
-        armadaId: '${first['armada_id']}',
+        armadaId: firstResolvedArmadaId.isEmpty ? null : firstResolvedArmadaId,
         armadaStartDate: Formatters.parseDate(first['armada_start_date']),
         armadaEndDate: Formatters.parseDate(first['armada_end_date']),
         tonase: _toNum(first['tonase']),
@@ -3502,6 +3625,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
         final filteredCustomerOptions =
             _filterCustomerOptionsByMode(customerOptions);
         _tryResolvePrefillArmada(armadas);
+        _normalizeManualRowsToArmadaId(armadas);
         final selectedCustomerValue = filteredCustomerOptions.any(
                     (item) => '${item['id']}' == _selectedCustomerOptionId) ||
                 _selectedCustomerOptionId == _customerManualOptionId
@@ -3532,9 +3656,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: _buildInvoiceModeDot(
-                          label: isEn
-                              ? 'Company (CV/PT/etc)'
-                              : 'Perusahaan (CV/PT/dll)',
+                          label: isEn ? 'Company' : 'Perusahaan',
                           selected: _isCompanyInvoice,
                           onTap: () => _switchInvoiceMode(true, customerOptions),
                         ),
@@ -3729,9 +3851,17 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                           ),
                           const SizedBox(height: 8),
                           CvantDropdownField<String>(
-                            initialValue: '${row['armada_id']}'.trim().isEmpty
-                                ? null
-                                : '${row['armada_id']}',
+                            initialValue: () {
+                              final armadaId = '${row['armada_id']}'.trim();
+                              final armadaManual =
+                                  '${row['armada_manual'] ?? ''}'.trim();
+                              final isManual = row['armada_is_manual'] == true;
+                              if (armadaId.isNotEmpty) return armadaId;
+                              if (isManual || armadaManual.isNotEmpty) {
+                                return _manualArmadaOptionId;
+                              }
+                              return '';
+                            }(),
                             decoration: InputDecoration(
                               hintText: _t('Pilih Armada', 'Select Fleet'),
                             ),
@@ -3764,10 +3894,49 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                                   ),
                                 ),
                               ),
+                              DropdownMenuItem<String>(
+                                value: _manualArmadaOptionId,
+                                child: Text(
+                                  _t(
+                                    'Other (Input Manual)',
+                                    'Other (Manual Input)',
+                                  ),
+                                ),
+                              ),
                             ],
-                            onChanged: (value) =>
-                                setState(() => row['armada_id'] = value ?? ''),
+                            onChanged: (value) {
+                              setState(() {
+                                if (value == _manualArmadaOptionId) {
+                                  row['armada_id'] = '';
+                                  row['armada_is_manual'] = true;
+                                } else {
+                                  row['armada_id'] = value ?? '';
+                                  row['armada_is_manual'] = false;
+                                  if ('${row['armada_id']}'.trim().isNotEmpty) {
+                                    row['armada_manual'] = '';
+                                  }
+                                }
+                              });
+                            },
                           ),
+                          if (row['armada_is_manual'] == true ||
+                              ('${row['armada_manual'] ?? ''}'.trim().isNotEmpty &&
+                                  '${row['armada_id']}'.trim().isEmpty)) ...[
+                            const SizedBox(height: 8),
+                            TextFormField(
+                              key: ValueKey(
+                                'armada_manual-$index-$_detailFieldRefreshToken',
+                              ),
+                              initialValue: '${row['armada_manual'] ?? ''}',
+                              decoration: InputDecoration(
+                                hintText: _t(
+                                  'Plat Nomor Manual (Other/Gabungan)',
+                                  'Manual Plate Number (Other/Combined)',
+                                ),
+                              ),
+                              onChanged: (value) => row['armada_manual'] = value,
+                            ),
+                          ],
                           const SizedBox(height: 8),
                           Row(
                             children: [
@@ -4939,6 +5108,7 @@ class _AdminInvoiceListView extends StatefulWidget {
 }
 
 class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
+  static const _manualArmadaOptionId = '__other_manual_armada__';
   static const _companyKeywords = <String>[
     r'\bcv\b',
     r'\bpt\b',
@@ -4985,6 +5155,58 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       visualDensity: VisualDensity.compact,
     );
+  }
+
+  Color _armadaStatusColor(String status) {
+    final lower = status.toLowerCase();
+    if (lower.contains('full')) return AppColors.warning;
+    if (lower.contains('ready')) return AppColors.success;
+    if (lower.contains('inactive') ||
+        lower.contains('non active') ||
+        lower.contains('non-active')) {
+      return AppColors.neutralOutline;
+    }
+    return AppColors.textMutedFor(context);
+  }
+
+  String _normalizePlateText(String value) {
+    return value.toUpperCase().replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  String? _extractPlateFromText(String value) {
+    final match = RegExp(
+      r'[A-Z]{1,2}\s?[0-9]{1,4}\s?[A-Z]{1,3}',
+    ).firstMatch(value.toUpperCase());
+    if (match == null) return null;
+    final plate = _normalizePlateText(match.group(0) ?? '');
+    return plate.isEmpty ? null : plate;
+  }
+
+  Map<String, String> _buildArmadaIdByPlate(
+    List<Map<String, dynamic>> armadas,
+  ) {
+    final map = <String, String>{};
+    for (final armada in armadas) {
+      final id = '${armada['id'] ?? ''}'.trim();
+      final plate = _normalizePlateText('${armada['plat_nomor'] ?? ''}');
+      if (id.isEmpty || plate.isEmpty) continue;
+      map[plate] = id;
+    }
+    return map;
+  }
+
+  String _resolveArmadaIdFromInput({
+    required String armadaId,
+    required String armadaManual,
+    required Map<String, String> armadaIdByPlate,
+  }) {
+    final direct = armadaId.trim();
+    if (direct.isNotEmpty) return direct;
+    final manual = armadaManual.trim();
+    if (manual.isEmpty) return '';
+    final extracted = _extractPlateFromText(manual);
+    final normalized = _normalizePlateText(manual);
+    return armadaIdByPlate[extracted ?? normalized] ?? '';
   }
 
   @override
@@ -5267,7 +5489,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
           final customerName = '${item['nama_pelanggan'] ?? '-'}';
           final invoiceNumber = Formatters.invoiceNumber(
             item['no_invoice'],
-            item['tanggal'],
+            item['tanggal_kop'] ?? item['tanggal'],
             customerName: customerName,
           );
           final isCompanyInvoice = customerName.trim().isNotEmpty
@@ -6261,9 +6483,16 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
       barrierColor: AppColors.popupOverlay,
       builder: (context) {
         final detailList = _toDetailList(item['rincian']);
+        final customerName = '${item['nama_pelanggan'] ?? ''}'.trim();
+        final isCompanyInvoice = customerName.isNotEmpty
+            ? _isCompanyCustomerName(customerName)
+            : _isCompanyInvoiceNumber('${item['no_invoice'] ?? ''}');
+        final subtotal = _toNum(item['total_biaya']);
+        final pph = isCompanyInvoice ? _toNum(item['pph']) : 0.0;
+        final total = isCompanyInvoice ? max(0.0, subtotal - pph) : subtotal;
         final invoiceTitle = Formatters.invoiceNumber(
           item['no_invoice'],
-          item['tanggal'],
+          item['tanggal_kop'] ?? item['tanggal'],
           customerName: item['nama_pelanggan'],
         );
         return AlertDialog(
@@ -6280,7 +6509,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                   Text('${_t('Status', 'Status')}: ${item['status'] ?? '-'}'),
                   const SizedBox(height: 8),
                   Text(
-                    '${_t('Total', 'Total')}: ${Formatters.rupiah(_toNum(item['total_bayar'] ?? item['total_biaya']))}',
+                    '${_t('Total', 'Total')}: ${Formatters.rupiah(total)}',
                     style: TextStyle(fontWeight: FontWeight.w700),
                   ),
                   if (detailList.isNotEmpty) ...[
@@ -6342,7 +6571,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
     if (compact.contains('CV.ANT') || compact.contains('/CV.ANT/')) {
       return true;
     }
-    if (compact.contains('/ANT/') && !compact.contains('CV.ANT')) {
+    if ((compact.contains('/BS/') || compact.contains('/ANT/')) &&
+        !compact.contains('CV.ANT')) {
       return false;
     }
     return true;
@@ -6398,7 +6628,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
       final invoiceNumber = _displayInvoiceNumber(
         Formatters.invoiceNumber(
           invoiceRawNumber,
-          item['tanggal'],
+          item['tanggal_kop'] ?? item['tanggal'],
           customerName: customerName,
           isCompany: isCompanyInvoice,
         ),
@@ -6476,8 +6706,31 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
 
         final customerName = printable(item['nama_pelanggan']) ?? '-';
         final tanggalKop = item['tanggal_kop'] ?? item['tanggal'];
-        final kopLocation = printable(item['lokasi_kop']) ?? '-';
-        final tanggalRow = 'Tanggal: ${Formatters.dmy(tanggalKop)}';
+        final kopLocation = printable(item['lokasi_kop']);
+        String formatLongDateId(dynamic value) {
+          final date = Formatters.parseDate(value);
+          if (date == null) return '-';
+          const monthNames = <String>[
+            'Januari',
+            'Februari',
+            'Maret',
+            'April',
+            'Mei',
+            'Juni',
+            'Juli',
+            'Agustus',
+            'September',
+            'Oktober',
+            'November',
+            'Desember',
+          ];
+          return '${date.day} ${monthNames[date.month - 1]} ${date.year}';
+        }
+
+        final tanggalLong = formatLongDateId(tanggalKop);
+        final tanggalRow = kopLocation == null || kopLocation.isEmpty
+            ? tanggalLong
+            : '$kopLocation, $tanggalLong';
         final logoHeight = compact ? 42.0 : 56.0;
         const tableRowVPadding = 2.4;
         const tableBodyRowHeight = 16.0;
@@ -6672,7 +6925,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                             ),
                           ),
                           child: pw.Text(
-                            kopLocation,
+                            kopLocation ?? '-',
                             textAlign: pw.TextAlign.center,
                             style: pw.TextStyle(
                               fontSize: infoFont,
@@ -7595,36 +7848,39 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
     try {
       armadas = await widget.repository.fetchArmadas();
     } catch (_) {}
+    final armadaIdByPlate = _buildArmadaIdByPlate(armadas);
+
+    Map<String, dynamic> mapDetailRow(Map<String, dynamic> row) {
+      final rawArmadaId = '${row['armada_id'] ?? ''}'.trim();
+      final rawManual =
+          '${row['armada_manual'] ?? row['armada_label'] ?? row['armada'] ?? ''}'
+              .trim();
+      final resolvedArmadaId = _resolveArmadaIdFromInput(
+        armadaId: rawArmadaId,
+        armadaManual: rawManual,
+        armadaIdByPlate: armadaIdByPlate,
+      );
+      final useManual = resolvedArmadaId.isEmpty && rawManual.isNotEmpty;
+      return <String, dynamic>{
+        'lokasi_muat': '${row['lokasi_muat'] ?? ''}',
+        'lokasi_bongkar': '${row['lokasi_bongkar'] ?? ''}',
+        'muatan': '${row['muatan'] ?? ''}',
+        'nama_supir': '${row['nama_supir'] ?? ''}',
+        'armada_id': resolvedArmadaId,
+        'armada_manual': useManual ? rawManual : '',
+        'armada_is_manual': useManual,
+        'armada_start_date': _toInputDate(row['armada_start_date']),
+        'armada_end_date': _toInputDate(row['armada_end_date']),
+        'tonase': _formatEditableNumber(row['tonase']),
+        'harga': _formatEditableNumber(row['harga']),
+      };
+    }
 
     final existingDetails = _toDetailList(item['rincian']);
     final details = existingDetails.isNotEmpty
-        ? existingDetails
-            .map(
-              (row) => <String, dynamic>{
-                'lokasi_muat': '${row['lokasi_muat'] ?? ''}',
-                'lokasi_bongkar': '${row['lokasi_bongkar'] ?? ''}',
-                'muatan': '${row['muatan'] ?? ''}',
-                'nama_supir': '${row['nama_supir'] ?? ''}',
-                'armada_id': '${row['armada_id'] ?? ''}',
-                'armada_start_date': _toInputDate(row['armada_start_date']),
-                'armada_end_date': _toInputDate(row['armada_end_date']),
-                'tonase': _formatEditableNumber(row['tonase']),
-                'harga': _formatEditableNumber(row['harga']),
-              },
-            )
-            .toList()
+        ? existingDetails.map(mapDetailRow).toList()
         : <Map<String, dynamic>>[
-            {
-              'lokasi_muat': '${item['lokasi_muat'] ?? ''}',
-              'lokasi_bongkar': '${item['lokasi_bongkar'] ?? ''}',
-              'muatan': '${item['muatan'] ?? ''}',
-              'nama_supir': '${item['nama_supir'] ?? ''}',
-              'armada_id': '${item['armada_id'] ?? ''}',
-              'armada_start_date': _toInputDate(item['armada_start_date']),
-              'armada_end_date': _toInputDate(item['armada_end_date']),
-              'tonase': _formatEditableNumber(item['tonase']),
-              'harga': _formatEditableNumber(item['harga']),
-            },
+            mapDetailRow(item),
           ];
 
     double detailSubtotal(Map<String, dynamic> row) {
@@ -7645,8 +7901,13 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                 0,
                 (sum, row) => sum + detailSubtotal(row),
               );
-              final pph = subtotal * 0.02;
-              final totalBayar = max(0.0, subtotal - pph);
+              final currentCustomerName = customer.text.trim();
+              final isCompanyInvoice = currentCustomerName.isNotEmpty
+                  ? _isCompanyCustomerName(currentCustomerName)
+                  : _isCompanyInvoiceNumber('${item['no_invoice'] ?? ''}');
+              final pph = isCompanyInvoice ? subtotal * 0.02 : 0.0;
+              final totalBayar =
+                  isCompanyInvoice ? max(0.0, subtotal - pph) : subtotal;
 
               return AlertDialog(
                 title: Text(_t('Edit Invoice', 'Edit Invoice')),
@@ -7753,10 +8014,17 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                 ),
                                 const SizedBox(height: 8),
                                 CvantDropdownField<String>(
-                                  initialValue:
-                                      '${row['armada_id']}'.trim().isEmpty
-                                          ? null
-                                          : '${row['armada_id']}',
+                                  initialValue: () {
+                                    final armadaId = '${row['armada_id']}'.trim();
+                                    final armadaManual =
+                                        '${row['armada_manual'] ?? ''}'.trim();
+                                    final isManual = row['armada_is_manual'] == true;
+                                    if (armadaId.isNotEmpty) return armadaId;
+                                    if (isManual || armadaManual.isNotEmpty) {
+                                      return _manualArmadaOptionId;
+                                    }
+                                    return '';
+                                  }(),
                                   decoration: InputDecoration(
                                     hintText: _t('Pilih Armada', 'Select Fleet'),
                                   ),
@@ -7768,16 +8036,70 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                     ...armadas.map(
                                       (a) => DropdownMenuItem(
                                         value: '${a['id']}',
-                                        child: Text(
-                                          '${a['nama_truk'] ?? '-'} - ${a['plat_nomor'] ?? '-'} (${a['status'] ?? 'Ready'})',
+                                        child: Text.rich(
+                                          TextSpan(
+                                            children: [
+                                              TextSpan(
+                                                text:
+                                                    '${a['nama_truk'] ?? '-'} - ${a['plat_nomor'] ?? '-'} ',
+                                              ),
+                                              TextSpan(
+                                                text: '(${a['status'] ?? 'Ready'})',
+                                                style: TextStyle(
+                                                  color: _armadaStatusColor(
+                                                    '${a['status'] ?? 'Ready'}',
+                                                  ),
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    DropdownMenuItem<String>(
+                                      value: _manualArmadaOptionId,
+                                      child: Text(
+                                        _t(
+                                          'Other (Input Manual)',
+                                          'Other (Manual Input)',
                                         ),
                                       ),
                                     ),
                                   ],
-                                  onChanged: (value) => setDialogState(
-                                    () => row['armada_id'] = value ?? '',
-                                  ),
+                                  onChanged: (value) {
+                                    setDialogState(() {
+                                      if (value == _manualArmadaOptionId) {
+                                        row['armada_id'] = '';
+                                        row['armada_is_manual'] = true;
+                                      } else {
+                                        row['armada_id'] = value ?? '';
+                                        row['armada_is_manual'] = false;
+                                        if ('${row['armada_id']}'.trim().isNotEmpty) {
+                                          row['armada_manual'] = '';
+                                        }
+                                      }
+                                    });
+                                  },
                                 ),
+                                if (row['armada_is_manual'] == true ||
+                                    ('${row['armada_manual'] ?? ''}'
+                                            .trim()
+                                            .isNotEmpty &&
+                                        '${row['armada_id']}'.trim().isEmpty)) ...[
+                                  const SizedBox(height: 8),
+                                  TextFormField(
+                                    initialValue: '${row['armada_manual'] ?? ''}',
+                                    decoration: InputDecoration(
+                                      hintText: _t(
+                                        'Plat Nomor Manual (Other/Gabungan)',
+                                        'Manual Plate Number (Other/Combined)',
+                                      ),
+                                    ),
+                                    onChanged: (value) =>
+                                        row['armada_manual'] = value,
+                                  ),
+                                ],
                                 const SizedBox(height: 8),
                                 Row(
                                   children: [
@@ -7879,6 +8201,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                 'muatan': '',
                                 'nama_supir': '',
                                 'armada_id': '',
+                                'armada_manual': '',
+                                'armada_is_manual': false,
                                 'armada_start_date': '',
                                 'armada_end_date': '',
                                 'tonase': '',
@@ -7895,11 +8219,14 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                           ),
                           child: Text(Formatters.rupiah(subtotal)),
                         ),
-                        const SizedBox(height: 8),
-                        InputDecorator(
-                          decoration: const InputDecoration(labelText: 'PPH (2%)'),
-                          child: Text(Formatters.rupiah(pph)),
-                        ),
+                        if (isCompanyInvoice) ...[
+                          const SizedBox(height: 8),
+                          InputDecorator(
+                            decoration:
+                                const InputDecoration(labelText: 'PPH (2%)'),
+                            child: Text(Formatters.rupiah(pph)),
+                          ),
+                        ],
                         const SizedBox(height: 8),
                         InputDecorator(
                           decoration: InputDecoration(
@@ -7983,15 +8310,27 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                           );
                                           return;
                                         }
+                                        final firstArmadaId =
+                                            '${first['armada_id']}'.trim();
+                                        final firstArmadaManual =
+                                            '${first['armada_manual'] ?? ''}'
+                                                .trim();
+                                        final firstResolvedArmadaId =
+                                            _resolveArmadaIdFromInput(
+                                          armadaId: firstArmadaId,
+                                          armadaManual: firstArmadaManual,
+                                          armadaIdByPlate: armadaIdByPlate,
+                                        );
+                                        final hasArmadaSelection =
+                                            firstResolvedArmadaId.isNotEmpty ||
+                                                firstArmadaManual.isNotEmpty;
                                         if ('${first['lokasi_muat']}'
                                                 .trim()
                                                 .isEmpty ||
                                             '${first['lokasi_bongkar']}'
                                                 .trim()
                                                 .isEmpty ||
-                                            '${first['armada_id']}'
-                                                .trim()
-                                                .isEmpty) {
+                                            !hasArmadaSelection) {
                                           _snack(
                                             _t(
                                               'Lokasi muat, lokasi bongkar, dan armada wajib diisi.',
@@ -8019,6 +8358,22 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
 
                                         final detailsPayload =
                                             details.map((row) {
+                                          final armadaId = '${row['armada_id']}'
+                                              .trim();
+                                          final armadaManualRaw =
+                                              normalizeNullable(
+                                                    row['armada_manual'],
+                                                  ) ??
+                                                  '';
+                                          final resolvedArmadaId =
+                                              _resolveArmadaIdFromInput(
+                                            armadaId: armadaId,
+                                            armadaManual: armadaManualRaw,
+                                            armadaIdByPlate: armadaIdByPlate,
+                                          );
+                                          final useManual =
+                                              resolvedArmadaId.isEmpty &&
+                                                  armadaManualRaw.isNotEmpty;
                                           return <String, dynamic>{
                                             'lokasi_muat':
                                                 '${row['lokasi_muat']}'.trim(),
@@ -8031,11 +8386,14 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                             'nama_supir': normalizeNullable(
                                               row['nama_supir'],
                                             ),
-                                            'armada_id': '${row['armada_id']}'
-                                                    .trim()
-                                                    .isEmpty
-                                                ? null
-                                                : '${row['armada_id']}',
+                                            'armada_id':
+                                                resolvedArmadaId.isEmpty
+                                                    ? null
+                                                    : resolvedArmadaId,
+                                            'armada_manual':
+                                                useManual ? armadaManualRaw : null,
+                                            'armada_label':
+                                                useManual ? armadaManualRaw : null,
                                             'armada_start_date':
                                                 '${row['armada_start_date']}'
                                                         .trim()
@@ -8074,10 +8432,88 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
 
                                         setDialogState(() => saving = true);
                                         try {
+                                          String? regeneratedInvoiceNo;
+                                          final editedDate =
+                                              Formatters.parseDate(tanggal);
+                                          final originalDate =
+                                              Formatters.parseDate(
+                                            item['tanggal'],
+                                          );
+                                          final editedKopDate =
+                                              Formatters.parseDate(
+                                                    kopDate.text.trim(),
+                                                  ) ??
+                                                  editedDate;
+                                          final originalKopDate =
+                                              Formatters.parseDate(
+                                                    item['tanggal_kop'],
+                                                  ) ??
+                                                  originalDate;
+                                          final effectiveDate =
+                                              editedKopDate ??
+                                                  editedDate ??
+                                                  originalKopDate ??
+                                                  originalDate ??
+                                                  DateTime.now();
+                                          final editedCustomer =
+                                              customer.text.trim();
+                                          final currentRawInvoiceNo =
+                                              '${item['no_invoice'] ?? ''}'
+                                                  .trim();
+                                          final isCompanyInvoice = editedCustomer
+                                                  .isNotEmpty
+                                              ? _isCompanyCustomerName(
+                                                  editedCustomer,
+                                                )
+                                              : _isCompanyInvoiceNumber(
+                                                  currentRawInvoiceNo,
+                                                );
+
+                                          final monthOrYearChanged =
+                                              editedKopDate != null &&
+                                                  originalKopDate != null &&
+                                                  (editedKopDate.year !=
+                                                          originalKopDate.year ||
+                                                      editedKopDate.month !=
+                                                          originalKopDate.month);
+                                          final typeChanged =
+                                              currentRawInvoiceNo.isNotEmpty &&
+                                                  (_isCompanyInvoiceNumber(
+                                                        currentRawInvoiceNo,
+                                                      ) !=
+                                                      isCompanyInvoice);
+                                          final normalizedExisting =
+                                              Formatters.invoiceNumber(
+                                            currentRawInvoiceNo,
+                                            effectiveDate,
+                                            customerName: editedCustomer,
+                                            isCompany: isCompanyInvoice,
+                                          );
+                                          final needsFreshSequence =
+                                              currentRawInvoiceNo.isEmpty ||
+                                                  normalizedExisting == '-' ||
+                                                  monthOrYearChanged ||
+                                                  typeChanged;
+
+                                          if (needsFreshSequence) {
+                                            regeneratedInvoiceNo =
+                                                await widget.repository
+                                                    .generateIncomeInvoiceNumber(
+                                              issuedDate: effectiveDate,
+                                              isCompany: isCompanyInvoice,
+                                            );
+                                          } else if (normalizedExisting.trim() !=
+                                              currentRawInvoiceNo) {
+                                            regeneratedInvoiceNo =
+                                                normalizedExisting.trim();
+                                          }
+
                                           await widget.repository.updateInvoice(
                                             id: '${item['id']}',
                                             customerName: customer.text.trim(),
-                                            date: _toDbDate(tanggal),
+                                            date: kopDate.text.trim().isEmpty
+                                                ? _toDbDate(tanggal)
+                                                : _toDbDate(kopDate.text),
                                             status: status,
                                             totalBiaya: subtotal,
                                             pph: pph,
@@ -8097,7 +8533,10 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                             muatan: normalizeNullable(
                                               first['muatan'],
                                             ),
-                                            armadaId: '${first['armada_id']}',
+                                            armadaId:
+                                                firstResolvedArmadaId.isEmpty
+                                                    ? null
+                                                    : firstResolvedArmadaId,
                                             armadaStartDate:
                                                 '${first['armada_start_date']}'
                                                         .trim()
@@ -8119,6 +8558,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                             namaSupir: driverNames.isEmpty
                                                 ? null
                                                 : driverNames,
+                                            noInvoice: regeneratedInvoiceNo,
                                             details: detailsPayload,
                                             acceptedBy: acceptedBy,
                                           );
@@ -8430,11 +8870,35 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
 
                                         setDialogState(() => saving = true);
                                         try {
+                                          String? regeneratedNoExpense;
+                                          final editedDate =
+                                              Formatters.parseDate(tanggal);
+                                          final originalDate =
+                                              Formatters.parseDate(
+                                            item['tanggal'],
+                                          );
+                                          final monthChanged =
+                                              editedDate != null &&
+                                                  originalDate != null &&
+                                                  (editedDate.year !=
+                                                          originalDate.year ||
+                                                      editedDate.month !=
+                                                          originalDate.month);
+                                          if (monthChanged) {
+                                            regeneratedNoExpense = widget
+                                                .repository
+                                                .generateExpenseNumberForDate(
+                                              editedDate,
+                                            );
+                                            noExpense.text = regeneratedNoExpense;
+                                          }
+
                                           await widget.repository.updateExpense(
                                             id: '${item['id']}',
                                             date: _toDbDate(tanggal),
                                             status: status,
                                             total: totalAmount,
+                                            noExpense: regeneratedNoExpense,
                                             kategori:
                                                 '${firstNamedRow['nama']}',
                                             keterangan: note,
@@ -8579,21 +9043,51 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
     List<Map<String, dynamic>> incomes,
     List<Map<String, dynamic>> expenses,
   ) {
+    String resolveRoute(Map<String, dynamic> source) {
+      final details = _toDetailList(source['rincian']);
+      String build(dynamic muatValue, dynamic bongkarValue) {
+        final muat = '${muatValue ?? ''}'.trim();
+        final bongkar = '${bongkarValue ?? ''}'.trim();
+        if (muat.isEmpty && bongkar.isEmpty) return '-';
+        return '${muat.isEmpty ? '-' : muat}-${bongkar.isEmpty ? '-' : bongkar}';
+      }
+
+      for (final row in details) {
+        final route = build(row['lokasi_muat'], row['lokasi_bongkar']);
+        if (route != '-') return route;
+      }
+      return build(source['lokasi_muat'], source['lokasi_bongkar']);
+    }
+
     final rows = <Map<String, dynamic>>[
       ...incomes.map(
-        (item) => {
-          ...item,
-          '__type': 'Income',
-          '__number': Formatters.invoiceNumber(
+        (item) {
+          final invoiceNumber = Formatters.invoiceNumber(
             item['no_invoice'],
-            item['tanggal'] ?? item['created_at'],
+            item['tanggal_kop'] ?? item['tanggal'] ?? item['created_at'],
             customerName: item['nama_pelanggan'],
-          ),
-          '__name': item['nama_pelanggan'],
-          '__total': item['total_bayar'] ?? item['total_biaya'],
-          '__date': item['tanggal'] ?? item['created_at'],
-          '__status': item['status'],
-          '__recorded_by': item['diterima_oleh'] ?? '-',
+          );
+          final customerName = '${item['nama_pelanggan'] ?? ''}'.trim();
+          final isCompanyInvoice = customerName.isNotEmpty
+              ? _isCompanyCustomerName(customerName)
+              : _isCompanyInvoiceNumber('${item['no_invoice'] ?? ''}');
+          final subtotal = _toNum(item['total_biaya']);
+          final pph = _toNum(item['pph']);
+          final totalBayar = _toNum(item['total_bayar']);
+          final effectiveTotal = isCompanyInvoice
+              ? (totalBayar > 0 ? totalBayar : max(0.0, subtotal - pph))
+              : subtotal;
+          return {
+            ...item,
+            '__type': 'Income',
+            '__number': invoiceNumber,
+            '__name': item['nama_pelanggan'],
+            '__total': effectiveTotal,
+            '__date': item['tanggal_kop'] ?? item['tanggal'] ?? item['created_at'],
+            '__status': item['status'],
+            '__recorded_by': item['diterima_oleh'] ?? '-',
+            '__route': resolveRoute(item),
+          };
         },
       ),
       ...expenses.map(
@@ -8697,7 +9191,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '${_t('Dicatat oleh', 'Recorded by')}: ${item['__recorded_by'] ?? '-'}',
+                  isIncome
+                      ? '${item['__route'] ?? '-'}'
+                      : '${_t('Dicatat oleh', 'Recorded by')}: ${item['__recorded_by'] ?? '-'}',
                   style: TextStyle(color: AppColors.textMutedFor(context)),
                 ),
                 const SizedBox(height: 6),
@@ -8979,6 +9475,100 @@ class _AdminFleetListViewState extends State<_AdminFleetListView> {
 
   String _t(String id, String en) => _isEn ? en : id;
 
+  String _normalizePlate(String value) {
+    return value.toUpperCase().replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  String? _extractPlate(String value) {
+    final match = RegExp(
+      r'[A-Z]{1,2}\s?[0-9]{1,4}\s?[A-Z]{1,3}',
+    ).firstMatch(value.toUpperCase());
+    if (match == null) return null;
+    final plate = _normalizePlate(match.group(0) ?? '');
+    return plate.isEmpty ? null : plate;
+  }
+
+  Map<String, int> _buildUsageMap({
+    required List<Map<String, dynamic>> armadas,
+    required List<Map<String, dynamic>> invoices,
+  }) {
+    final usage = <String, int>{};
+    final armadaByPlate = <String, String>{};
+
+    for (final armada in armadas) {
+      final armadaId = '${armada['id'] ?? ''}'.trim();
+      final plate = _normalizePlate('${armada['plat_nomor'] ?? ''}');
+      if (armadaId.isEmpty || plate.isEmpty) continue;
+      armadaByPlate[plate] = armadaId;
+    }
+
+    void increment(String armadaId) {
+      if (armadaId.isEmpty) return;
+      usage[armadaId] = (usage[armadaId] ?? 0) + 1;
+    }
+
+    String resolveArmadaId({
+      dynamic directArmadaId,
+      List<dynamic> candidates = const <dynamic>[],
+    }) {
+      final direct = '${directArmadaId ?? ''}'.trim();
+      if (direct.isNotEmpty) return direct;
+      for (final raw in candidates) {
+        final text = '${raw ?? ''}'.trim();
+        if (text.isEmpty) continue;
+        final plate = _extractPlate(text);
+        if (plate == null) continue;
+        final mapped = armadaByPlate[plate];
+        if (mapped != null && mapped.isNotEmpty) return mapped;
+      }
+      return '';
+    }
+
+    List<Map<String, dynamic>> detailRows(dynamic value) {
+      if (value is List) {
+        return value
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList();
+      }
+      return const <Map<String, dynamic>>[];
+    }
+
+    for (final invoice in invoices) {
+      final details = detailRows(invoice['rincian']);
+      if (details.isNotEmpty) {
+        for (final row in details) {
+          final armadaId = resolveArmadaId(
+            directArmadaId: row['armada_id'],
+            candidates: [
+              row['armada_manual'],
+              row['armada_label'],
+              row['armada'],
+              row['plat_nomor'],
+              row['no_polisi'],
+            ],
+          );
+          increment(armadaId);
+        }
+        continue;
+      }
+
+      final armadaId = resolveArmadaId(
+        directArmadaId: invoice['armada_id'],
+        candidates: [
+          invoice['armada_manual'],
+          invoice['armada_label'],
+          invoice['armada'],
+          invoice['plat_nomor'],
+          invoice['no_polisi'],
+        ],
+      );
+      increment(armadaId);
+    }
+
+    return usage;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -9194,32 +9784,7 @@ class _AdminFleetListViewState extends State<_AdminFleetListView> {
                     .toList()
                 : const <Map<String, dynamic>>[])
             .cast<Map<String, dynamic>>();
-        final usage = <String, int>{};
-        List<Map<String, dynamic>> detailRows(dynamic value) {
-          if (value is List) {
-            return value
-                .whereType<Map>()
-                .map((item) => Map<String, dynamic>.from(item))
-                .toList();
-          }
-          return const <Map<String, dynamic>>[];
-        }
-
-        for (final invoice in invoices) {
-          final details = detailRows(invoice['rincian']);
-          if (details.isNotEmpty) {
-            for (final row in details) {
-              final armadaId = row['armada_id']?.toString().trim() ?? '';
-              if (armadaId.isEmpty) continue;
-              usage[armadaId] = (usage[armadaId] ?? 0) + 1;
-            }
-            continue;
-          }
-
-          final armadaId = invoice['armada_id']?.toString().trim() ?? '';
-          if (armadaId.isEmpty) continue;
-          usage[armadaId] = (usage[armadaId] ?? 0) + 1;
-        }
+        final usage = _buildUsageMap(armadas: armadas, invoices: invoices);
 
         final q = _search.text.trim().toLowerCase();
         final filtered = armadas
@@ -9335,8 +9900,10 @@ class _AdminFleetListViewState extends State<_AdminFleetListView> {
                     final used = usage['${item['id']}'] ?? 0;
                     return _PanelCard(
                       child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               const Icon(
                                 Icons.local_shipping_outlined,
@@ -9344,43 +9911,46 @@ class _AdminFleetListViewState extends State<_AdminFleetListView> {
                               ),
                               const SizedBox(width: 8),
                               Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      '${item['nama_truk'] ?? '-'}',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      '${_t('Plat', 'Plate')}: ${item['plat_nomor'] ?? '-'}',
-                                      style: TextStyle(
-                                        color: AppColors.textMutedFor(context),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      '${_t('Kapasitas', 'Capacity')}: ${_toNum(item['kapasitas']).toStringAsFixed(0)}',
-                                      style: TextStyle(
-                                        color: AppColors.textMutedFor(context),
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      '${_t('Penggunaan', 'Usage')}: ${used}x',
-                                      style: TextStyle(
-                                        color: AppColors.textMutedFor(context),
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ],
+                                child: Text(
+                                  '${item['nama_truk'] ?? '-'}',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                  ),
                                 ),
                               ),
                               _StatusPill(label: status),
                             ],
+                          ),
+                          const SizedBox(height: 2),
+                          Padding(
+                            padding: const EdgeInsets.only(left: 32),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '${_t('Plat', 'Plate')}: ${item['plat_nomor'] ?? '-'}',
+                                  style: TextStyle(
+                                    color: AppColors.textMutedFor(context),
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '${_t('Kapasitas', 'Capacity')}: ${_toNum(item['kapasitas']).toStringAsFixed(0)}',
+                                  style: TextStyle(
+                                    color: AppColors.textMutedFor(context),
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '${_t('Penggunaan', 'Usage')}: ${used}x',
+                                  style: TextStyle(
+                                    color: AppColors.textMutedFor(context),
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                           const SizedBox(height: 6),
                           Row(
@@ -9514,7 +10084,7 @@ class _AdminOrderAcceptanceViewState extends State<_AdminOrderAcceptanceView> {
         if (!mounted) return;
         final existingNo = Formatters.invoiceNumber(
           existing['no_invoice'],
-          existing['tanggal'] ?? existing['created_at'],
+          existing['tanggal_kop'] ?? existing['tanggal'] ?? existing['created_at'],
           customerName: customerName,
         );
         showCvantPopup(
