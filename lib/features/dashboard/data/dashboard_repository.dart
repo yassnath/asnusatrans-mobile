@@ -615,9 +615,8 @@ class DashboardRepository {
           })();
     final date =
         parsedIssueDate.toIso8601String().split('T').first;
-    final normalizedKopLocation = kopLocation?.trim().isEmpty == true
-        ? null
-        : kopLocation?.trim().toUpperCase();
+    final normalizedKopLocation =
+        kopLocation?.trim().isEmpty == true ? null : kopLocation?.trim();
     final selectedArmadaIds =
         _collectArmadaIds(primaryArmadaId: armadaId, details: details);
     final driverNames = _resolveDriverNames(
@@ -885,9 +884,8 @@ class DashboardRepository {
       details: details,
     );
     try {
-      final normalizedKopLocation = kopLocation?.trim().isEmpty == true
-          ? null
-          : kopLocation?.trim().toUpperCase();
+      final normalizedKopLocation =
+          kopLocation?.trim().isEmpty == true ? null : kopLocation?.trim();
       final payload = <String, dynamic>{
         'nama_pelanggan': customerName.trim(),
         'tanggal': date,
