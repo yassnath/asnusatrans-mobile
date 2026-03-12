@@ -6707,6 +6707,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
         final customerName = printable(item['nama_pelanggan']) ?? '-';
         final tanggalKop = item['tanggal_kop'] ?? item['tanggal'];
         final kopLocation = printable(item['lokasi_kop']);
+        final kopLocationUpper = kopLocation?.toUpperCase();
         String formatLongDateId(dynamic value) {
           final date = Formatters.parseDate(value);
           if (date == null) return '-';
@@ -6728,9 +6729,10 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
         }
 
         final tanggalLong = formatLongDateId(tanggalKop);
-        final tanggalRow = kopLocation == null || kopLocation.isEmpty
+        final tanggalRow =
+            kopLocationUpper == null || kopLocationUpper.isEmpty
             ? tanggalLong
-            : '$kopLocation, $tanggalLong';
+            : '$kopLocationUpper, $tanggalLong';
         final logoHeight = compact ? 42.0 : 56.0;
         const tableRowVPadding = 2.4;
         const tableBodyRowHeight = 16.0;
@@ -6925,7 +6927,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                             ),
                           ),
                           child: pw.Text(
-                            kopLocation ?? '-',
+                            kopLocationUpper ?? '-',
                             textAlign: pw.TextAlign.center,
                             style: pw.TextStyle(
                               fontSize: infoFont,

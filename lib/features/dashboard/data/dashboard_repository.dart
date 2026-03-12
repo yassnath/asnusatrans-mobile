@@ -615,6 +615,9 @@ class DashboardRepository {
           })();
     final date =
         parsedIssueDate.toIso8601String().split('T').first;
+    final normalizedKopLocation = kopLocation?.trim().isEmpty == true
+        ? null
+        : kopLocation?.trim().toUpperCase();
     final selectedArmadaIds =
         _collectArmadaIds(primaryArmadaId: armadaId, details: details);
     final driverNames = _resolveDriverNames(
@@ -628,8 +631,7 @@ class DashboardRepository {
     final basePayload = <String, dynamic>{
       'tanggal': date,
       'tanggal_kop': kopDate == null ? null : _dateOnly(kopDate),
-      'lokasi_kop':
-          kopLocation?.trim().isEmpty == true ? null : kopLocation?.trim(),
+      'lokasi_kop': normalizedKopLocation,
       'nama_pelanggan': customerName.trim(),
       'email': email?.trim().isEmpty == true ? null : email?.trim(),
       'no_telp': noTelp?.trim().isEmpty == true ? null : noTelp?.trim(),
@@ -883,6 +885,9 @@ class DashboardRepository {
       details: details,
     );
     try {
+      final normalizedKopLocation = kopLocation?.trim().isEmpty == true
+          ? null
+          : kopLocation?.trim().toUpperCase();
       final payload = <String, dynamic>{
         'nama_pelanggan': customerName.trim(),
         'tanggal': date,
@@ -893,8 +898,7 @@ class DashboardRepository {
         'email': email?.trim().isEmpty == true ? null : email?.trim(),
         'no_telp': noTelp?.trim().isEmpty == true ? null : noTelp?.trim(),
         'tanggal_kop': kopDate?.trim().isEmpty == true ? null : kopDate?.trim(),
-        'lokasi_kop':
-            kopLocation?.trim().isEmpty == true ? null : kopLocation?.trim(),
+        'lokasi_kop': normalizedKopLocation,
         'due_date': dueDate?.trim().isEmpty == true ? null : dueDate?.trim(),
         'diterima_oleh':
             acceptedBy?.trim().isEmpty == true ? null : acceptedBy?.trim(),
