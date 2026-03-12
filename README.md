@@ -39,16 +39,21 @@ AS Nusa Trans Mobile centralizes the full flow in one place:
   - Key metrics, charts, recent activities, and live operational summaries
 - **Invoice Module**
   - Create, edit, preview, list, distribute, and print invoice records
+  - Personal vs Company invoice modes with distinct business rules
+  - Dynamic invoice numbering aligned to issue date logic (including Roman-month format)
+  - Multi-detail transport entries (fleet, route, tonnage, pricing, and driver data)
 - **Expense Module**
   - Structured expense capture, status tracking, and printable expense documentation
 - **Fleet Module**
   - Fleet list, status management, and operational availability tracking
+  - Usage tracking synchronized from invoice transport activity
 - **Order Module**
   - Customer orders, acceptance flow, and payment status tracking
 - **Profile & Settings**
   - User profile updates, password management, language preference, and account security controls
- - **Reporting Module**
+- **Reporting Module**
   - Filterable PDF reporting (monthly/yearly), manual record selection, and finance-ready summaries
+  - Mixed income-expense reports and focused single-category reports with printable table output
 
 ## User Experience Philosophy
 
@@ -73,6 +78,7 @@ AS Nusa Trans Mobile is built to be practical under real operational pressure:
 - Consistent status-driven flows across invoices, expenses, and fleets
 - Structured validation to reduce manual entry mistakes
 - Performance-oriented UI for frequent high-volume actions
+- Regression-tested invoice formatting and numbering behavior for safer production updates
 
 ## Tech Foundation (Product Perspective)
 
