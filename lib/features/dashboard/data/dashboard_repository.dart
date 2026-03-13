@@ -623,6 +623,18 @@ class DashboardRepository {
       explicitName: namaSupir,
       details: details,
     );
+    final effectiveDetails = _buildEffectiveIncomeDetails(
+      details: details,
+      pickup: pickup,
+      destination: destination,
+      armadaId: armadaId,
+      armadaStartDate: armadaStartDate,
+      armadaEndDate: armadaEndDate,
+      tonase: tonase,
+      harga: harga,
+      muatan: muatan,
+      namaSupir: namaSupir,
+    );
 
     final pphValue = includePph ? max(0, (total * 0.02)) : 0.0;
     final totalBayarValue = max(0, total - pphValue);
@@ -664,8 +676,8 @@ class DashboardRepository {
     if (armadaId != null && armadaId.trim().isNotEmpty) {
       basePayload['armada_id'] = armadaId.trim();
     }
-    if (details != null && details.isNotEmpty) {
-      basePayload['rincian'] = details;
+    if (effectiveDetails.isNotEmpty) {
+      basePayload['rincian'] = effectiveDetails;
     }
 
     var currentCode = code;
@@ -703,6 +715,17 @@ class DashboardRepository {
         'Gagal menambah invoice: nomor invoice bentrok, silakan coba lagi.',
       );
     }
+
+    // Auto-create expense "Sangu sopir - Plat nomor" per departure detail
+    // based on rules in public.sangu_driver_rules.
+    await _createSanguExpenseFromIncomeBestEffort(
+      invoiceNumber: currentCode,
+      expenseDate: parsedIssueDate,
+      details: effectiveDetails,
+      fallbackPickup: pickup,
+      fallbackDestination: destination,
+      fallbackArmadaId: armadaId,
+    );
 
     await _setArmadaStatusBestEffort(
       selectedArmadaIds,
@@ -2215,9 +2238,218 @@ class DashboardRepository {
     return names.join(', ');
   }
 
+  List<Map<String, dynamic>> _buildEffectiveIncomeDetails({
+    List<Map<String, dynamic>>? details,
+    String? pickup,
+    String? destination,
+    String? armadaId,
+    DateTime? armadaStartDate,
+    DateTime? armadaEndDate,
+    double? tonase,
+    double? harga,
+    String? muatan,
+    String? namaSupir,
+  }) {
+    if (details != null && details.isNotEmpty) {
+      return details.map((row) => Map<String, dynamic>.from(row)).toList();
+    }
+
+    final hasFallback = (pickup?.trim().isNotEmpty == true) ||
+        (destination?.trim().isNotEmpty == true) ||
+        (armadaId?.trim().isNotEmpty == true) ||
+        (muatan?.trim().isNotEmpty == true) ||
+        (namaSupir?.trim().isNotEmpty == true) ||
+        ((tonase ?? 0) > 0) ||
+        ((harga ?? 0) > 0);
+    if (!hasFallback) return const <Map<String, dynamic>>[];
+
+    return <Map<String, dynamic>>[
+      <String, dynamic>{
+        'lokasi_muat': pickup?.trim().isEmpty == true ? null : pickup?.trim(),
+        'lokasi_bongkar':
+            destination?.trim().isEmpty == true ? null : destination?.trim(),
+        'armada_id': armadaId?.trim().isEmpty == true ? null : armadaId?.trim(),
+        'armada_start_date':
+            armadaStartDate == null ? null : _dateOnly(armadaStartDate),
+        'armada_end_date': armadaEndDate == null ? null : _dateOnly(armadaEndDate),
+        'tonase': tonase,
+        'harga': harga,
+        'muatan': muatan?.trim().isEmpty == true ? null : muatan?.trim(),
+        'nama_supir':
+            namaSupir?.trim().isEmpty == true ? null : namaSupir?.trim(),
+      },
+    ];
+  }
+
+  Future<void> _createSanguExpenseFromIncomeBestEffort({
+    required String invoiceNumber,
+    required DateTime expenseDate,
+    required List<Map<String, dynamic>> details,
+    String? fallbackPickup,
+    String? fallbackDestination,
+    String? fallbackArmadaId,
+  }) async {
+    if (details.isEmpty) return;
+    try {
+      final rules = await _fetchSanguRulesBestEffort();
+      if (rules.isEmpty) return;
+
+      final armadas = await fetchArmadas();
+      final plateById = <String, String>{
+        for (final armada in armadas)
+          '${armada['id'] ?? ''}'.trim():
+              '${armada['plat_nomor'] ?? ''}'.trim().toUpperCase(),
+      };
+
+      final expenseDetails = <Map<String, dynamic>>[];
+      for (final detail in details) {
+        final pickup = '${detail['lokasi_muat'] ?? fallbackPickup ?? ''}'.trim();
+        final bongkar =
+            '${detail['lokasi_bongkar'] ?? fallbackDestination ?? ''}'.trim();
+        final match = _findSanguRuleMatch(
+          rules,
+          pickup: pickup,
+          destination: bongkar,
+        );
+        if (match == null) continue;
+
+        final plate = _resolvePlateTextFromDetail(
+          detail,
+          plateById: plateById,
+          fallbackArmadaId: fallbackArmadaId,
+        );
+        final plateLabel = plate.isEmpty ? '-' : plate;
+        final pickupLabel = pickup.isEmpty ? '-' : pickup;
+        final bongkarLabel = bongkar.isEmpty ? '-' : bongkar;
+        expenseDetails.add(<String, dynamic>{
+          'nama': '$plateLabel ($pickupLabel-$bongkarLabel)',
+          'jumlah': _num(match['nominal']),
+        });
+      }
+
+      final totalExpense = expenseDetails.fold<double>(
+        0,
+        (sum, row) => sum + _num(row['jumlah']),
+      );
+      if (totalExpense <= 0) return;
+
+      await createExpense(
+        total: totalExpense,
+        status: 'Unpaid',
+        expenseDate: expenseDate,
+        kategori: 'Sangu Sopir',
+        keterangan: 'Auto sangu sopir - $invoiceNumber',
+        note: 'AUTO_SANGU:$invoiceNumber',
+        details: expenseDetails,
+      );
+    } catch (_) {
+      // Best effort: invoice income tetap sukses walau auto-expense gagal.
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchSanguRulesBestEffort() async {
+    try {
+      final res = await _supabase
+          .from('sangu_driver_rules')
+          .select('tempat,lokasi_muat,lokasi_bongkar,nominal,is_active')
+          .eq('is_active', true);
+      return _toMapList(res)
+          .map((row) {
+            final tempat = '${row['tempat'] ?? ''}'.trim();
+            final muat = '${row['lokasi_muat'] ?? ''}'.trim();
+            final bongkar = '${row['lokasi_bongkar'] ?? ''}'.trim();
+            final nominal = _num(row['nominal']);
+            if (tempat.isEmpty || bongkar.isEmpty || nominal <= 0) return null;
+            return <String, dynamic>{
+              'tempat': tempat,
+              'lokasi_muat': muat,
+              'lokasi_bongkar': bongkar,
+              'nominal': nominal,
+              '__muat_norm': _normalizeSanguPlace(muat),
+              '__bongkar_norm': _normalizeSanguPlace(bongkar),
+            };
+          })
+          .whereType<Map<String, dynamic>>()
+          .toList();
+    } catch (_) {
+      return const <Map<String, dynamic>>[];
+    }
+  }
+
+  Map<String, dynamic>? _findSanguRuleMatch(
+    List<Map<String, dynamic>> rules, {
+    required String pickup,
+    required String destination,
+  }) {
+    final pickupNorm = _normalizeSanguPlace(pickup);
+    final destinationNorm = _normalizeSanguPlace(destination);
+    if (pickupNorm.isEmpty && destinationNorm.isEmpty) return null;
+
+    for (final rule in rules) {
+      final muatNorm = '${rule['__muat_norm'] ?? ''}';
+      final bongkarNorm = '${rule['__bongkar_norm'] ?? ''}';
+      if (muatNorm.isNotEmpty &&
+          pickupNorm == muatNorm &&
+          destinationNorm == bongkarNorm) {
+        return rule;
+      }
+    }
+    for (final rule in rules) {
+      final muatNorm = '${rule['__muat_norm'] ?? ''}';
+      final bongkarNorm = '${rule['__bongkar_norm'] ?? ''}';
+      if (muatNorm.isEmpty && destinationNorm == bongkarNorm) {
+        return rule;
+      }
+    }
+    return null;
+  }
+
+  String _resolvePlateTextFromDetail(
+    Map<String, dynamic> detail, {
+    required Map<String, String> plateById,
+    String? fallbackArmadaId,
+  }) {
+    final detailArmadaId = '${detail['armada_id'] ?? fallbackArmadaId ?? ''}'.trim();
+    if (detailArmadaId.isNotEmpty) {
+      final plateByMap = plateById[detailArmadaId];
+      if (plateByMap != null && plateByMap.trim().isNotEmpty) {
+        return plateByMap.trim().toUpperCase();
+      }
+    }
+
+    final directPlate = '${detail['plat_nomor'] ?? detail['no_polisi'] ?? ''}'
+        .trim()
+        .toUpperCase();
+    if (directPlate.isNotEmpty && directPlate != '-') {
+      return directPlate;
+    }
+
+    final manual = '${detail['armada_manual'] ?? ''}'.trim().toUpperCase();
+    if (manual.isNotEmpty && manual != '-') {
+      return manual;
+    }
+
+    final label = '${detail['armada_label'] ?? detail['armada'] ?? ''}'
+        .trim()
+        .toUpperCase();
+    final match = RegExp(r'\b[A-Z]{1,2}\s?\d{1,4}\s?[A-Z]{1,3}\b').firstMatch(label);
+    if (match != null) {
+      return match.group(0)!.trim().toUpperCase();
+    }
+    return '';
+  }
+
+  String _normalizeSanguPlace(String value) {
+    return value
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
   Future<void> _setArmadaStatusBestEffort(
     Set<String> armadaIds, {
-    required String status,
+      required String status,
   }) async {
     if (armadaIds.isEmpty) return;
     final payload = <String, dynamic>{

@@ -44,9 +44,9 @@ flutter:
     - assets/images/logo.webp
     - assets/images/logo-light.webp
     - assets/images/logo-icon.webp
-    - assets/images/big-icon.webp
-    - assets/images/icon.webp
     - assets/images/iconapk.png
+    - assets/images/kopsurat.jpeg
+    - assets/kopsurat.jpeg
     - assets/images/pp-admin.webp
     - assets/images/pp-owner.webp
 

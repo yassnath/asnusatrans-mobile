@@ -33,13 +33,78 @@ class Formatters {
     'XII',
   ];
 
-  static final NumberFormat _idr = NumberFormat.currency(
+  static final NumberFormat _idrInteger = NumberFormat.currency(
     locale: 'id_ID',
     symbol: 'Rp ',
     decimalDigits: 0,
   );
 
-  static String rupiah(num value) => _idr.format(value);
+  static String decimal(
+    num value, {
+    int maxDecimalDigits = 12,
+    bool trimTrailingZeros = true,
+    bool useGrouping = false,
+  }) {
+    final number = value.toDouble();
+    if (!number.isFinite) return '0';
+
+    if (number == number.truncateToDouble()) {
+      return useGrouping
+          ? NumberFormat.decimalPattern('id_ID').format(number)
+          : number.toInt().toString();
+    }
+
+    final safeDigits = maxDecimalDigits.clamp(1, 16);
+    final sign = number < 0 ? '-' : '';
+    var base = number.abs().toStringAsFixed(safeDigits);
+    if (trimTrailingZeros) {
+      base = base.replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '');
+    }
+    if (base.contains('.')) {
+      final parts = base.split('.');
+      final intPart = parts.first;
+      final fracPart = parts.length > 1 ? parts[1] : '';
+      final left = useGrouping
+          ? NumberFormat.decimalPattern('id_ID').format(int.parse(intPart))
+          : intPart;
+      if (fracPart.isEmpty) {
+        return '$sign$left';
+      }
+      return '$sign$left,$fracPart';
+    }
+    final left = useGrouping
+        ? NumberFormat.decimalPattern('id_ID').format(int.parse(base))
+        : base;
+    return '$sign$left';
+  }
+
+  static String rupiah(
+    num value, {
+    int maxDecimalDigits = 12,
+    bool trimTrailingZeros = true,
+  }) {
+    final number = value.toDouble();
+    if (!number.isFinite) return _idrInteger.format(0);
+    if (number == number.truncateToDouble()) {
+      return _idrInteger.format(number);
+    }
+
+    final sign = number < 0 ? '-' : '';
+    final absNumber = number.abs();
+    final integerPart = absNumber.truncate();
+    final integerText = NumberFormat.decimalPattern('id_ID').format(integerPart);
+    var decimalText = decimal(
+      absNumber - integerPart,
+      maxDecimalDigits: maxDecimalDigits,
+      trimTrailingZeros: trimTrailingZeros,
+      useGrouping: false,
+    );
+    decimalText = decimalText.replaceFirst(RegExp(r'^0,'), '');
+    if (decimalText.isEmpty) {
+      return '${sign}Rp $integerText';
+    }
+    return '${sign}Rp $integerText,$decimalText';
+  }
 
   static DateTime? parseDate(dynamic value) {
     if (value == null) return null;

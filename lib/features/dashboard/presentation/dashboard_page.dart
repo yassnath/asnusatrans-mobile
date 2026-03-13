@@ -6726,6 +6726,13 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
       } catch (_) {
         kopLogo = null;
       }
+      pw.MemoryImage? companyKopImage;
+      try {
+        final kopBytes = await rootBundle.load('assets/images/kopsurat.jpeg');
+        companyKopImage = pw.MemoryImage(kopBytes.buffer.asUint8List());
+      } catch (_) {
+        companyKopImage = null;
+      }
       final armadas = await widget.repository.fetchArmadas();
       final armadaPlateById = <String, String>{
         for (final armada in armadas)
@@ -6785,8 +6792,11 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
         required bool compact,
       }) {
         const infoFont = 9.5;
+        final summaryValueGap = compact ? 8.0 : 10.0;
+        final summaryBoxGap = 4.0;
         final signatureLeftOffset = compact ? 72.0 : 86.0;
         final signatureNameOffset = compact ? 5.0 : 6.0;
+        const signatureTextFontSize = 11.0;
         final baseRowsPerSheet = compact
             ? (isCompanyInvoice ? 13 : 16)
             : (isCompanyInvoice ? 35 : 38);
@@ -6853,9 +6863,27 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
             ? tanggalLong
             : '$kopLocationTitle, $tanggalLong';
         final logoHeight = compact ? 42.0 : 56.0;
+        final companyKopHeight = compact ? 50.0 : 66.0;
+        final recipientBaseLineWidth = compact ? 170.0 : 250.0;
+        final recipientMaxLineWidth = compact ? 250.0 : 360.0;
+        final recipientShiftLeft = compact ? 18.0 : 28.0;
+        double recipientLineWidthFor(String text) {
+          final normalized = text.trim().replaceAll(RegExp(r'\s+'), ' ');
+          final lengthBased =
+              (normalized.length * (compact ? 6.9 : 6.4)) + (compact ? 20 : 24);
+          return max(
+            recipientBaseLineWidth,
+            min(recipientMaxLineWidth, lengthBased),
+          );
+        }
+        final recipientLineWidth = max(
+          recipientLineWidthFor(customerName),
+          recipientLineWidthFor(kopLocationUpper ?? '-'),
+        );
         const tableRowVPadding = 2.4;
         const tableBodyRowHeight = 16.0;
         final invoiceBlockWidth = compact ? 156.0 : 196.0;
+        final incomeColumnWidths = _buildIncomeTableColumnWidths(printableRows);
         final kopWordStyle = pw.TextStyle(
           fontSize: compact ? 34.0 : 47.0,
           fontWeight: pw.FontWeight.bold,
@@ -6899,46 +6927,146 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
           );
         }
 
+        double fixedColWidth(int index) {
+          final width = incomeColumnWidths[index];
+          return width is pw.FixedColumnWidth ? width.width : 0;
+        }
+
+        double flexColWeight(int index) {
+          final width = incomeColumnWidths[index];
+          return width is pw.FlexColumnWidth ? width.flex : 0;
+        }
+
+        pw.Widget buildCompanySummaryRow(
+          String label,
+          String value, {
+          required double leadPrefixWidth,
+          required double leftMergeWidth,
+          required double middleGapWidth,
+          required double mergedLabelWidth,
+          required double totalWidth,
+          String? leftText,
+          bool bold = true,
+        }) {
+          final textStyle = pw.TextStyle(
+            fontSize: infoFont,
+            fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+          );
+          return pw.SizedBox(
+            height: tableBodyRowHeight,
+            child: pw.Row(
+              crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+              children: [
+                pw.SizedBox(width: leadPrefixWidth),
+                pw.Container(
+                  width: leftMergeWidth,
+                  alignment: pw.Alignment.center,
+                  child: leftText == null
+                      ? pw.SizedBox()
+                      : pw.FittedBox(
+                          fit: pw.BoxFit.scaleDown,
+                          child: pw.Text(
+                            leftText.replaceAll(' ', '\u00A0'),
+                            maxLines: 1,
+                            textAlign: pw.TextAlign.center,
+                            style: const pw.TextStyle(
+                              fontSize: signatureTextFontSize,
+                              decoration: pw.TextDecoration.none,
+                            ),
+                          ),
+                        ),
+                ),
+                pw.SizedBox(width: middleGapWidth),
+                pw.Container(
+                  width: mergedLabelWidth,
+                  alignment: pw.Alignment.centerRight,
+                  padding: const pw.EdgeInsets.only(right: 4),
+                  child: pw.Text(
+                    label,
+                    textAlign: pw.TextAlign.right,
+                    maxLines: 1,
+                    style: textStyle,
+                  ),
+                ),
+                pw.Container(
+                  width: totalWidth,
+                  alignment: pw.Alignment.center,
+                  padding: const pw.EdgeInsets.symmetric(horizontal: 4),
+                  decoration: pw.BoxDecoration(
+                    border: pw.Border.all(color: PdfColors.grey400),
+                  ),
+                  child: pw.FittedBox(
+                    fit: pw.BoxFit.scaleDown,
+                    child: pw.Text(
+                      value,
+                      textAlign: pw.TextAlign.center,
+                      maxLines: 1,
+                      style: textStyle,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
         return pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
             if (isCompanyInvoice) ...[
-              pw.Padding(
-                padding:
-                    const pw.EdgeInsets.symmetric(horizontal: 2, vertical: 1),
-                child: pw.Row(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    if (kopLogo != null)
-                      pw.Image(
-                        kopLogo,
-                        height: logoHeight,
-                        width: logoHeight,
-                        fit: pw.BoxFit.contain,
-                      )
-                    else
-                      pw.SizedBox(
-                        height: logoHeight,
-                        width: logoHeight,
+              if (companyKopImage != null)
+                pw.Container(
+                  margin: const pw.EdgeInsets.only(
+                    left: -4,
+                    right: -4,
+                    top: 0,
+                  ),
+                  width: double.infinity,
+                  height: companyKopHeight,
+                  child: pw.Image(
+                    companyKopImage,
+                    fit: pw.BoxFit.fitWidth,
+                    alignment: pw.Alignment.center,
+                  ),
+                )
+              else ...[
+                pw.Padding(
+                  padding:
+                      const pw.EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+                  child: pw.Row(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      if (kopLogo != null)
+                        pw.Image(
+                          kopLogo,
+                          height: logoHeight,
+                          width: logoHeight,
+                          fit: pw.BoxFit.contain,
+                        )
+                      else
+                        pw.SizedBox(
+                          height: logoHeight,
+                          width: logoHeight,
+                        ),
+                      pw.SizedBox(width: 4),
+                      pw.Expanded(
+                        child: pw.Container(
+                          height: logoHeight,
+                          alignment: pw.Alignment.topLeft,
+                          child: buildUltraBoldKop('CV AS NUSA TRANS'),
+                        ),
                       ),
-                    pw.SizedBox(width: 4),
-                    pw.Expanded(
-                      child: pw.Container(
-                        height: logoHeight,
-                        alignment: pw.Alignment.topLeft,
-                        child: buildUltraBoldKop('CV AS NUSA TRANS'),
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              pw.SizedBox(height: 1.5),
-              pw.Container(
-                width: double.infinity,
-                height: 1.2,
-                color: PdfColors.black,
-              ),
-              pw.SizedBox(height: 4),
+                pw.SizedBox(height: 1.5),
+                pw.Container(
+                  width: double.infinity,
+                  height: 1.2,
+                  color: PdfColors.black,
+                ),
+              ],
+              pw.SizedBox(height: 2),
             ],
             pw.Row(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -6990,62 +7118,66 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                       style: const pw.TextStyle(fontSize: infoFont),
                     ),
                     pw.SizedBox(height: 4),
-                    pw.Row(
-                      mainAxisSize: pw.MainAxisSize.min,
-                      crossAxisAlignment: pw.CrossAxisAlignment.end,
-                      children: [
-                        pw.Text(
-                          'Kepada Yth:',
-                          textAlign: pw.TextAlign.right,
-                          style: const pw.TextStyle(fontSize: infoFont),
-                        ),
-                        pw.SizedBox(width: 4),
-                        pw.Container(
-                          width: compact ? 88 : 126,
-                          alignment: pw.Alignment.center,
-                          padding: const pw.EdgeInsets.only(bottom: 1),
-                          decoration: const pw.BoxDecoration(
-                            border: pw.Border(
-                              bottom: pw.BorderSide(
-                                color: PdfColors.grey700,
-                                width: 0.9,
+                    pw.Padding(
+                      padding: pw.EdgeInsets.only(right: recipientShiftLeft),
+                      child: pw.Row(
+                        mainAxisSize: pw.MainAxisSize.min,
+                        crossAxisAlignment: pw.CrossAxisAlignment.end,
+                        children: [
+                          pw.Text(
+                            'Kepada Yth: ',
+                            textAlign: pw.TextAlign.right,
+                            style: const pw.TextStyle(fontSize: infoFont),
+                          ),
+                          pw.Container(
+                            width: recipientLineWidth,
+                            alignment: pw.Alignment.center,
+                            padding: const pw.EdgeInsets.only(bottom: 1),
+                            decoration: const pw.BoxDecoration(
+                              border: pw.Border(
+                                bottom: pw.BorderSide(
+                                  color: PdfColors.grey700,
+                                  width: 0.9,
+                                ),
+                              ),
+                            ),
+                            child: pw.FittedBox(
+                              fit: pw.BoxFit.scaleDown,
+                              child: pw.Text(
+                                customerName.replaceAll(' ', '\u00A0'),
+                                maxLines: 1,
+                                textAlign: pw.TextAlign.center,
+                                style: pw.TextStyle(
+                                  fontSize: infoFont,
+                                  fontWeight: pw.FontWeight.bold,
+                                  fontStyle: pw.FontStyle.italic,
+                                ),
                               ),
                             ),
                           ),
-                          child: pw.Text(
-                            customerName,
-                            textAlign: pw.TextAlign.center,
-                            style: pw.TextStyle(
-                              fontSize: infoFont,
-                              fontWeight: pw.FontWeight.bold,
-                              fontStyle: pw.FontStyle.italic,
-                            ),
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                     pw.SizedBox(height: 4),
-                    pw.Row(
-                      mainAxisSize: pw.MainAxisSize.min,
-                      crossAxisAlignment: pw.CrossAxisAlignment.end,
-                      children: [
-                        // Keep placement consistent with previous layout, but
-                        // remove visible "Lokasi:" label as requested.
-                        pw.SizedBox(width: compact ? 32 : 36),
-                        pw.Container(
-                          width: compact ? 88 : 126,
-                          alignment: pw.Alignment.center,
-                          padding: const pw.EdgeInsets.only(bottom: 1),
-                          decoration: const pw.BoxDecoration(
-                            border: pw.Border(
-                              bottom: pw.BorderSide(
-                                color: PdfColors.grey700,
-                                width: 0.9,
-                              ),
+                    pw.Padding(
+                      padding: pw.EdgeInsets.only(right: recipientShiftLeft),
+                      child: pw.Container(
+                        width: recipientLineWidth,
+                        alignment: pw.Alignment.center,
+                        padding: const pw.EdgeInsets.only(bottom: 1),
+                        decoration: const pw.BoxDecoration(
+                          border: pw.Border(
+                            bottom: pw.BorderSide(
+                              color: PdfColors.grey700,
+                              width: 0.9,
                             ),
                           ),
+                        ),
+                        child: pw.FittedBox(
+                          fit: pw.BoxFit.scaleDown,
                           child: pw.Text(
-                            kopLocationUpper ?? '-',
+                            (kopLocationUpper ?? '-').replaceAll(' ', '\u00A0'),
+                            maxLines: 1,
                             textAlign: pw.TextAlign.center,
                             style: pw.TextStyle(
                               fontSize: infoFont,
@@ -7054,7 +7186,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                             ),
                           ),
                         ),
-                      ],
+                      ),
                     ),
                   ],
                 ),
@@ -7063,7 +7195,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
             pw.SizedBox(height: 10),
             pw.Table(
               border: pw.TableBorder.all(color: PdfColors.grey400),
-              columnWidths: _buildIncomeTableColumnWidths(printableRows),
+              columnWidths: incomeColumnWidths,
               children: [
                 pw.TableRow(
                   decoration: const pw.BoxDecoration(
@@ -7287,85 +7419,194 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                 }),
               ],
             ),
-            pw.SizedBox(height: 12),
+            if (isCompanyInvoice) ...[
+              pw.LayoutBuilder(
+                builder: (context, constraints) {
+                  final tableWidth = constraints?.maxWidth ?? 0;
+                  final fixedWidthTotal = List<double>.generate(
+                    incomeColumnWidths.length,
+                    (i) => fixedColWidth(i),
+                  ).fold(0.0, (sum, w) => sum + w);
+                  final flexWeightTotal = List<double>.generate(
+                    incomeColumnWidths.length,
+                    (i) => flexColWeight(i),
+                  ).fold(0.0, (sum, w) => sum + w);
+                  final usableFlexWidth =
+                      max(0.0, tableWidth - fixedWidthTotal);
+                  double colWidth(int index) {
+                    final fixed = fixedColWidth(index);
+                    if (fixed > 0) return fixed;
+                    final flex = flexColWeight(index);
+                    if (flexWeightTotal <= 0 || flex <= 0) return 0;
+                    return usableFlexWidth * (flex / flexWeightTotal);
+                  }
+
+                  final leadPrefixWidth = colWidth(0);
+                  final leftMergeWidth = colWidth(1) + colWidth(2);
+                  final middleGapWidth =
+                      colWidth(3) + colWidth(4) + colWidth(5);
+                  final mergedLabelWidth = colWidth(6) + colWidth(7);
+                  final totalWidth = colWidth(8);
+
+                  return pw.Column(
+                    children: [
+                      buildCompanySummaryRow(
+                        'SUBTOTAL',
+                        Formatters.rupiah(subtotal),
+                        leadPrefixWidth: leadPrefixWidth,
+                        leftMergeWidth: leftMergeWidth,
+                        middleGapWidth: middleGapWidth,
+                        mergedLabelWidth: mergedLabelWidth,
+                        totalWidth: totalWidth,
+                        leftText: 'Hormat kami,',
+                      ),
+                      buildCompanySummaryRow(
+                        'PPH (2%)',
+                        Formatters.rupiah(pph),
+                        leadPrefixWidth: leadPrefixWidth,
+                        leftMergeWidth: leftMergeWidth,
+                        middleGapWidth: middleGapWidth,
+                        mergedLabelWidth: mergedLabelWidth,
+                        totalWidth: totalWidth,
+                      ),
+                      buildCompanySummaryRow(
+                        'TOTAL BAYAR',
+                        Formatters.rupiah(total),
+                        leadPrefixWidth: leadPrefixWidth,
+                        leftMergeWidth: leftMergeWidth,
+                        middleGapWidth: middleGapWidth,
+                        mergedLabelWidth: mergedLabelWidth,
+                        totalWidth: totalWidth,
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ],
+            pw.SizedBox(height: 0),
             pw.Row(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
                 pw.Expanded(
-                  child: pw.Padding(
-                    padding: pw.EdgeInsets.only(left: signatureLeftOffset),
-                    child: pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
-                      children: [
-                        pw.Text('Hormat kami,'),
-                        pw.SizedBox(height: compact ? 72 : 102),
-                        pw.Padding(
-                          padding:
-                              pw.EdgeInsets.only(left: signatureNameOffset),
+                  child: isCompanyInvoice
+                      ? pw.Padding(
+                          padding: pw.EdgeInsets.only(
+                            left: signatureLeftOffset + 4,
+                            top: compact ? 47 : 57,
+                          ),
                           child: pw.Text(
                             'A N T O K',
-                            style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                            textAlign: pw.TextAlign.left,
+                            maxLines: 1,
+                            style: pw.TextStyle(
+                              fontSize: signatureTextFontSize,
+                              fontWeight: pw.FontWeight.bold,
+                              decoration: pw.TextDecoration.none,
+                            ),
+                          ),
+                        )
+                      : pw.Padding(
+                          padding: pw.EdgeInsets.only(left: signatureLeftOffset),
+                          child: pw.Column(
+                            crossAxisAlignment: pw.CrossAxisAlignment.start,
+                            children: [
+                              pw.Text('Hormat kami,'),
+                              pw.SizedBox(height: compact ? 72 : 102),
+                              pw.Padding(
+                                padding: pw.EdgeInsets.only(
+                                  left: signatureNameOffset,
+                                ),
+                                child: pw.Text(
+                                  'A N T O K',
+                                  style: pw.TextStyle(
+                                    fontSize: signatureTextFontSize,
+                                    fontWeight: pw.FontWeight.bold,
+                                    decoration: pw.TextDecoration.none,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ],
-                    ),
-                  ),
                 ),
                 pw.SizedBox(width: 16),
                 pw.SizedBox(
-                  width: compact ? 200 : 220,
+                  width: compact ? 280 : 320,
                   child: pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.stretch,
                     children: [
-                      pw.Row(
-                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                        children: [
-                          pw.Text(
-                            'Subtotal',
-                            style: const pw.TextStyle(fontSize: infoFont),
-                          ),
-                          pw.Text(
-                            Formatters.rupiah(subtotal),
-                            style: const pw.TextStyle(fontSize: infoFont),
-                          ),
-                        ],
-                      ),
-                      if (isCompanyInvoice) ...[
-                        pw.SizedBox(height: 3),
+                      if (!isCompanyInvoice)
                         pw.Row(
-                          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                          mainAxisAlignment: pw.MainAxisAlignment.end,
                           children: [
                             pw.Text(
-                              'PPH (2%)',
-                              style: const pw.TextStyle(fontSize: infoFont),
+                              'Total Bayar',
+                              style: pw.TextStyle(
+                                fontSize: infoFont,
+                                fontWeight: pw.FontWeight.bold,
+                              ),
                             ),
+                            pw.SizedBox(width: summaryValueGap),
                             pw.Text(
-                              Formatters.rupiah(pph),
-                              style: const pw.TextStyle(fontSize: infoFont),
+                              Formatters.rupiah(total),
+                              style: pw.TextStyle(
+                                fontSize: infoFont,
+                                fontWeight: pw.FontWeight.bold,
+                              ),
                             ),
                           ],
                         ),
-                      ],
-                      pw.Divider(height: 8),
-                      pw.Row(
-                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                        children: [
-                          pw.Text(
-                            'Total Bayar',
-                            style: pw.TextStyle(
-                              fontSize: infoFont,
-                              fontWeight: pw.FontWeight.bold,
-                            ),
-                          ),
-                          pw.Text(
-                            Formatters.rupiah(total),
-                            style: pw.TextStyle(
-                              fontSize: infoFont,
-                              fontWeight: pw.FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
+                      pw.SizedBox(height: summaryBoxGap),
+                      (isCompanyInvoice
+                              ? pw.Transform.translate(
+                                  offset: const PdfPoint(0, -5),
+                                  child: pw.Container(
+                                    alignment: pw.Alignment.center,
+                                    padding: const pw.EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: pw.BoxDecoration(
+                                      border: pw.Border.all(
+                                        color: PdfColors.blue700,
+                                        width: 1.2,
+                                      ),
+                                    ),
+                                    child: pw.Text(
+                                      'Rekening BCA a/c 6155345601 a/n CV AS NUSA TRANS\nNPWP 096.775.534.9-617.000',
+                                      textAlign: pw.TextAlign.center,
+                                      style: pw.TextStyle(
+                                        fontSize: infoFont,
+                                        color: PdfColors.blue700,
+                                        fontWeight: pw.FontWeight.bold,
+                                        fontStyle: pw.FontStyle.italic,
+                                      ),
+                                    ),
+                                  ),
+                                )
+                              : pw.Container(
+                                  alignment: pw.Alignment.center,
+                                  padding: const pw.EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: pw.BoxDecoration(
+                                    border: pw.Border.all(
+                                      color: PdfColors.blue700,
+                                      width: 1.2,
+                                    ),
+                                  ),
+                                  child: pw.Text(
+                                    'Rekening BCA a/c 1730290001 a/n BUDI SUKAMTO',
+                                    textAlign: pw.TextAlign.center,
+                                    style: pw.TextStyle(
+                                      fontSize: infoFont,
+                                      color: PdfColors.blue700,
+                                      fontWeight: pw.FontWeight.bold,
+                                      fontStyle: pw.FontStyle.italic,
+                                    ),
+                                  ),
+                                )),
                     ],
                   ),
                 ),
