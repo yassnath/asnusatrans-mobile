@@ -161,12 +161,12 @@ class _SplashScreenState extends State<_SplashScreen>
 
     _scale = TweenSequence<double>([
       TweenSequenceItem(
-        tween: Tween<double>(begin: 0.72, end: 1)
+        tween: Tween<double>(begin: 0.72, end: 2.00)
             .chain(CurveTween(curve: Curves.easeOutCubic)),
         weight: 80,
       ),
       TweenSequenceItem(
-        tween: Tween<double>(begin: 1, end: 16)
+        tween: Tween<double>(begin: 2.00, end: 16)
             .chain(CurveTween(curve: Curves.easeInQuad)),
         weight: 20,
       ),
@@ -193,41 +193,49 @@ class _SplashScreenState extends State<_SplashScreen>
       body: Container(
         color: Colors.white,
         child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AnimatedBuilder(
-                animation: _controller,
-                child: Image.asset(
-                  'assets/images/iconapk.png',
-                  width: 108,
-                  height: 108,
-                  fit: BoxFit.contain,
+          child: SizedBox(
+            width: 320,
+            height: 240,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                AnimatedBuilder(
+                  animation: _controller,
+                  child: Image.asset(
+                    'assets/images/iconapk.png',
+                    width: 112,
+                    height: 112,
+                    fit: BoxFit.contain,
+                  ),
+                  builder: (context, child) {
+                    return Opacity(
+                      opacity: _opacity.value.clamp(0, 1),
+                      child: Transform.scale(
+                        scale: _scale.value,
+                        child: child,
+                      ),
+                    );
+                  },
                 ),
-                builder: (context, child) {
-                  return Opacity(
-                    opacity: _opacity.value.clamp(0, 1),
-                    child: Transform.scale(
-                      scale: _scale.value,
-                      child: child,
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 24,
+                  child: FadeTransition(
+                    opacity: _textOpacity,
+                    child: const Text(
+                      'Dashboard CV ANT by Solvix Studio',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Color(0xFF475569),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                  );
-                },
-              ),
-              const SizedBox(height: 14),
-              FadeTransition(
-                opacity: _textOpacity,
-                child: const Text(
-                  'Dashboard CV ANT by Solvix Studio',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Color(0xFF475569),
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

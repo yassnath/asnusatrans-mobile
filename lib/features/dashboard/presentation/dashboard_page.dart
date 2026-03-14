@@ -266,7 +266,7 @@ class _DashboardPageState extends State<DashboardPage> {
                   radius: 18,
                   backgroundColor: AppColors.surfaceSoft(context),
                   backgroundImage: isCustomer
-                      ? const AssetImage('assets/images/icon.webp')
+                      ? const AssetImage('assets/images/logo-icon.webp')
                       : AssetImage(
                           widget.session.role.toLowerCase() == 'owner'
                               ? 'assets/images/pp-owner.webp'

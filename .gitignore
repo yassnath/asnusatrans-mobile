@@ -11,6 +11,8 @@ Thumbs.db
 ########################################
 *.log
 *.tmp
+~$*
+~$*.xlsx
 
 ########################################
 # Environment files (JANGAN PERNAH UPLOAD)
