@@ -138,7 +138,7 @@ class RecentTransactionsCard extends StatelessWidget {
                     ],
                   ),
                 );
-              }),
+              }).toList(),
           ],
         ),
       ),

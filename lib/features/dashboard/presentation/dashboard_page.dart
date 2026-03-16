@@ -54,6 +54,18 @@ class _InvoicePrefillData {
   final String? armadaName;
 }
 
+String _formatRupiahNoPrefix(num value) {
+  return Formatters.rupiah(value).replaceAll(RegExp(r'Rp\.?\s*'), '').trim();
+}
+
+String formatRupiahNoPrefix(num value) => _formatRupiahNoPrefix(value);
+
+String _romanMonth(int month) {
+  const romanMonths = <String>['-', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
+  if (month < 1 || month > 12) return '-';
+  return romanMonths[month];
+}
+
 String _menuLabel(String key, AppLanguage language) {
   final isEn = language == AppLanguage.en;
   switch (key.toLowerCase()) {
@@ -2828,12 +2840,24 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
     r'\bpersekutuan\s+perdata\b',
     r'\bmaatschap\b',
   ];
+
+  static const List<String> _defaultMuatOptions = [
+    'Depo',
+    'T. Langon',
+    'Maspion',
+    'Betoyo',
+    'Oso',
+    'Legundi',
+  ];
+
   final _customer = TextEditingController();
   final _email = TextEditingController();
   final _phone = TextEditingController();
   final _kopDate = TextEditingController();
   final _kopLocation = TextEditingController();
   final _dueDate = TextEditingController();
+  final _invoiceNumber = TextEditingController();
+  bool _invoiceNumberManualOverride = false;
   DateTime _date = DateTime.now();
   bool _isCompanyInvoice = true;
   String _status = 'Unpaid';
@@ -2846,6 +2870,19 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
   final List<Map<String, dynamic>> _details = [];
   bool _prefillApplied = false;
   bool _prefillArmadaResolved = false;
+
+  @override
+  void dispose() {
+    _customer.dispose();
+    _email.dispose();
+    _phone.dispose();
+    _kopDate.dispose();
+    _kopLocation.dispose();
+    _dueDate.dispose();
+    _invoiceNumber.dispose();
+    super.dispose();
+  }
+
   String _prefillArmadaName = '';
   String _selectedCustomerOptionId = _customerManualOptionId;
   int _detailFieldRefreshToken = 0;
@@ -2870,17 +2907,6 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
     if (oldWidget.prefill != widget.prefill) {
       _applyPrefill(widget.prefill);
     }
-  }
-
-  @override
-  void dispose() {
-    _customer.dispose();
-    _email.dispose();
-    _phone.dispose();
-    _kopDate.dispose();
-    _kopLocation.dispose();
-    _dueDate.dispose();
-    super.dispose();
   }
 
   void _applyPrefill(_InvoicePrefillData? prefill) {
@@ -3078,6 +3104,9 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
       if (!mounted || requestToken != _invoiceNoRequestToken) return;
       setState(() {
         _invoiceNoPreview = generated;
+        if (!_invoiceNumberManualOverride) {
+          _invoiceNumber.text = generated;
+        }
         _invoiceNoLoading = false;
       });
     } catch (_) {
@@ -3100,6 +3129,8 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
     );
     setState(() {
       _isCompanyInvoice = isCompany;
+      _invoiceNumberManualOverride = false;
+      _invoiceNumber.text = '';
       final isCurrentValid = filtered.any(
         (item) => '${item['id']}' == _selectedCustomerOptionId,
       );
@@ -3114,6 +3145,59 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
       }
     });
     _refreshInvoiceNumberPreview();
+  }
+
+  String _formatPersonalInvoiceNumber(String raw, DateTime issuedDate) {
+    final candidate = raw.trim();
+    if (candidate.isEmpty) {
+      return candidate;
+    }
+
+    final monthRoman = _romanMonth(issuedDate.month);
+    final yearSuffix = (issuedDate.year % 100).toString().padLeft(2, '0');
+
+    // Company format remains unchanged
+    if (_isCompanyInvoice) {
+      return candidate;
+    }
+
+    final regex = RegExp(r'^(\d{1,3})\s*/\s*BS\s*/\s*[IVX]+\s*/\s*\d{2} ', caseSensitive: false);
+    // final desugar
+    final cleanCandidate = candidate.replaceAll(RegExp(r'\s*Rp\.?\s*', caseSensitive: false), '');
+
+    final inputCandidate = cleanCandidate.toUpperCase();
+    final match = RegExp(r'^(\d+)\s*/\s*BS\s*/\s*[IVX]+\s*/\s*\d{2} ', caseSensitive: false).firstMatch(inputCandidate);
+
+    // ignore if custom format cannot be parsed
+    if (match == null) {
+      return candidate;
+    }
+
+    final seqPart = match.group(1)!.padLeft(3, '0');
+    return '$seqPart / BS / $monthRoman / $yearSuffix';
+  }
+
+  String _formatInvoiceNumber(String raw, DateTime issuedDate) {
+    final candidate = raw.trim();
+    if (candidate.isEmpty) return candidate;
+
+    final monthRoman = _romanMonth(issuedDate.month);
+    final yearSuffix = (issuedDate.year % 100).toString().padLeft(2, '0');
+
+    final cleaned = candidate
+        .replaceAll(RegExp(r'\s*Rp\.?\s*', caseSensitive: false), '')
+        .toUpperCase();
+
+    final seqMatch = RegExp(r'^(\d{1,3})').firstMatch(cleaned);
+    if (seqMatch == null) {
+      return candidate;
+    }
+
+    final seq = seqMatch.group(1)!.padLeft(3, '0');
+    if (_isCompanyInvoice) {
+      return '$seq / CV.ANT / $monthRoman / $yearSuffix';
+    }
+    return '$seq / BS / $monthRoman / $yearSuffix';
   }
 
   String _normalizeText(String value) {
@@ -3458,12 +3542,21 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
       return;
     }
 
+    final selectedInvoiceNumber = _invoiceNumber.text.trim().isNotEmpty
+        ? _invoiceNumber.text.trim()
+        : generatedInvoiceNo;
+
+    final effectiveInvoiceNumber = _formatInvoiceNumber(
+      selectedInvoiceNumber,
+      Formatters.parseDate(_kopDate.text) ?? _date,
+    );
+
     setState(() => _loading = true);
     try {
       await widget.repository.createInvoice(
         customerName: customer,
         total: _subtotal,
-        noInvoice: generatedInvoiceNo,
+        noInvoice: effectiveInvoiceNumber,
         includePph: _isCompanyInvoice,
         status: _status,
         issuedDate: Formatters.parseDate(_kopDate.text) ?? _date,
@@ -3669,17 +3762,26 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                     style: TextStyle(color: AppColors.textMutedFor(context)),
                   ),
                   const SizedBox(height: 4),
-                  InputDecorator(
+                  TextField(
+                    controller: _invoiceNumber,
                     decoration: InputDecoration(
-                      labelText: _t('Nomor Otomatis', 'Auto Number'),
+                      labelText: _t('Nomor Invoice', 'Invoice Number'),
+                      hintText: _t(
+                        'Isi manual untuk override nomor otomatis',
+                        'Enter manually to override the auto value',
+                      ),
+                      helperText: _t(
+                        'Biarkan kosong untuk menggunakan nomor otomatis',
+                        'Leave empty to use auto-generated number',
+                      ),
                     ),
-                    child: Text(
-                      _invoiceNoLoading
-                          ? _t('Menyiapkan nomor...', 'Preparing number...')
-                          : _invoiceNoPreview,
-                    ),
+                    onChanged: (value) {
+                      setState(() {
+                        _invoiceNumberManualOverride = value.trim().isNotEmpty;
+                      });
+                    },
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 12),
                   Row(
                     children: [
                       Expanded(
@@ -3798,6 +3900,13 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                     final index = entry.key;
                     final row = entry.value;
                     final rowSubtotal = _detailSubtotal(row);
+
+                    final _muatValue = '${row['lokasi_muat'] ?? ''}'.trim();
+                    final _muatManual = '${row['lokasi_muat_manual'] ?? ''}'.trim();
+                    final _isMuatManual = _muatManual.isNotEmpty ||
+                        (_muatValue.isNotEmpty &&
+                            !_defaultMuatOptions.contains(_muatValue));
+
                     return Container(
                       margin: EdgeInsets.only(
                           bottom: index == _details.length - 1 ? 0 : 10),
@@ -3809,17 +3918,62 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                       ),
                       child: Column(
                         children: [
-                          TextFormField(
-                            key: ValueKey(
-                              'lokasi_muat-$index-$_detailFieldRefreshToken',
-                            ),
-                            initialValue: '${row['lokasi_muat']}',
+                          CvantDropdownField<String>(
+                            initialValue: _isMuatManual
+                                ? 'Other (Input Manual)'
+                                : (_muatValue.isNotEmpty ? _muatValue : null),
                             decoration: InputDecoration(
                               hintText: _t('Lokasi Muat', 'Loading Location'),
                             ),
-                            onChanged: (value) => row['lokasi_muat'] = value,
+                            items: [
+                              ..._defaultMuatOptions.map(
+                                (option) => DropdownMenuItem<String>(
+                                  value: option,
+                                  child: Text(option),
+                                ),
+                              ),
+                              DropdownMenuItem<String>(
+                                value: 'Other (Input Manual)',
+                                child: Text(
+                                  _t('Other (Input Manual)',
+                                      'Other (Manual Input)'),
+                                ),
+                              ),
+                            ],
+                            onChanged: (value) {
+                              setState(() {
+                                if (value == 'Other (Input Manual)') {
+                                  row['lokasi_muat'] = '';
+                                  row['lokasi_muat_manual'] = '';
+                                } else {
+                                  row['lokasi_muat'] = value ?? '';
+                                  row['lokasi_muat_manual'] = '';
+                                }
+                              });
+                            },
                           ),
-                          const SizedBox(height: 8),
+                          if (_isMuatManual) ...[
+                            const SizedBox(height: 8),
+                            TextFormField(
+                              key: ValueKey(
+                                'lokasi_muat_manual-$index-$_detailFieldRefreshToken',
+                              ),
+                              initialValue: _muatManual,
+                              decoration: InputDecoration(
+                                hintText: _t(
+                                  'Lokasi Muat (Manual)',
+                                  'Loading Location (Manual)',
+                                ),
+                              ),
+                              onChanged: (value) {
+                                row['lokasi_muat_manual'] = value;
+                                row['lokasi_muat'] = value;
+                                setState(() {});
+                              },
+                            ),
+                            const SizedBox(height: 8),
+                          ] else
+                            const SizedBox(height: 8),
                           TextFormField(
                             key: ValueKey(
                               'lokasi_bongkar-$index-$_detailFieldRefreshToken',
@@ -6990,7 +7144,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                 ),
                 pw.Container(
                   width: totalWidth,
-                  alignment: pw.Alignment.center,
+                  alignment: pw.Alignment.centerRight,
                   padding: const pw.EdgeInsets.symmetric(horizontal: 4),
                   decoration: pw.BoxDecoration(
                     border: pw.Border.all(color: PdfColors.grey400),
@@ -6999,7 +7153,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                     fit: pw.BoxFit.scaleDown,
                     child: pw.Text(
                       value,
-                      textAlign: pw.TextAlign.center,
+                      textAlign: pw.TextAlign.right,
                       maxLines: 1,
                       style: textStyle,
                     ),
@@ -7086,11 +7240,17 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                         ),
                       ),
                     ),
-                    pw.SizedBox(height: 1.5),
+                    pw.SizedBox(height: 1.0),
                     pw.Container(
                       width: invoiceBlockWidth,
-                      height: 0.9,
-                      color: PdfColors.grey700,
+                      height: 0.8,
+                      color: PdfColors.black,
+                    ),
+                    pw.SizedBox(height: 0.8),
+                    pw.Container(
+                      width: invoiceBlockWidth,
+                      height: 0.8,
+                      color: PdfColors.black,
                     ),
                     pw.SizedBox(height: 2.5),
                     pw.SizedBox(
@@ -7395,8 +7555,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                         softLimitChars: 8,
                       ),
                       _pdfCell(
-                        hasData ? Formatters.rupiah(harga) : blankCell,
-                        alignCenter: true,
+                        hasData ? formatRupiahNoPrefix(harga) : blankCell,
+                        alignRight: true,
                         hPadding: 4,
                         vPadding: tableRowVPadding,
                         fixedHeight: tableBodyRowHeight,
@@ -7405,8 +7565,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                         minFontSize: 6.2,
                       ),
                       _pdfCell(
-                        hasData ? Formatters.rupiah(rowSubtotal) : blankCell,
-                        alignCenter: true,
+                        hasData ? formatRupiahNoPrefix(rowSubtotal) : blankCell,
+                        alignRight: true,
                         hPadding: 4,
                         vPadding: tableRowVPadding,
                         fixedHeight: tableBodyRowHeight,
@@ -7451,8 +7611,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                   return pw.Column(
                     children: [
                       buildCompanySummaryRow(
-                        'SUBTOTAL',
-                        Formatters.rupiah(subtotal),
+                        'SUBTOTAL Rp.',
+                        formatRupiahNoPrefix(subtotal),
                         leadPrefixWidth: leadPrefixWidth,
                         leftMergeWidth: leftMergeWidth,
                         middleGapWidth: middleGapWidth,
@@ -7461,8 +7621,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                         leftText: 'Hormat kami,',
                       ),
                       buildCompanySummaryRow(
-                        'PPH (2%)',
-                        Formatters.rupiah(pph),
+                        'PPH 2% Rp.',
+                        formatRupiahNoPrefix(pph),
                         leadPrefixWidth: leadPrefixWidth,
                         leftMergeWidth: leftMergeWidth,
                         middleGapWidth: middleGapWidth,
@@ -7470,8 +7630,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                         totalWidth: totalWidth,
                       ),
                       buildCompanySummaryRow(
-                        'TOTAL BAYAR',
-                        Formatters.rupiah(total),
+                        'TOTAL BAYAR Rp.',
+                        formatRupiahNoPrefix(total),
                         leadPrefixWidth: leadPrefixWidth,
                         leftMergeWidth: leftMergeWidth,
                         middleGapWidth: middleGapWidth,
@@ -7540,7 +7700,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                           mainAxisAlignment: pw.MainAxisAlignment.end,
                           children: [
                             pw.Text(
-                              'Total Bayar',
+                              'TOTAL BAYAR Rp.',
                               style: pw.TextStyle(
                                 fontSize: infoFont,
                                 fontWeight: pw.FontWeight.bold,
@@ -7548,7 +7708,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                             ),
                             pw.SizedBox(width: summaryValueGap),
                             pw.Text(
-                              Formatters.rupiah(total),
+                              formatRupiahNoPrefix(total),
                               style: pw.TextStyle(
                                 fontSize: infoFont,
                                 fontWeight: pw.FontWeight.bold,

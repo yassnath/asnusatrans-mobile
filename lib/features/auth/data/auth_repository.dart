@@ -288,6 +288,15 @@ class AuthRepository {
           'Cek koneksi internet/DNS di perangkat, matikan VPN/Private DNS, '
           'lalu coba lagi.';
     }
+
+    final isServerIssue = text.contains('502') ||
+        text.contains('bad gateway') ||
+        text.contains('502 bad gateway') ||
+        text.contains('gateway timeout');
+    if (isServerIssue) {
+      return 'Server sedang tidak tersedia (502 Bad Gateway). Coba lagi beberapa saat atau hubungi admin.';
+    }
+
     if ((text.contains('username') || text.contains('email')) ||
         text.contains('password')) {
       return 'Login gagal. Periksa email/username dan password.';

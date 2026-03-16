@@ -2401,6 +2401,20 @@ class DashboardRepository {
         return rule;
       }
     }
+
+    // Fallback khusus: jika lokasi bongkar di Pare dan belum ada rule yang cocok,
+    // otomatis gunakan nominal yang disepakati untuk biaya supir.
+    if (destinationNorm == 'pare') {
+      return <String, dynamic>{
+        'tempat': 'Pare',
+        'lokasi_muat': '',
+        'lokasi_bongkar': 'Pare',
+        'nominal': 1050000,
+        '__muat_norm': '',
+        '__bongkar_norm': 'pare',
+      };
+    }
+
     return null;
   }
 
