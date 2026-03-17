@@ -25,6 +25,14 @@ class LatestCustomersCard extends StatefulWidget {
 class _LatestCustomersCardState extends State<LatestCustomersCard> {
   bool _showLatest = true;
 
+  String _typeLabel(String rawType, bool isEn) {
+    final lower = rawType.toLowerCase();
+    if (lower.contains('expense')) {
+      return isEn ? 'Expense' : 'Pengeluaran';
+    }
+    return isEn ? 'Income' : 'Pemasukkan';
+  }
+
   @override
   Widget build(BuildContext context) {
     final source =
@@ -115,7 +123,7 @@ class _LatestCustomersCardState extends State<LatestCustomersCard> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    item.number,
+                                    '${_typeLabel(item.type, isEn)} • ${item.dateLabel}',
                                     style: TextStyle(
                                       color: accent,
                                       fontSize: 14,
@@ -139,13 +147,6 @@ class _LatestCustomersCardState extends State<LatestCustomersCard> {
                         const SizedBox(height: 8),
                         Row(
                           children: [
-                            Text(
-                              item.dateLabel,
-                              style: TextStyle(
-                                color: muted,
-                                fontSize: 12,
-                              ),
-                            ),
                             const Spacer(),
                             Text(
                               Formatters.rupiah(item.total),

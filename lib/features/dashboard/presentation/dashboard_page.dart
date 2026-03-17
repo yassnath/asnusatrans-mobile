@@ -61,7 +61,21 @@ String _formatRupiahNoPrefix(num value) {
 String formatRupiahNoPrefix(num value) => _formatRupiahNoPrefix(value);
 
 String _romanMonth(int month) {
-  const romanMonths = <String>['-', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
+  const romanMonths = <String>[
+    '-',
+    'I',
+    'II',
+    'III',
+    'IV',
+    'V',
+    'VI',
+    'VII',
+    'VIII',
+    'IX',
+    'X',
+    'XI',
+    'XII'
+  ];
   if (month < 1 || month > 12) return '-';
   return romanMonths[month];
 }
@@ -74,9 +88,11 @@ String _menuLabel(String key, AppLanguage language) {
     case 'invoice list':
       return isEn ? 'Invoice List' : 'Daftar Invoice';
     case 'invoice add income':
-      return isEn ? 'Invoice Add Income' : 'Tambah Invoice Pemasukan';
+      return isEn ? 'Invoice Add Income' : 'Tambah Pemasukkan';
     case 'invoice add expense':
-      return isEn ? 'Invoice Add Expense' : 'Tambah Invoice Pengeluaran';
+      return isEn ? 'Invoice Add Expense' : 'Tambah Pengeluaran';
+    case 'fix invoice':
+      return isEn ? 'Fix Invoice' : 'Fix Invoice';
     case 'calendar':
       return isEn ? 'Calendar' : 'Kalender';
     case 'fleet list':
@@ -137,6 +153,7 @@ class _DashboardPageState extends State<DashboardPage> {
   static const _adminMenus = <String>[
     'Dashboard',
     'Invoice List',
+    'Fix Invoice',
     'Invoice Add Income',
     'Invoice Add Expense',
     'Calendar',
@@ -332,6 +349,11 @@ class _DashboardPageState extends State<DashboardPage> {
           },
         );
       case 2:
+        return _AdminFixedInvoiceView(
+          repository: widget.repository,
+          onDataChanged: () => setState(_reload),
+        );
+      case 3:
         return _AdminCreateIncomeView(
           repository: widget.repository,
           onCreated: () => setState(() {
@@ -344,7 +366,7 @@ class _DashboardPageState extends State<DashboardPage> {
             setState(() => _invoicePrefill = null);
           },
         );
-      case 3:
+      case 4:
         return _AdminCreateExpenseView(
           repository: widget.repository,
           onCreated: () => setState(() {
@@ -352,35 +374,35 @@ class _DashboardPageState extends State<DashboardPage> {
             _adminIndex = 1;
           }),
         );
-      case 4:
-        return _AdminCalendarView(repository: widget.repository);
       case 5:
+        return _AdminCalendarView(repository: widget.repository);
+      case 6:
         return _AdminFleetListView(
           repository: widget.repository,
           onQuickMenuSelect: (index) {
             setState(() => _adminIndex = index);
           },
         );
-      case 6:
+      case 7:
         return _AdminCreateFleetView(
           repository: widget.repository,
           onCreated: () => setState(_reload),
         );
-      case 7:
+      case 8:
         return _AdminOrderAcceptanceView(
           repository: widget.repository,
           onCreateInvoice: (prefill) {
             setState(() {
               _invoicePrefill = prefill;
-              _adminIndex = 2;
+              _adminIndex = 3;
             });
           },
         );
-      case 8:
-        return _AdminCustomerRegistrationsView(repository: widget.repository);
       case 9:
-        return const _AdminAddUserView();
+        return _AdminCustomerRegistrationsView(repository: widget.repository);
       case 10:
+        return const _AdminAddUserView();
+      case 11:
         return _CustomerSettingsView(
           repository: widget.repository,
           session: widget.session,
@@ -485,7 +507,7 @@ class _DashboardPageState extends State<DashboardPage> {
               builder: (context, liveItems, _) {
                 return ArmadaOverviewCard(
                   items: liveItems ?? data.armadaUsages,
-                  onViewAll: () => setState(() => _adminIndex = 5),
+                  onViewAll: () => setState(() => _adminIndex = 6),
                 );
               },
             ),
@@ -501,7 +523,7 @@ class _DashboardPageState extends State<DashboardPage> {
               builder: (context, liveItems, _) {
                 return RecentActivityCard(
                   items: liveItems ?? data.recentActivities,
-                  onViewAll: () => setState(() => _adminIndex = 4),
+                  onViewAll: () => setState(() => _adminIndex = 5),
                 );
               },
             ),
@@ -783,6 +805,8 @@ class _DashboardDrawer extends StatelessWidget {
         return Icons.dashboard_outlined;
       case 'invoice list':
         return Icons.receipt_long_outlined;
+      case 'fix invoice':
+        return Icons.fact_check_outlined;
       case 'invoice add income':
         return Icons.trending_up_outlined;
       case 'invoice add expense':
@@ -2856,16 +2880,11 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
   final _kopDate = TextEditingController();
   final _kopLocation = TextEditingController();
   final _dueDate = TextEditingController();
-  final _invoiceNumber = TextEditingController();
-  bool _invoiceNumberManualOverride = false;
   DateTime _date = DateTime.now();
   bool _isCompanyInvoice = true;
   String _status = 'Unpaid';
   String _acceptedBy = 'Admin';
   bool _loading = false;
-  bool _invoiceNoLoading = false;
-  String _invoiceNoPreview = '-';
-  int _invoiceNoRequestToken = 0;
   late Future<List<dynamic>> _formFuture;
   final List<Map<String, dynamic>> _details = [];
   bool _prefillApplied = false;
@@ -2879,7 +2898,6 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
     _kopDate.dispose();
     _kopLocation.dispose();
     _dueDate.dispose();
-    _invoiceNumber.dispose();
     super.dispose();
   }
 
@@ -2898,7 +2916,6 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
     _details.add(_newDetail());
     _kopDate.text = _toInputDate(_date);
     _applyPrefill(widget.prefill);
-    _refreshInvoiceNumberPreview();
   }
 
   @override
@@ -3035,7 +3052,6 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
       }
       _detailFieldRefreshToken++;
     });
-    _refreshInvoiceNumberPreview();
   }
 
   String _safeInputText(dynamic value) {
@@ -3048,13 +3064,30 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
     if (value == null) return '';
     if (value is num) {
       final number = value.toDouble();
-      if (number == number.truncateToDouble()) {
-        return number.toInt().toString();
-      }
-      return number.toString();
+      if (!number.isFinite) return '';
+      return number.floor().toString();
     }
     final raw = value.toString().trim();
     if (raw.isEmpty || raw.toLowerCase() == 'null') return '';
+    final sanitized = raw.replaceAll(RegExp(r'[^0-9,.\-]'), '');
+    if (sanitized.isEmpty ||
+        sanitized == '-' ||
+        sanitized == '.' ||
+        sanitized == ',') {
+      return raw;
+    }
+    var candidate = sanitized;
+    if (candidate.contains('.') && candidate.contains(',')) {
+      candidate = candidate.replaceAll('.', '').replaceAll(',', '.');
+    } else if (candidate.contains(',') && !candidate.contains('.')) {
+      candidate = candidate.replaceAll(',', '.');
+    } else if (candidate.contains('.') && candidate.split('.').length > 2) {
+      candidate = candidate.replaceAll('.', '');
+    }
+    final parsed = double.tryParse(candidate);
+    if (parsed != null) {
+      return parsed.floor().toString();
+    }
     return raw;
   }
 
@@ -3090,34 +3123,6 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
     }).toList();
   }
 
-  Future<void> _refreshInvoiceNumberPreview() async {
-    final requestToken = ++_invoiceNoRequestToken;
-    if (mounted) {
-      setState(() => _invoiceNoLoading = true);
-    }
-    try {
-      final effectiveDate = Formatters.parseDate(_kopDate.text) ?? _date;
-      final generated = await widget.repository.generateIncomeInvoiceNumber(
-        issuedDate: effectiveDate,
-        isCompany: _isCompanyInvoice,
-      );
-      if (!mounted || requestToken != _invoiceNoRequestToken) return;
-      setState(() {
-        _invoiceNoPreview = generated;
-        if (!_invoiceNumberManualOverride) {
-          _invoiceNumber.text = generated;
-        }
-        _invoiceNoLoading = false;
-      });
-    } catch (_) {
-      if (!mounted || requestToken != _invoiceNoRequestToken) return;
-      setState(() {
-        _invoiceNoPreview = '-';
-        _invoiceNoLoading = false;
-      });
-    }
-  }
-
   void _switchInvoiceMode(
     bool isCompany,
     List<Map<String, dynamic>> customerOptions,
@@ -3129,8 +3134,6 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
     );
     setState(() {
       _isCompanyInvoice = isCompany;
-      _invoiceNumberManualOverride = false;
-      _invoiceNumber.text = '';
       final isCurrentValid = filtered.any(
         (item) => '${item['id']}' == _selectedCustomerOptionId,
       );
@@ -3144,37 +3147,6 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
         _detailFieldRefreshToken++;
       }
     });
-    _refreshInvoiceNumberPreview();
-  }
-
-  String _formatPersonalInvoiceNumber(String raw, DateTime issuedDate) {
-    final candidate = raw.trim();
-    if (candidate.isEmpty) {
-      return candidate;
-    }
-
-    final monthRoman = _romanMonth(issuedDate.month);
-    final yearSuffix = (issuedDate.year % 100).toString().padLeft(2, '0');
-
-    // Company format remains unchanged
-    if (_isCompanyInvoice) {
-      return candidate;
-    }
-
-    final regex = RegExp(r'^(\d{1,3})\s*/\s*BS\s*/\s*[IVX]+\s*/\s*\d{2} ', caseSensitive: false);
-    // final desugar
-    final cleanCandidate = candidate.replaceAll(RegExp(r'\s*Rp\.?\s*', caseSensitive: false), '');
-
-    final inputCandidate = cleanCandidate.toUpperCase();
-    final match = RegExp(r'^(\d+)\s*/\s*BS\s*/\s*[IVX]+\s*/\s*\d{2} ', caseSensitive: false).firstMatch(inputCandidate);
-
-    // ignore if custom format cannot be parsed
-    if (match == null) {
-      return candidate;
-    }
-
-    final seqPart = match.group(1)!.padLeft(3, '0');
-    return '$seqPart / BS / $monthRoman / $yearSuffix';
   }
 
   String _formatInvoiceNumber(String raw, DateTime issuedDate) {
@@ -3249,7 +3221,6 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
           _kopDate.text = _toInputDate(picked);
         }
       });
-      _refreshInvoiceNumberPreview();
     }
   }
 
@@ -3289,7 +3260,6 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
     );
     if (picked == null) return;
     setState(() => _kopDate.text = _toInputDate(picked));
-    _refreshInvoiceNumberPreview();
   }
 
   Map<String, dynamic> _newDetail() {
@@ -3406,7 +3376,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
     );
   }
 
-  double get _pph => _isCompanyInvoice ? _subtotal * 0.02 : 0;
+  double get _pph => _isCompanyInvoice ? (_subtotal * 0.02).floorToDouble() : 0;
   double get _totalBayar => max(0, _subtotal - _pph);
 
   void _addDetail() {
@@ -3542,12 +3512,8 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
       return;
     }
 
-    final selectedInvoiceNumber = _invoiceNumber.text.trim().isNotEmpty
-        ? _invoiceNumber.text.trim()
-        : generatedInvoiceNo;
-
     final effectiveInvoiceNumber = _formatInvoiceNumber(
-      selectedInvoiceNumber,
+      generatedInvoiceNo,
       Formatters.parseDate(_kopDate.text) ?? _date,
     );
 
@@ -3598,7 +3564,6 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
         ..add(_newDetail());
       _selectedCustomerOptionId = _customerManualOptionId;
       _formFuture = _loadFormData();
-      _refreshInvoiceNumberPreview();
       await showCvantPopup(
         context: context,
         type: CvantPopupType.success,
@@ -3757,63 +3722,16 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                     ],
                   ),
                   const SizedBox(height: 12),
-                  Text(
-                    _t('Nomor Invoice', 'Invoice Number'),
-                    style: TextStyle(color: AppColors.textMutedFor(context)),
-                  ),
                   const SizedBox(height: 4),
-                  TextField(
-                    controller: _invoiceNumber,
-                    decoration: InputDecoration(
-                      labelText: _t('Nomor Invoice', 'Invoice Number'),
-                      hintText: _t(
-                        'Isi manual untuk override nomor otomatis',
-                        'Enter manually to override the auto value',
+                  InkWell(
+                    onTap: _pickDate,
+                    borderRadius: BorderRadius.circular(10),
+                    child: InputDecorator(
+                      decoration: InputDecoration(
+                        labelText: _t('Tanggal', 'Date'),
                       ),
-                      helperText: _t(
-                        'Biarkan kosong untuk menggunakan nomor otomatis',
-                        'Leave empty to use auto-generated number',
-                      ),
+                      child: Text(Formatters.dmy(_date)),
                     ),
-                    onChanged: (value) {
-                      setState(() {
-                        _invoiceNumberManualOverride = value.trim().isNotEmpty;
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: InkWell(
-                          onTap: _pickDate,
-                          borderRadius: BorderRadius.circular(10),
-                          child: InputDecorator(
-                            decoration: InputDecoration(
-                              labelText: _t('Tanggal', 'Date'),
-                            ),
-                            child: Text(Formatters.dmy(_date)),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: InkWell(
-                          onTap: _pickDueDate,
-                          borderRadius: BorderRadius.circular(10),
-                          child: InputDecorator(
-                            decoration: InputDecoration(
-                              labelText: _t('Jatuh Tempo', 'Due Date'),
-                            ),
-                            child: Text(
-                              _dueDate.text.trim().isEmpty
-                                  ? '-'
-                                  : Formatters.dmy(_dueDate.text.trim()),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
                   ),
                   const SizedBox(height: 12),
                   CvantDropdownField<String>(
@@ -3901,11 +3819,12 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                     final row = entry.value;
                     final rowSubtotal = _detailSubtotal(row);
 
-                    final _muatValue = '${row['lokasi_muat'] ?? ''}'.trim();
-                    final _muatManual = '${row['lokasi_muat_manual'] ?? ''}'.trim();
-                    final _isMuatManual = _muatManual.isNotEmpty ||
-                        (_muatValue.isNotEmpty &&
-                            !_defaultMuatOptions.contains(_muatValue));
+                    final muatValue = '${row['lokasi_muat'] ?? ''}'.trim();
+                    final muatManual =
+                        '${row['lokasi_muat_manual'] ?? ''}'.trim();
+                    final isMuatManual = muatManual.isNotEmpty ||
+                        (muatValue.isNotEmpty &&
+                            !_defaultMuatOptions.contains(muatValue));
 
                     return Container(
                       margin: EdgeInsets.only(
@@ -3919,9 +3838,9 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                       child: Column(
                         children: [
                           CvantDropdownField<String>(
-                            initialValue: _isMuatManual
+                            initialValue: isMuatManual
                                 ? 'Other (Input Manual)'
-                                : (_muatValue.isNotEmpty ? _muatValue : null),
+                                : (muatValue.isNotEmpty ? muatValue : null),
                             decoration: InputDecoration(
                               hintText: _t('Lokasi Muat', 'Loading Location'),
                             ),
@@ -3952,13 +3871,13 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                               });
                             },
                           ),
-                          if (_isMuatManual) ...[
+                          if (isMuatManual) ...[
                             const SizedBox(height: 8),
                             TextFormField(
                               key: ValueKey(
                                 'lokasi_muat_manual-$index-$_detailFieldRefreshToken',
                               ),
-                              initialValue: _muatManual,
+                              initialValue: muatManual,
                               decoration: InputDecoration(
                                 hintText: _t(
                                   'Lokasi Muat (Manual)',
@@ -4260,6 +4179,21 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                         setState(() => _status = value ?? _status),
                   ),
                   const SizedBox(height: 8),
+                  InkWell(
+                    onTap: _pickDueDate,
+                    borderRadius: BorderRadius.circular(10),
+                    child: InputDecorator(
+                      decoration: InputDecoration(
+                        labelText: _t('Tanggal Pelunasan', 'Payment Date'),
+                      ),
+                      child: Text(
+                        _dueDate.text.trim().isEmpty
+                            ? '-'
+                            : Formatters.dmy(_dueDate.text.trim()),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
                   CvantDropdownField<String>(
                     initialValue: _acceptedBy,
                     decoration: InputDecoration(
@@ -4326,6 +4260,7 @@ class _AdminCreateExpenseViewState extends State<_AdminCreateExpenseView> {
   String _status = 'Unpaid';
   String _recordedBy = 'Admin';
   bool _loading = false;
+  String? _nextExpenseNo;
   bool get _isEn => LanguageController.language.value == AppLanguage.en;
   String _t(String id, String en) => _isEn ? en : id;
 
@@ -4333,6 +4268,7 @@ class _AdminCreateExpenseViewState extends State<_AdminCreateExpenseView> {
   void initState() {
     super.initState();
     _details.add(_newDetail());
+    _refreshNextExpenseNo();
   }
 
   @override
@@ -4349,6 +4285,18 @@ class _AdminCreateExpenseViewState extends State<_AdminCreateExpenseView> {
     );
     if (picked != null) {
       setState(() => _date = picked);
+      await _refreshNextExpenseNo();
+    }
+  }
+
+  Future<void> _refreshNextExpenseNo() async {
+    try {
+      final next = await widget.repository.generateExpenseNumberForDate(_date);
+      if (!mounted) return;
+      setState(() => _nextExpenseNo = next);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _nextExpenseNo = _previewExpenseNo());
     }
   }
 
@@ -4375,7 +4323,7 @@ class _AdminCreateExpenseViewState extends State<_AdminCreateExpenseView> {
   String _previewExpenseNo() {
     final mm = _date.month.toString().padLeft(2, '0');
     final yy = _date.year.toString();
-    return 'EXP-$mm-$yy-XXXX';
+    return 'EXP-$mm-$yy-0001';
   }
 
   Future<void> _save() async {
@@ -4417,6 +4365,8 @@ class _AdminCreateExpenseViewState extends State<_AdminCreateExpenseView> {
         ..add(_newDetail());
       _status = 'Unpaid';
       _recordedBy = 'Admin';
+      await _refreshNextExpenseNo();
+      if (!mounted) return;
       await showCvantPopup(
         context: context,
         type: CvantPopupType.success,
@@ -4467,7 +4417,7 @@ class _AdminCreateExpenseViewState extends State<_AdminCreateExpenseView> {
                 decoration: InputDecoration(
                   labelText: _t('Nomor Otomatis', 'Auto Number'),
                 ),
-                child: Text(_previewExpenseNo()),
+                child: Text(_nextExpenseNo ?? _previewExpenseNo()),
               ),
               const SizedBox(height: 10),
               InkWell(
@@ -5287,6 +5237,9 @@ class _AdminInvoiceListView extends StatefulWidget {
 
 class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
   static const _manualArmadaOptionId = '__other_manual_armada__';
+  static const _fixedInvoicePrefsKey = 'fixed_invoice_ids_v1';
+  static DateTime? _lastAutoBackfillAt;
+  static const Duration _autoBackfillCooldown = Duration(minutes: 10);
   static const _companyKeywords = <String>[
     r'\bcv\b',
     r'\bpt\b',
@@ -5304,6 +5257,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
   late Future<List<dynamic>> _future;
   final _search = TextEditingController();
   String _limit = '10';
+  bool _backfillRunning = false;
 
   bool get _isEn => LanguageController.language.value == AppLanguage.en;
 
@@ -5391,6 +5345,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
   void initState() {
     super.initState();
     _future = _load();
+    _runBackfillInBackground();
   }
 
   @override
@@ -5399,11 +5354,33 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
     super.dispose();
   }
 
-  Future<List<dynamic>> _load() {
-    return Future.wait([
-      widget.repository.fetchInvoices(),
-      widget.repository.fetchExpenses(),
+  Future<List<dynamic>> _load() async {
+    final since = DateTime.now().subtract(const Duration(days: 30));
+    final response = await Future.wait<dynamic>([
+      widget.repository.fetchInvoicesSince(since),
+      widget.repository.fetchExpensesSince(since),
+      _loadFixedInvoiceIds(),
     ]);
+
+    final rawIncomes =
+        (response[0] as List).cast<Map<String, dynamic>>().toList();
+    final rawExpenses =
+        (response[1] as List).cast<Map<String, dynamic>>().toList();
+    final fixedIds = (response[2] as Set<String>)
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+
+    if (fixedIds.isEmpty) {
+      return [rawIncomes, rawExpenses];
+    }
+
+    final filteredIncomes = rawIncomes.where((item) {
+      final id = '${item['id'] ?? ''}'.trim();
+      return id.isEmpty || !fixedIds.contains(id);
+    }).toList();
+
+    return [filteredIncomes, rawExpenses];
   }
 
   Future<void> _refresh() async {
@@ -5411,6 +5388,27 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
       _future = _load();
     });
     await _future;
+  }
+
+  void _runBackfillInBackground() {
+    if (_backfillRunning) return;
+    final now = DateTime.now();
+    if (_lastAutoBackfillAt != null &&
+        now.difference(_lastAutoBackfillAt!) < _autoBackfillCooldown) {
+      return;
+    }
+    _backfillRunning = true;
+    _lastAutoBackfillAt = now;
+    Future<void>(() async {
+      await widget.repository.backfillAutoSanguExpensesForExistingInvoices();
+      if (!mounted) return;
+      setState(() {
+        _future = _load();
+      });
+      await _future;
+    }).whenComplete(() {
+      _backfillRunning = false;
+    });
   }
 
   void _notifyDataChanged() {
@@ -5565,6 +5563,605 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
     }
   }
 
+  Future<Set<String>> _loadFixedInvoiceIds() async {
+    final prefs = await SharedPreferences.getInstance();
+    final ids = prefs.getStringList(_fixedInvoicePrefsKey) ?? const <String>[];
+    return ids.map((id) => id.trim()).where((id) => id.isNotEmpty).toSet();
+  }
+
+  Future<void> _saveFixedInvoiceIds(Set<String> ids) async {
+    final prefs = await SharedPreferences.getInstance();
+    final values = ids.toList()..sort();
+    await prefs.setStringList(_fixedInvoicePrefsKey, values);
+  }
+
+  Future<void> _markInvoicesAsFixed(Iterable<String> invoiceIds) async {
+    final cleaned =
+        invoiceIds.map((id) => id.trim()).where((id) => id.isNotEmpty).toSet();
+    if (cleaned.isEmpty) return;
+    final existing = await _loadFixedInvoiceIds();
+    existing.addAll(cleaned);
+    await _saveFixedInvoiceIds(existing);
+  }
+
+  Future<void> _openInvoicePrintSelector({
+    required List<Map<String, dynamic>> incomes,
+  }) async {
+    if (incomes.isEmpty) {
+      _snack(
+        _t('Tidak ada invoice income untuk dicetak.',
+            'No income invoices available to print.'),
+        error: true,
+      );
+      return;
+    }
+
+    String keyword = '';
+    final now = DateTime.now();
+    int selectedMonth = now.month;
+    int selectedYear = now.year;
+    String customerKind = 'all';
+    final selectedIds = <String>{};
+    final searchController = TextEditingController();
+
+    bool isCompany(Map<String, dynamic> item) {
+      return _resolveIsCompanyInvoice(
+        invoiceNumber: item['no_invoice'],
+        customerName: item['nama_pelanggan'],
+      );
+    }
+
+    String resolveGeneratedNumber(Map<String, dynamic> item) {
+      return Formatters.invoiceNumber(
+        item['no_invoice'],
+        item['tanggal_kop'] ?? item['tanggal'],
+        customerName: item['nama_pelanggan'],
+        isCompany: isCompany(item),
+      );
+    }
+
+    String extractPlate(Map<String, dynamic> row) {
+      final direct =
+          '${row['plat_nomor'] ?? row['no_polisi'] ?? ''}'.toUpperCase().trim();
+      if (direct.isNotEmpty && direct != '-') return direct;
+      final manual = '${row['armada_manual'] ?? ''}'.trim();
+      if (manual.isNotEmpty) {
+        final parsed = _extractPlateFromText(manual);
+        if (parsed != null) return parsed;
+      }
+      final label = '${row['armada_label'] ?? row['armada'] ?? ''}'.trim();
+      final parsed = _extractPlateFromText(label);
+      if (parsed != null) return parsed;
+      return '-';
+    }
+
+    String buildRouteSummary(Map<String, dynamic> item) {
+      final details = _toDetailList(item['rincian']);
+      String route(dynamic muatValue, dynamic bongkarValue) {
+        final muat = '${muatValue ?? ''}'.trim();
+        final bongkar = '${bongkarValue ?? ''}'.trim();
+        if (muat.isEmpty && bongkar.isEmpty) return '-';
+        return '${muat.isEmpty ? '-' : muat} - ${bongkar.isEmpty ? '-' : bongkar}';
+      }
+
+      final routes = <String>{};
+      for (final row in details) {
+        final value = route(row['lokasi_muat'], row['lokasi_bongkar']);
+        if (value != '-') routes.add(value);
+      }
+      if (routes.isNotEmpty) return routes.join(' | ');
+      return route(item['lokasi_muat'], item['lokasi_bongkar']);
+    }
+
+    String buildDepartureSummary(Map<String, dynamic> item) {
+      final details = _toDetailList(item['rincian']);
+      final lines = <String>[];
+      final seen = <String>{};
+
+      void pushLine(Map<String, dynamic> row, dynamic fallbackDate) {
+        final date = row['armada_start_date'] ?? fallbackDate ?? '';
+        final dateLabel = Formatters.dmy(date);
+        final plate = extractPlate(row);
+        final key = '$dateLabel|$plate'.toUpperCase();
+        if (seen.contains(key)) return;
+        seen.add(key);
+        lines.add('$dateLabel • $plate');
+      }
+
+      if (details.isNotEmpty) {
+        for (final row in details) {
+          pushLine(
+            row,
+            item['armada_start_date'] ?? item['tanggal_kop'] ?? item['tanggal'],
+          );
+        }
+      } else {
+        pushLine(
+          item,
+          item['armada_start_date'] ?? item['tanggal_kop'] ?? item['tanggal'],
+        );
+      }
+
+      if (lines.isEmpty) {
+        return _t(
+          'Keberangkatan armada tidak tersedia.',
+          'Armada departure detail is unavailable.',
+        );
+      }
+      if (lines.length <= 4) return lines.join('\n');
+      final others = lines.length - 4;
+      return '${lines.take(4).join('\n')}\n+$others ${_t('detail lainnya', 'other details')}';
+    }
+
+    Future<Map<String, String>?> openNumberEditor(
+      List<Map<String, dynamic>> selectedRows,
+    ) async {
+      if (!mounted) return null;
+      final generatedById = <String, String>{};
+      final controllers = <String, TextEditingController>{};
+
+      for (final item in selectedRows) {
+        final id = '${item['id'] ?? ''}'.trim();
+        if (id.isEmpty) continue;
+        final generated = resolveGeneratedNumber(item);
+        generatedById[id] = generated;
+        controllers[id] = TextEditingController(text: generated);
+      }
+      if (controllers.isEmpty) return null;
+
+      final result = await showDialog<Map<String, String>>(
+        context: context,
+        barrierColor: AppColors.popupOverlay,
+        builder: (context) {
+          return AlertDialog(
+            title: Text(_t('Edit Nomor Invoice', 'Edit Invoice Number')),
+            content: SizedBox(
+              width: 640,
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: selectedRows.map((item) {
+                    final id = '${item['id'] ?? ''}'.trim();
+                    final controller = controllers[id];
+                    if (controller == null) return const SizedBox.shrink();
+                    final customer = '${item['nama_pelanggan'] ?? '-'}';
+                    final modeLabel = isCompany(item)
+                        ? _t('Perusahaan', 'Company')
+                        : _t('Pribadi', 'Personal');
+                    final departureLines = buildDepartureSummary(item)
+                        .split('\n')
+                        .where((line) => line.trim().isNotEmpty)
+                        .toList();
+                    final departureFirst =
+                        departureLines.isEmpty ? null : departureLines.first;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          border:
+                              Border.all(color: AppColors.cardBorder(context)),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '$customer • $modeLabel',
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                            if ((departureFirst ?? '').isNotEmpty) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                departureFirst!,
+                                style: TextStyle(
+                                  color: AppColors.textMutedFor(context),
+                                ),
+                              ),
+                            ],
+                            const SizedBox(height: 8),
+                            TextField(
+                              controller: controller,
+                              decoration: InputDecoration(
+                                labelText:
+                                    _t('Nomor Invoice', 'Invoice Number'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ),
+            actions: [
+              OutlinedButton(
+                onPressed: () => Navigator.pop(context),
+                style: CvantButtonStyles.outlined(
+                  context,
+                  color: AppColors.isLight(context)
+                      ? AppColors.textSecondaryLight
+                      : const Color(0xFFE2E8F0),
+                  borderColor: AppColors.neutralOutline,
+                ),
+                child: Text(_t('Batal', 'Cancel')),
+              ),
+              FilledButton.icon(
+                onPressed: () {
+                  final values = <String, String>{};
+                  for (final entry in controllers.entries) {
+                    final id = entry.key;
+                    final typed = entry.value.text.trim();
+                    values[id] =
+                        typed.isEmpty ? (generatedById[id] ?? '-') : typed;
+                  }
+                  Navigator.pop(context, values);
+                },
+                style: CvantButtonStyles.filled(
+                  context,
+                  color: AppColors.success,
+                ),
+                icon: const Icon(Icons.print_outlined),
+                label: Text(_t('Cetak Invoice', 'Print Invoice')),
+              ),
+            ],
+          );
+        },
+      );
+
+      for (final controller in controllers.values) {
+        controller.dispose();
+      }
+      return result;
+    }
+
+    List<Map<String, dynamic>> filterRows() {
+      bool inMonthYear(Map<String, dynamic> item) {
+        final date = Formatters.parseDate(
+          item['tanggal_kop'] ?? item['tanggal'] ?? item['created_at'],
+        );
+        if (date == null) return false;
+        return date.year == selectedYear && date.month == selectedMonth;
+      }
+
+      return incomes.where((item) {
+        if (!inMonthYear(item)) return false;
+        if (customerKind == 'company' && !isCompany(item)) return false;
+        if (customerKind == 'personal' && isCompany(item)) return false;
+        if (keyword.trim().isEmpty) return true;
+        return _matchesKeywordInAnyColumn(
+          {
+            ...item,
+            '__route_summary': buildRouteSummary(item),
+            '__departure_summary': buildDepartureSummary(item),
+          },
+          keyword,
+        );
+      }).toList()
+        ..sort((a, b) {
+          final aDate = Formatters.parseDate(
+                a['tanggal_kop'] ?? a['tanggal'] ?? a['created_at'],
+              ) ??
+              DateTime.fromMillisecondsSinceEpoch(0);
+          final bDate = Formatters.parseDate(
+                b['tanggal_kop'] ?? b['tanggal'] ?? b['created_at'],
+              ) ??
+              DateTime.fromMillisecondsSinceEpoch(0);
+          return bDate.compareTo(aDate);
+        });
+    }
+
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      barrierColor: AppColors.popupOverlay,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final rows = filterRows();
+            return AlertDialog(
+              title: Text(_t('Cetak Invoice', 'Print Invoice')),
+              content: SizedBox(
+                width: 620,
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _t('Filter Invoice', 'Invoice Filter'),
+                        style:
+                            TextStyle(color: AppColors.textMutedFor(context)),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () => setDialogState(
+                                  () => customerKind = 'company'),
+                              style: CvantButtonStyles.outlined(
+                                context,
+                                color: customerKind == 'company'
+                                    ? AppColors.success
+                                    : AppColors.textMutedFor(context),
+                                borderColor: customerKind == 'company'
+                                    ? AppColors.success
+                                    : AppColors.cardBorder(context),
+                              ),
+                              child: Text(_t('Perusahaan', 'Company')),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () => setDialogState(
+                                  () => customerKind = 'personal'),
+                              style: CvantButtonStyles.outlined(
+                                context,
+                                color: customerKind == 'personal'
+                                    ? AppColors.warning
+                                    : AppColors.textMutedFor(context),
+                                borderColor: customerKind == 'personal'
+                                    ? AppColors.warning
+                                    : AppColors.cardBorder(context),
+                              ),
+                              child: Text(_t('Pribadi', 'Personal')),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: CvantDropdownField<int>(
+                              initialValue: selectedMonth,
+                              decoration: InputDecoration(
+                                labelText: _t('Bulan', 'Month'),
+                              ),
+                              items: List.generate(
+                                12,
+                                (index) => DropdownMenuItem<int>(
+                                  value: index + 1,
+                                  child: Text(
+                                    _t(
+                                      [
+                                        'Januari',
+                                        'Februari',
+                                        'Maret',
+                                        'April',
+                                        'Mei',
+                                        'Juni',
+                                        'Juli',
+                                        'Agustus',
+                                        'September',
+                                        'Oktober',
+                                        'November',
+                                        'Desember'
+                                      ][index],
+                                      [
+                                        'January',
+                                        'February',
+                                        'March',
+                                        'April',
+                                        'May',
+                                        'June',
+                                        'July',
+                                        'August',
+                                        'September',
+                                        'October',
+                                        'November',
+                                        'December'
+                                      ][index],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              onChanged: (value) => setDialogState(
+                                () => selectedMonth = value ?? now.month,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: CvantDropdownField<int>(
+                              initialValue: selectedYear,
+                              decoration: InputDecoration(
+                                labelText: _t('Tahun', 'Year'),
+                              ),
+                              items: List.generate(
+                                6,
+                                (index) {
+                                  final year = now.year - index;
+                                  return DropdownMenuItem<int>(
+                                    value: year,
+                                    child: Text('$year'),
+                                  );
+                                },
+                              ),
+                              onChanged: (value) => setDialogState(
+                                () => selectedYear = value ?? now.year,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () =>
+                                  setDialogState(() => customerKind = 'all'),
+                              style: CvantButtonStyles.outlined(
+                                context,
+                                color: customerKind == 'all'
+                                    ? AppColors.blue
+                                    : AppColors.textMutedFor(context),
+                                borderColor: customerKind == 'all'
+                                    ? AppColors.blue
+                                    : AppColors.cardBorder(context),
+                              ),
+                              child: Text(_t('Semua', 'All')),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: searchController,
+                        decoration: InputDecoration(
+                          hintText: _t(
+                            'Cari invoice (semua kolom)...',
+                            'Search invoice (all columns)...',
+                          ),
+                          prefixIcon: const Icon(Icons.search),
+                        ),
+                        onChanged: (value) => setDialogState(() {
+                          keyword = value;
+                        }),
+                      ),
+                      const SizedBox(height: 10),
+                      Container(
+                        constraints: const BoxConstraints(maxHeight: 340),
+                        decoration: BoxDecoration(
+                          border:
+                              Border.all(color: AppColors.cardBorder(context)),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: rows.isEmpty
+                            ? Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Text(
+                                  _t(
+                                    'Tidak ada invoice sesuai filter.',
+                                    'No invoices match this filter.',
+                                  ),
+                                  style: TextStyle(
+                                    color: AppColors.textMutedFor(context),
+                                  ),
+                                ),
+                              )
+                            : ListView.separated(
+                                shrinkWrap: true,
+                                itemCount: rows.length,
+                                separatorBuilder: (_, __) => Divider(
+                                    height: 1,
+                                    color: AppColors.divider(context)),
+                                itemBuilder: (context, index) {
+                                  final item = rows[index];
+                                  final id = '${item['id'] ?? ''}'.trim();
+                                  final checked = selectedIds.contains(id);
+                                  final customer =
+                                      '${item['nama_pelanggan'] ?? '-'}';
+                                  final detailLabel =
+                                      buildDepartureSummary(item);
+                                  final routeLabel = buildRouteSummary(item);
+                                  final kindLabel = isCompany(item)
+                                      ? _t('Perusahaan', 'Company')
+                                      : _t('Pribadi', 'Personal');
+                                  return CheckboxListTile(
+                                    value: checked,
+                                    onChanged: (value) {
+                                      setDialogState(() {
+                                        if (value == true) {
+                                          selectedIds.add(id);
+                                        } else {
+                                          selectedIds.remove(id);
+                                        }
+                                      });
+                                    },
+                                    title: Text('$customer • $kindLabel'),
+                                    subtitle: Text(
+                                      '$detailLabel\n$routeLabel',
+                                      maxLines: 5,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    controlAffinity:
+                                        ListTileControlAffinity.leading,
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 2,
+                                    ),
+                                  );
+                                },
+                              ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                OutlinedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: CvantButtonStyles.outlined(
+                    context,
+                    color: AppColors.isLight(context)
+                        ? AppColors.textSecondaryLight
+                        : const Color(0xFFE2E8F0),
+                    borderColor: AppColors.neutralOutline,
+                  ),
+                  child: Text(_t('Batal', 'Cancel')),
+                ),
+                FilledButton.icon(
+                  onPressed: () async {
+                    if (selectedIds.isEmpty) {
+                      _snack(
+                        _t('Pilih minimal 1 invoice.',
+                            'Select at least 1 invoice.'),
+                        error: true,
+                      );
+                      return;
+                    }
+                    final selected = incomes
+                        .where((item) =>
+                            selectedIds.contains('${item['id'] ?? ''}'))
+                        .toList();
+                    Navigator.pop(context);
+                    if (!mounted) return;
+
+                    final editedNumberById = await openNumberEditor(selected);
+                    if (editedNumberById == null || editedNumberById.isEmpty) {
+                      return;
+                    }
+
+                    for (final item in selected) {
+                      final id = '${item['id'] ?? ''}'.trim();
+                      await _printInvoicePdf(
+                        item,
+                        const <Map<String, dynamic>>[],
+                        markAsFixed: true,
+                        showSuccessPopup: false,
+                        invoiceNumberOverride:
+                            editedNumberById[id]?.trim().isNotEmpty == true
+                                ? editedNumberById[id]
+                                : resolveGeneratedNumber(item),
+                      );
+                    }
+                    if (!mounted) return;
+                    _snack(
+                      _t(
+                        '${selected.length} invoice selesai diproses untuk dicetak.',
+                        '${selected.length} invoices have been prepared for printing.',
+                      ),
+                    );
+                    await _refresh();
+                    _notifyDataChanged();
+                  },
+                  style: CvantButtonStyles.filled(
+                    context,
+                    color: AppColors.success,
+                  ),
+                  icon: const Icon(Icons.print_outlined),
+                  label: Text(_t('Cetak Invoice', 'Print Invoice')),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    searchController.dispose();
+  }
+
   Future<void> _openReportSummary({
     required List<Map<String, dynamic>> incomes,
     required List<Map<String, dynamic>> expenses,
@@ -5690,7 +6287,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                 detail: detail,
                 detailCount: detailRows.length,
               );
-              final pph = isCompanyInvoice ? max(0.0, subtotal * 0.02) : 0.0;
+              final pph = isCompanyInvoice
+                  ? max(0.0, (subtotal * 0.02).floorToDouble())
+                  : 0.0;
               final total =
                   isCompanyInvoice ? max(0.0, subtotal - pph) : subtotal;
 
@@ -6750,8 +7349,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                         padding: const EdgeInsets.only(bottom: 6),
                         child: Text(
                           driver.isEmpty
-                              ? '- ${row['lokasi_muat'] ?? '-'} -> ${row['lokasi_bongkar'] ?? '-'} | ${tonase.toStringAsFixed(2)} x ${Formatters.rupiah(harga)}'
-                              : '- ${row['lokasi_muat'] ?? '-'} -> ${row['lokasi_bongkar'] ?? '-'} | Supir: $driver | ${tonase.toStringAsFixed(2)} x ${Formatters.rupiah(harga)}',
+                              ? '- ${row['lokasi_muat'] ?? '-'} -> ${row['lokasi_bongkar'] ?? '-'} | ${Formatters.decimal(tonase)} x ${Formatters.rupiah(harga)}'
+                              : '- ${row['lokasi_muat'] ?? '-'} -> ${row['lokasi_bongkar'] ?? '-'} | Supir: $driver | ${Formatters.decimal(tonase)} x ${Formatters.rupiah(harga)}',
                         ),
                       );
                     }),
@@ -6848,12 +7447,17 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
 
   Future<void> _printInvoicePdf(
     Map<String, dynamic> item,
-    List<Map<String, dynamic>> detailList,
-  ) async {
+    List<Map<String, dynamic>> detailList, {
+    bool markAsFixed = false,
+    bool showSuccessPopup = false,
+    String? invoiceNumberOverride,
+  }) async {
     try {
+      final invoiceDetailList =
+          detailList.isNotEmpty ? detailList : _toDetailList(item['rincian']);
       // <= 13 detail rows: print in half-sheet layout (50:50 on portrait paper).
       // > 13 detail rows: switch to full-sheet portrait layout.
-      final usePortrait = detailList.length > 13;
+      final usePortrait = invoiceDetailList.length > 13;
       final invoiceRawNumber = '${item['no_invoice'] ?? '-'}';
       final customerName = '${item['nama_pelanggan'] ?? ''}';
       final isCompanyInvoice = _resolveIsCompanyInvoice(
@@ -6866,12 +7470,14 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
           ? _toNum(item['total_bayar'] ?? item['total_biaya'])
           : subtotal;
       final invoiceNumber = _displayInvoiceNumber(
-        Formatters.invoiceNumber(
-          invoiceRawNumber,
-          item['tanggal_kop'] ?? item['tanggal'],
-          customerName: customerName,
-          isCompany: isCompanyInvoice,
-        ),
+        (invoiceNumberOverride ?? '').trim().isNotEmpty
+            ? invoiceNumberOverride!.trim()
+            : Formatters.invoiceNumber(
+                invoiceRawNumber,
+                item['tanggal_kop'] ?? item['tanggal'],
+                customerName: customerName,
+                isCompany: isCompanyInvoice,
+              ),
       );
       pw.MemoryImage? kopLogo;
       try {
@@ -6916,13 +7522,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
 
       String formatTonase(dynamic value) {
         final tonase = _toNum(value);
-        if (tonase == tonase.roundToDouble()) {
-          return tonase.toStringAsFixed(0);
-        }
-        return tonase
-            .toStringAsFixed(3)
-            .replaceAll(RegExp(r'0+$'), '')
-            .replaceAll(RegExp(r'\.$'), '');
+        return Formatters.decimal(tonase, useGrouping: false);
       }
 
       int extraBlankRowsForMultiSheet({
@@ -6955,16 +7555,17 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
             ? (isCompanyInvoice ? 13 : 16)
             : (isCompanyInvoice ? 35 : 38);
         final extraRows = extraBlankRowsForMultiSheet(
-          dataRows: detailList.length,
+          dataRows: invoiceDetailList.length,
           baseRowsPerSheet: baseRowsPerSheet,
         );
-        final minRows = max(baseRowsPerSheet, detailList.length + extraRows);
-        final printableRows = detailList.length >= minRows
-            ? detailList
+        final minRows =
+            max(baseRowsPerSheet, invoiceDetailList.length + extraRows);
+        final printableRows = invoiceDetailList.length >= minRows
+            ? invoiceDetailList
             : <Map<String, dynamic>>[
-                ...detailList,
+                ...invoiceDetailList,
                 ...List<Map<String, dynamic>>.generate(
-                  minRows - detailList.length,
+                  minRows - invoiceDetailList.length,
                   (_) => <String, dynamic>{},
                 ),
               ];
@@ -7030,6 +7631,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
             min(recipientMaxLineWidth, lengthBased),
           );
         }
+
         final recipientLineWidth = max(
           recipientLineWidthFor(customerName),
           recipientLineWidthFor(kopLocationUpper ?? '-'),
@@ -7474,7 +8076,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                 ),
                 ...List<pw.TableRow>.generate(printableRows.length, (index) {
                   final row = printableRows[index];
-                  final hasData = index < detailList.length;
+                  final hasData = index < invoiceDetailList.length;
                   const blankCell = '\u00A0';
                   final tonase = hasData ? _toNum(row['tonase']) : 0;
                   final harga = hasData ? _toNum(row['harga']) : 0;
@@ -7666,7 +8268,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                           ),
                         )
                       : pw.Padding(
-                          padding: pw.EdgeInsets.only(left: signatureLeftOffset),
+                          padding:
+                              pw.EdgeInsets.only(left: signatureLeftOffset),
                           child: pw.Column(
                             crossAxisAlignment: pw.CrossAxisAlignment.start,
                             children: [
@@ -7718,55 +8321,55 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                         ),
                       pw.SizedBox(height: summaryBoxGap),
                       (isCompanyInvoice
-                              ? pw.Transform.translate(
-                                  offset: const PdfPoint(0, -5),
-                                  child: pw.Container(
-                                    alignment: pw.Alignment.center,
-                                    padding: const pw.EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    decoration: pw.BoxDecoration(
-                                      border: pw.Border.all(
-                                        color: PdfColors.blue700,
-                                        width: 1.2,
-                                      ),
-                                    ),
-                                    child: pw.Text(
-                                      'Rekening BCA a/c 6155345601 a/n CV AS NUSA TRANS\nNPWP 096.775.534.9-617.000',
-                                      textAlign: pw.TextAlign.center,
-                                      style: pw.TextStyle(
-                                        fontSize: infoFont,
-                                        color: PdfColors.blue700,
-                                        fontWeight: pw.FontWeight.bold,
-                                        fontStyle: pw.FontStyle.italic,
-                                      ),
-                                    ),
+                          ? pw.Transform.translate(
+                              offset: const PdfPoint(0, -5),
+                              child: pw.Container(
+                                alignment: pw.Alignment.center,
+                                padding: const pw.EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: pw.BoxDecoration(
+                                  border: pw.Border.all(
+                                    color: PdfColors.blue700,
+                                    width: 1.2,
                                   ),
-                                )
-                              : pw.Container(
-                                  alignment: pw.Alignment.center,
-                                  padding: const pw.EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 4,
+                                ),
+                                child: pw.Text(
+                                  'Rekening BCA a/c 6155345601 a/n CV AS NUSA TRANS\nNPWP 096.775.534.9-617.000',
+                                  textAlign: pw.TextAlign.center,
+                                  style: pw.TextStyle(
+                                    fontSize: infoFont,
+                                    color: PdfColors.blue700,
+                                    fontWeight: pw.FontWeight.bold,
+                                    fontStyle: pw.FontStyle.italic,
                                   ),
-                                  decoration: pw.BoxDecoration(
-                                    border: pw.Border.all(
-                                      color: PdfColors.blue700,
-                                      width: 1.2,
-                                    ),
-                                  ),
-                                  child: pw.Text(
-                                    'Rekening BCA a/c 1730290001 a/n BUDI SUKAMTO',
-                                    textAlign: pw.TextAlign.center,
-                                    style: pw.TextStyle(
-                                      fontSize: infoFont,
-                                      color: PdfColors.blue700,
-                                      fontWeight: pw.FontWeight.bold,
-                                      fontStyle: pw.FontStyle.italic,
-                                    ),
-                                  ),
-                                )),
+                                ),
+                              ),
+                            )
+                          : pw.Container(
+                              alignment: pw.Alignment.center,
+                              padding: const pw.EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: pw.BoxDecoration(
+                                border: pw.Border.all(
+                                  color: PdfColors.blue700,
+                                  width: 1.2,
+                                ),
+                              ),
+                              child: pw.Text(
+                                'Rekening BCA a/c 1730290001 a/n BUDI SUKAMTO',
+                                textAlign: pw.TextAlign.center,
+                                style: pw.TextStyle(
+                                  fontSize: infoFont,
+                                  color: PdfColors.blue700,
+                                  fontWeight: pw.FontWeight.bold,
+                                  fontStyle: pw.FontStyle.italic,
+                                ),
+                              ),
+                            )),
                     ],
                   ),
                 ),
@@ -7777,7 +8380,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
       }
 
       await Printing.layoutPdf(
-        name: 'invoice-${_safePdfFileName(invoiceRawNumber)}',
+        name: 'invoice-${_safePdfFileName(invoiceNumber)}',
         onLayout: (format) async {
           final doc = pw.Document();
           final portraitFormat =
@@ -7829,6 +8432,17 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
           return doc.save();
         },
       );
+      if (markAsFixed) {
+        await _markInvoicesAsFixed(<String>['${item['id'] ?? ''}']);
+      }
+      if (showSuccessPopup && mounted) {
+        _snack(
+          _t(
+            'Invoice berhasil diproses untuk dicetak.',
+            'Invoice has been prepared for printing.',
+          ),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       _snack(
@@ -8432,7 +9046,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                 0,
                 (sum, row) => sum + detailSubtotal(row),
               );
-              final pph = isCompanyInvoiceMode ? subtotal * 0.02 : 0.0;
+              final pph = isCompanyInvoiceMode
+                  ? (subtotal * 0.02).floorToDouble()
+                  : 0.0;
               final totalBayar =
                   isCompanyInvoiceMode ? max(0.0, subtotal - pph) : subtotal;
 
@@ -8510,8 +9126,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                         const SizedBox(height: 8),
                         _dialogField(
                           dueDate,
-                          _t('Jatuh Tempo (dd-mm-yyyy)',
-                              'Due Date (dd-mm-yyyy)'),
+                          _t('Tanggal Pelunasan (dd-mm-yyyy)',
+                              'Payment Date (dd-mm-yyyy)'),
                         ),
                         const SizedBox(height: 12),
                         Text(
@@ -8850,8 +9466,10 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                         ),
                         const SizedBox(height: 14),
                         Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
                           children: [
-                            Expanded(
+                            SizedBox(
+                              width: 132,
                               child: OutlinedButton(
                                 onPressed: saving
                                     ? null
@@ -8870,7 +9488,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                               ),
                             ),
                             const SizedBox(width: 10),
-                            Expanded(
+                            SizedBox(
+                              width: 132,
                               child: FilledButton(
                                 onPressed: saving
                                     ? null
@@ -9461,11 +10080,26 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                                           originalDate.year ||
                                                       editedDate.month !=
                                                           originalDate.month);
-                                          if (monthChanged) {
-                                            regeneratedNoExpense = widget
+                                          final currentNoExpense =
+                                              '${item['no_expense'] ?? ''}'
+                                                  .trim();
+                                          final isNewExpensePattern = RegExp(
+                                            r'^EXP-\d{2}-\d{4}-\d{4}$',
+                                            caseSensitive: false,
+                                          ).hasMatch(currentNoExpense);
+                                          if (monthChanged ||
+                                              !isNewExpensePattern) {
+                                            final regeneratedDate =
+                                                editedDate ??
+                                                    Formatters.parseDate(
+                                                        tanggal) ??
+                                                    DateTime.now();
+                                            regeneratedNoExpense = await widget
                                                 .repository
                                                 .generateExpenseNumberForDate(
-                                              editedDate,
+                                              regeneratedDate,
+                                              excludeExpenseId:
+                                                  '${item['id'] ?? ''}',
                                             );
                                             noExpense.text =
                                                 regeneratedNoExpense;
@@ -9637,9 +10271,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
   String _formatEditableNumber(dynamic value) {
     final number = _toNum(value);
     if (number == 0) return '';
-    return number % 1 == 0
-        ? number.toStringAsFixed(0)
-        : number.toStringAsFixed(2);
+    return number.floor().toString();
   }
 
   void _snack(String msg, {bool error = false}) {
@@ -9655,6 +10287,14 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
     List<Map<String, dynamic>> incomes,
     List<Map<String, dynamic>> expenses,
   ) {
+    String normalizeToken(dynamic value) {
+      return (value ?? '')
+          .toString()
+          .toUpperCase()
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim();
+    }
+
     String resolveRoute(Map<String, dynamic> source) {
       final details = _toDetailList(source['rincian']);
       String build(dynamic muatValue, dynamic bongkarValue) {
@@ -9671,66 +10311,207 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
       return build(source['lokasi_muat'], source['lokasi_bongkar']);
     }
 
-    final rows = <Map<String, dynamic>>[
-      ...incomes.map(
-        (item) {
-          final invoiceNumber = Formatters.invoiceNumber(
-            item['no_invoice'],
-            item['tanggal_kop'] ?? item['tanggal'] ?? item['created_at'],
-            customerName: item['nama_pelanggan'],
+    Map<String, String> buildIncomeSearchFields(Map<String, dynamic> source) {
+      final details = _toDetailList(source['rincian']);
+      final dates = <String>{};
+      final plates = <String>{};
+      final routes = <String>{};
+
+      void absorb(Map<String, dynamic> row) {
+        final rawDate = row['armada_start_date'] ??
+            source['armada_start_date'] ??
+            source['tanggal_kop'] ??
+            source['tanggal'] ??
+            source['created_at'];
+        final parsedDate = Formatters.parseDate(rawDate);
+        if (parsedDate != null) {
+          final mm = parsedDate.month.toString().padLeft(2, '0');
+          final dd = parsedDate.day.toString().padLeft(2, '0');
+          dates.add('${parsedDate.year}-$mm-$dd');
+          dates.add(Formatters.dmy(parsedDate));
+        }
+
+        final directPlate = '${row['plat_nomor'] ?? row['no_polisi'] ?? ''}'
+            .toUpperCase()
+            .trim();
+        if (directPlate.isNotEmpty && directPlate != '-') {
+          plates.add(directPlate);
+        } else {
+          final fromManual = '${row['armada_manual'] ?? ''}'.trim();
+          if (fromManual.isNotEmpty) {
+            final parsed = _extractPlateFromText(fromManual);
+            if (parsed != null) plates.add(parsed);
+          }
+          final fromLabel =
+              '${row['armada_label'] ?? row['armada'] ?? ''}'.trim();
+          final parsedLabel = _extractPlateFromText(fromLabel);
+          if (parsedLabel != null) plates.add(parsedLabel);
+        }
+
+        final muat =
+            '${row['lokasi_muat'] ?? source['lokasi_muat'] ?? ''}'.trim();
+        final bongkar =
+            '${row['lokasi_bongkar'] ?? source['lokasi_bongkar'] ?? ''}'.trim();
+        if (muat.isNotEmpty || bongkar.isNotEmpty) {
+          routes.add(
+            '${muat.isEmpty ? '-' : muat}-${bongkar.isEmpty ? '-' : bongkar}',
           );
-          final customerName = '${item['nama_pelanggan'] ?? ''}'.trim();
-          final isCompanyInvoice = _resolveIsCompanyInvoice(
-            invoiceNumber: item['no_invoice'],
-            customerName: customerName,
-          );
-          final subtotal = _toNum(item['total_biaya']);
-          final pph = _toNum(item['pph']);
-          final totalBayar = _toNum(item['total_bayar']);
-          final effectiveTotal = isCompanyInvoice
-              ? (totalBayar > 0 ? totalBayar : max(0.0, subtotal - pph))
-              : subtotal;
-          return {
-            ...item,
-            '__type': 'Income',
-            '__number': invoiceNumber,
-            '__name': item['nama_pelanggan'],
-            '__total': effectiveTotal,
-            '__date':
-                item['tanggal_kop'] ?? item['tanggal'] ?? item['created_at'],
-            '__status': item['status'],
-            '__recorded_by': item['diterima_oleh'] ?? '-',
-            '__route': resolveRoute(item),
-          };
-        },
-      ),
-      ...expenses.map(
-        (item) => {
-          ...item,
-          '__type': 'Expense',
-          '__number': item['no_expense'],
-          '__name': item['kategori'] ?? item['keterangan'] ?? '-',
-          '__total': item['total_pengeluaran'],
-          '__date': item['tanggal'] ?? item['created_at'],
-          '__status': item['status'],
-          '__recorded_by': item['dicatat_oleh'] ?? '-',
-        },
-      ),
-    ];
-    rows.sort((a, b) {
+        }
+      }
+
+      if (details.isNotEmpty) {
+        for (final row in details) {
+          absorb(row);
+        }
+      } else {
+        absorb(source);
+      }
+
+      return {
+        'dates': dates.join(' | '),
+        'plates': plates.join(' | '),
+        'routes': routes.join(' | '),
+      };
+    }
+
+    final incomeRows = incomes.map((item) {
+      final invoiceNumber = Formatters.invoiceNumber(
+        item['no_invoice'],
+        item['tanggal_kop'] ?? item['tanggal'] ?? item['created_at'],
+        customerName: item['nama_pelanggan'],
+      );
+      final customerName = '${item['nama_pelanggan'] ?? ''}'.trim();
+      final isCompanyInvoice = _resolveIsCompanyInvoice(
+        invoiceNumber: item['no_invoice'],
+        customerName: customerName,
+      );
+      final subtotal = _toNum(item['total_biaya']);
+      final pph = _toNum(item['pph']);
+      final totalBayar = _toNum(item['total_bayar']);
+      final effectiveTotal = isCompanyInvoice
+          ? (totalBayar > 0 ? totalBayar : max(0.0, subtotal - pph))
+          : subtotal;
+      final searchFields = buildIncomeSearchFields(item);
+      return {
+        ...item,
+        '__type': 'Income',
+        '__number': invoiceNumber,
+        '__name': item['nama_pelanggan'],
+        '__total': effectiveTotal,
+        '__date': item['tanggal_kop'] ?? item['tanggal'] ?? item['created_at'],
+        '__status': item['status'],
+        '__recorded_by': item['diterima_oleh'] ?? '-',
+        '__route': resolveRoute(item),
+        '__armada_start_dates': searchFields['dates'],
+        '__armada_plates': searchFields['plates'],
+        '__armada_routes': searchFields['routes'],
+      };
+    }).toList();
+
+    incomeRows.sort((a, b) {
       final aDate = Formatters.parseDate(a['__date']) ??
           DateTime.fromMillisecondsSinceEpoch(0);
       final bDate = Formatters.parseDate(b['__date']) ??
           DateTime.fromMillisecondsSinceEpoch(0);
       return bDate.compareTo(aDate);
     });
+
+    final incomeById = <String, Map<String, dynamic>>{};
+    final incomeIdByInvoiceToken = <String, String>{};
+    for (final income in incomeRows) {
+      final id = '${income['id'] ?? ''}'.trim();
+      if (id.isEmpty) continue;
+      incomeById[normalizeToken(id)] = income;
+      final rawInvoice = normalizeToken(income['no_invoice']);
+      final formattedInvoice = normalizeToken(income['__number']);
+      if (rawInvoice.isNotEmpty) {
+        incomeIdByInvoiceToken[rawInvoice] = id;
+      }
+      if (formattedInvoice.isNotEmpty) {
+        incomeIdByInvoiceToken[formattedInvoice] = id;
+      }
+    }
+
+    final expenseByIncomeId = <String, List<Map<String, dynamic>>>{};
+    for (final item in expenses) {
+      var marker = '';
+      final note = '${item['note'] ?? ''}'.trim();
+      if (note.toUpperCase().startsWith('AUTO_SANGU:')) {
+        marker = note.substring('AUTO_SANGU:'.length).trim();
+      }
+      if (marker.isEmpty) {
+        final ket = '${item['keterangan'] ?? ''}'.trim();
+        final lowerKet = ket.toLowerCase();
+        const prefix = 'auto sangu sopir -';
+        if (lowerKet.startsWith(prefix)) {
+          marker = ket.substring(prefix.length).trim();
+        }
+      }
+
+      final markerKey = normalizeToken(marker);
+      if (markerKey.isEmpty) continue;
+
+      String? linkedIncomeId;
+      final incomeByMarkerId = incomeById[markerKey];
+      if (incomeByMarkerId != null) {
+        linkedIncomeId = '${incomeByMarkerId['id'] ?? ''}'.trim();
+      } else {
+        linkedIncomeId = incomeIdByInvoiceToken[markerKey];
+      }
+      if (linkedIncomeId == null || linkedIncomeId.isEmpty) continue;
+
+      final mapped = <String, dynamic>{
+        ...item,
+        '__type': 'Expense',
+        '__number': item['no_expense'],
+        '__name': item['kategori'] ?? item['keterangan'] ?? '-',
+        '__total': item['total_pengeluaran'],
+        '__date': item['tanggal'] ?? item['created_at'],
+        '__status': item['status'],
+        '__recorded_by': item['dicatat_oleh'] ?? '-',
+        '__route': item['keterangan'] ?? item['kategori'] ?? '-',
+      };
+      expenseByIncomeId
+          .putIfAbsent(linkedIncomeId, () => <Map<String, dynamic>>[])
+          .add(mapped);
+    }
+
+    for (final rows in expenseByIncomeId.values) {
+      rows.sort((a, b) {
+        final aDate = Formatters.parseDate(a['__date']) ??
+            DateTime.fromMillisecondsSinceEpoch(0);
+        final bDate = Formatters.parseDate(b['__date']) ??
+            DateTime.fromMillisecondsSinceEpoch(0);
+        return bDate.compareTo(aDate);
+      });
+    }
+
+    final rows = <Map<String, dynamic>>[];
+    for (final income in incomeRows) {
+      rows.add(income);
+      final id = '${income['id'] ?? ''}'.trim();
+      final children = expenseByIncomeId[id];
+      if (children != null && children.isNotEmpty) {
+        rows.addAll(children);
+      }
+    }
     return rows;
   }
 
   List<Map<String, dynamic>> _applyFilterAndLimit(
       List<Map<String, dynamic>> rows) {
     final q = _search.text.trim().toLowerCase();
+    final now = DateTime.now();
+    final oneMonthBack = now.subtract(const Duration(days: 30));
     final filtered = rows.where((item) {
+      final date = Formatters.parseDate(
+        item['__date'] ??
+            item['tanggal_kop'] ??
+            item['tanggal'] ??
+            item['created_at'],
+      );
+      if (date == null) return false;
+      if (date.isBefore(oneMonthBack) || date.isAfter(now)) return false;
       return _matchesKeywordInAnyColumn(item, q);
     }).toList();
 
@@ -9787,7 +10568,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                   children: [
                     Expanded(
                       child: Text(
-                        '${item['__number'] ?? '-'}',
+                        '${item['__type']} • ${Formatters.dmy(item['__date'])}',
                         style: TextStyle(
                           fontWeight: FontWeight.w700,
                           color: isIncome ? AppColors.blue : AppColors.danger,
@@ -9797,21 +10578,16 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                     _StatusPill(label: '${item['__status'] ?? '-'}'),
                   ],
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  '${item['__type']} • ${Formatters.dmy(item['__date'])}',
-                  style: TextStyle(color: AppColors.textMutedFor(context)),
-                ),
                 const SizedBox(height: 4),
                 Text(
-                  '${_t('Nama', 'Name')}: ${isIncome ? item['__name'] ?? '-' : '-'}',
+                  '${_t('Nama', 'Name')}: ${item['__name'] ?? '-'}',
                   style: TextStyle(color: AppColors.textMutedFor(context)),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   isIncome
                       ? '${item['__route'] ?? '-'}'
-                      : '${_t('Dicatat oleh', 'Recorded by')}: ${item['__recorded_by'] ?? '-'}',
+                      : '${item['__route'] ?? '-'}',
                   style: TextStyle(color: AppColors.textMutedFor(context)),
                 ),
                 const SizedBox(height: 6),
@@ -9986,7 +10762,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                 children: [
                   Expanded(
                     child: SizedBox(
-                      height: 56,
+                      height: 44,
                       child: OutlinedButton(
                         onPressed: () => _openReportSummary(
                           incomes: incomes,
@@ -10001,11 +10777,10 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                         ),
                         child: Center(
                           child: Text(
-                            _t('Cetak\nLaporan', 'Print\nReport'),
+                            _t('Cetak Laporan', 'Print Report'),
                             textAlign: TextAlign.center,
-                            maxLines: 2,
-                            softWrap: true,
-                            overflow: TextOverflow.visible,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ),
@@ -10014,34 +10789,11 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: SizedBox(
-                      height: 56,
+                      height: 44,
                       child: OutlinedButton(
-                        onPressed: () => widget.onQuickMenuSelect(2),
-                        style: CvantButtonStyles.outlined(
-                          context,
-                          color: AppColors.blue,
-                          borderColor: AppColors.blue,
-                        ).copyWith(
-                          alignment: const Alignment(0, 0),
+                        onPressed: () => _openInvoicePrintSelector(
+                          incomes: incomes,
                         ),
-                        child: Center(
-                          child: Text(
-                            _t('Tambah\nPemasukkan', 'Add\nIncome'),
-                            textAlign: TextAlign.center,
-                            maxLines: 2,
-                            softWrap: true,
-                            overflow: TextOverflow.visible,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: SizedBox(
-                      height: 56,
-                      child: OutlinedButton(
-                        onPressed: () => widget.onQuickMenuSelect(3),
                         style: CvantButtonStyles.outlined(
                           context,
                           color: AppColors.warning,
@@ -10051,11 +10803,10 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                         ),
                         child: Center(
                           child: Text(
-                            _t('Tambah\nPengeluaran', 'Add\nExpense'),
+                            _t('Cetak Invoice', 'Print Invoice'),
                             textAlign: TextAlign.center,
-                            maxLines: 2,
-                            softWrap: true,
-                            overflow: TextOverflow.visible,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ),
@@ -10065,6 +10816,278 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
               ),
             ),
             Expanded(child: _buildCombinedList(rows)),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _AdminFixedInvoiceView extends StatefulWidget {
+  const _AdminFixedInvoiceView({
+    required this.repository,
+    this.onDataChanged,
+  });
+
+  final DashboardRepository repository;
+  final VoidCallback? onDataChanged;
+
+  @override
+  State<_AdminFixedInvoiceView> createState() => _AdminFixedInvoiceViewState();
+}
+
+class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
+  static const _fixedInvoicePrefsKey = 'fixed_invoice_ids_v1';
+  late Future<List<Map<String, dynamic>>> _future;
+  final _search = TextEditingController();
+
+  bool get _isEn => LanguageController.language.value == AppLanguage.en;
+  String _t(String id, String en) => _isEn ? en : id;
+
+  double _toNum(dynamic value) {
+    if (value == null) return 0;
+    if (value is num) return value.toDouble();
+    final cleaned = value
+        .toString()
+        .replaceAll(RegExp(r'[^0-9,.-]'), '')
+        .replaceAll(',', '.');
+    return double.tryParse(cleaned) ?? 0;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _load();
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  void _snack(String msg, {bool error = false}) {
+    showCvantPopup(
+      context: context,
+      type: error ? CvantPopupType.error : CvantPopupType.success,
+      title: error ? _t('Error', 'Error') : _t('Success', 'Success'),
+      message: msg,
+    );
+  }
+
+  Future<Set<String>> _loadFixedIds() async {
+    final prefs = await SharedPreferences.getInstance();
+    return (prefs.getStringList(_fixedInvoicePrefsKey) ?? const <String>[])
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+  }
+
+  Future<void> _saveFixedIds(Set<String> ids) async {
+    final prefs = await SharedPreferences.getInstance();
+    final values = ids.toList()..sort();
+    await prefs.setStringList(_fixedInvoicePrefsKey, values);
+  }
+
+  Future<void> _returnToInvoiceList(String invoiceId) async {
+    final id = invoiceId.trim();
+    if (id.isEmpty) return;
+    try {
+      final ids = await _loadFixedIds();
+      if (!ids.contains(id)) return;
+      ids.remove(id);
+      await _saveFixedIds(ids);
+      if (!mounted) return;
+      _snack(
+        _t(
+          'Invoice dikembalikan ke daftar invoice.',
+          'Invoice has been returned to invoice list.',
+        ),
+      );
+      setState(() => _future = _load());
+      widget.onDataChanged?.call();
+    } catch (e) {
+      if (!mounted) return;
+      _snack(
+        e.toString().replaceFirst('Exception: ', ''),
+        error: true,
+      );
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final ids = (prefs.getStringList(_fixedInvoicePrefsKey) ?? const <String>[])
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    if (ids.isEmpty) return <Map<String, dynamic>>[];
+
+    final invoices = await widget.repository.fetchInvoices();
+    final filtered = invoices.where((item) {
+      final id = '${item['id'] ?? ''}'.trim();
+      return id.isNotEmpty && ids.contains(id);
+    }).toList();
+    filtered.sort((a, b) {
+      final aDate = Formatters.parseDate(
+            a['tanggal_kop'] ?? a['tanggal'] ?? a['created_at'],
+          ) ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+      final bDate = Formatters.parseDate(
+            b['tanggal_kop'] ?? b['tanggal'] ?? b['created_at'],
+          ) ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+      return bDate.compareTo(aDate);
+    });
+    return filtered;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: _future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const _LoadingView();
+        }
+        if (snapshot.hasError) {
+          return _ErrorView(
+            message: snapshot.error.toString().replaceFirst('Exception: ', ''),
+            onRetry: () => setState(() => _future = _load()),
+          );
+        }
+        final rows = (snapshot.data ?? const <Map<String, dynamic>>[]).where(
+          (item) {
+            final q = _search.text.trim().toLowerCase();
+            if (q.isEmpty) return true;
+            return _flattenSearchText(item).toLowerCase().contains(q);
+          },
+        ).toList();
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+              child: TextField(
+                controller: _search,
+                onChanged: (_) => setState(() {}),
+                decoration: InputDecoration(
+                  hintText: _t(
+                    'Cari invoice fix...',
+                    'Search fixed invoice...',
+                  ),
+                  prefixIcon: const Icon(Icons.search),
+                ),
+              ),
+            ),
+            Expanded(
+              child: rows.isEmpty
+                  ? _SimplePlaceholderView(
+                      title: _t('Fix Invoice kosong', 'No fixed invoice'),
+                      message: _t(
+                        'Invoice yang dicetak dari tombol Cetak Invoice akan tampil di sini.',
+                        'Invoices printed from the Print Invoice button will appear here.',
+                      ),
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+                      itemCount: rows.length + 1,
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (context, index) {
+                        if (index == rows.length) {
+                          return const _DashboardContentFooter();
+                        }
+                        final item = rows[index];
+                        final number = Formatters.invoiceNumber(
+                          item['no_invoice'],
+                          item['tanggal_kop'] ?? item['tanggal'],
+                          customerName: item['nama_pelanggan'],
+                        );
+                        final total = _toNum(
+                          item['total_bayar'] ?? item['total_biaya'],
+                        );
+                        return _PanelCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      number,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                  _StatusPill(
+                                      label: '${item['status'] ?? '-'}'),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '${_t('Tanggal', 'Date')}: ${Formatters.dmy(item['tanggal_kop'] ?? item['tanggal'] ?? item['created_at'])}',
+                                style: TextStyle(
+                                  color: AppColors.textMutedFor(context),
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '${_t('Nama', 'Name')}: ${item['nama_pelanggan'] ?? '-'}',
+                                style: TextStyle(
+                                  color: AppColors.textMutedFor(context),
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                Formatters.rupiah(total),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: OutlinedButton.icon(
+                                  onPressed: () async {
+                                    final ok = await showCvantConfirmPopup(
+                                      context: context,
+                                      title: _t(
+                                        'Kembalikan Invoice',
+                                        'Return Invoice',
+                                      ),
+                                      message: _t(
+                                        'Kembalikan invoice ini ke daftar invoice?',
+                                        'Return this invoice to invoice list?',
+                                      ),
+                                      type: CvantPopupType.info,
+                                      cancelLabel: _t('Batal', 'Cancel'),
+                                      confirmLabel: _t('Kembalikan', 'Return'),
+                                    );
+                                    if (!ok) return;
+                                    await _returnToInvoiceList(
+                                      '${item['id'] ?? ''}',
+                                    );
+                                  },
+                                  style: CvantButtonStyles.outlined(
+                                    context,
+                                    color: AppColors.blue,
+                                    borderColor: AppColors.blue,
+                                  ),
+                                  icon: const Icon(Icons.undo, size: 16),
+                                  label: Text(
+                                    _t(
+                                      'Kembalikan ke List',
+                                      'Return to List',
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+            ),
           ],
         );
       },
@@ -10488,7 +11511,7 @@ class _AdminFleetListViewState extends State<_AdminFleetListView> {
               child: SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
-                  onPressed: () => widget.onQuickMenuSelect(6),
+                  onPressed: () => widget.onQuickMenuSelect(7),
                   style: CvantButtonStyles.outlined(
                     context,
                     color: AppColors.blue,

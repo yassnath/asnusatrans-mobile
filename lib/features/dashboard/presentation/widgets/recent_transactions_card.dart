@@ -16,6 +16,14 @@ class RecentTransactionsCard extends StatelessWidget {
   final List<TransactionItem> items;
   final VoidCallback? onViewAll;
 
+  String _typeLabel(String rawType, bool isEn) {
+    final lower = rawType.toLowerCase();
+    if (lower.contains('expense')) {
+      return isEn ? 'Expense' : 'Pengeluaran';
+    }
+    return isEn ? 'Income' : 'Pemasukkan';
+  }
+
   @override
   Widget build(BuildContext context) {
     final muted = AppColors.textMutedFor(context);
@@ -88,19 +96,11 @@ class RecentTransactionsCard extends StatelessWidget {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  item.number,
+                                  '${_typeLabel(item.type, isEn)} • ${item.dateLabel}',
                                   style: TextStyle(
                                     color: accent,
                                     fontSize: 14,
                                     fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  '${item.type} • ${item.dateLabel}',
-                                  style: TextStyle(
-                                    color: muted,
-                                    fontSize: 12,
                                   ),
                                 ),
                               ],
@@ -138,7 +138,7 @@ class RecentTransactionsCard extends StatelessWidget {
                     ],
                   ),
                 );
-              }).toList(),
+              }),
           ],
         ),
       ),

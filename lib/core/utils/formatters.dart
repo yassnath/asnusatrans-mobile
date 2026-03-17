@@ -47,35 +47,10 @@ class Formatters {
   }) {
     final number = value.toDouble();
     if (!number.isFinite) return '0';
-
-    if (number == number.truncateToDouble()) {
-      return useGrouping
-          ? NumberFormat.decimalPattern('id_ID').format(number)
-          : number.toInt().toString();
-    }
-
-    final safeDigits = maxDecimalDigits.clamp(1, 16);
-    final sign = number < 0 ? '-' : '';
-    var base = number.abs().toStringAsFixed(safeDigits);
-    if (trimTrailingZeros) {
-      base = base.replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '');
-    }
-    if (base.contains('.')) {
-      final parts = base.split('.');
-      final intPart = parts.first;
-      final fracPart = parts.length > 1 ? parts[1] : '';
-      final left = useGrouping
-          ? NumberFormat.decimalPattern('id_ID').format(int.parse(intPart))
-          : intPart;
-      if (fracPart.isEmpty) {
-        return '$sign$left';
-      }
-      return '$sign$left,$fracPart';
-    }
-    final left = useGrouping
-        ? NumberFormat.decimalPattern('id_ID').format(int.parse(base))
-        : base;
-    return '$sign$left';
+    final floored = number.floor();
+    return useGrouping
+        ? NumberFormat.decimalPattern('id_ID').format(floored)
+        : floored.toString();
   }
 
   static String rupiah(
@@ -85,25 +60,7 @@ class Formatters {
   }) {
     final number = value.toDouble();
     if (!number.isFinite) return _idrInteger.format(0);
-    if (number == number.truncateToDouble()) {
-      return _idrInteger.format(number);
-    }
-
-    final sign = number < 0 ? '-' : '';
-    final absNumber = number.abs();
-    final integerPart = absNumber.truncate();
-    final integerText = NumberFormat.decimalPattern('id_ID').format(integerPart);
-    var decimalText = decimal(
-      absNumber - integerPart,
-      maxDecimalDigits: maxDecimalDigits,
-      trimTrailingZeros: trimTrailingZeros,
-      useGrouping: false,
-    );
-    decimalText = decimalText.replaceFirst(RegExp(r'^0,'), '');
-    if (decimalText.isEmpty) {
-      return '${sign}Rp $integerText';
-    }
-    return '${sign}Rp $integerText,$decimalText';
+    return _idrInteger.format(number.floor());
   }
 
   static DateTime? parseDate(dynamic value) {
@@ -233,9 +190,12 @@ class Formatters {
       final seq = int.tryParse(newMatch.group(1) ?? '') ?? 1;
       final prefix = (newMatch.group(2) ?? '').toUpperCase().trim();
       final companyFromPrefix = prefix == 'CV.ANT';
-      final month = dt?.month ?? _romanMonths.indexOf((newMatch.group(3) ?? '').toUpperCase());
-      final yearTwoDigits =
-          dt != null ? (dt.year % 100) : (int.tryParse(newMatch.group(4) ?? '') ?? (DateTime.now().year % 100));
+      final month = dt?.month ??
+          _romanMonths.indexOf((newMatch.group(3) ?? '').toUpperCase());
+      final yearTwoDigits = dt != null
+          ? (dt.year % 100)
+          : (int.tryParse(newMatch.group(4) ?? '') ??
+              (DateTime.now().year % 100));
       return composeNumber(
         sequence: seq,
         month: month <= 0 ? DateTime.now().month : month,
@@ -273,7 +233,8 @@ class Formatters {
       final month = dt?.month ??
           _romanMonths.indexOf((convertedMatch.group(2) ?? '').toUpperCase());
       final seq = int.tryParse(convertedMatch.group(3) ?? '') ?? 1;
-      final yearTwoDigits = dt != null ? (dt.year % 100) : (DateTime.now().year % 100);
+      final yearTwoDigits =
+          dt != null ? (dt.year % 100) : (DateTime.now().year % 100);
       return composeNumber(
         sequence: seq,
         month: month <= 0 ? DateTime.now().month : month,
@@ -287,7 +248,8 @@ class Formatters {
     if (oldMatch != null) {
       final dt = parseDate(tanggal);
       final month = dt?.month ?? DateTime.now().month;
-      final year = dt?.year ?? (int.tryParse(oldMatch.group(1) ?? '') ?? DateTime.now().year);
+      final year = dt?.year ??
+          (int.tryParse(oldMatch.group(1) ?? '') ?? DateTime.now().year);
       final seq = int.tryParse(oldMatch.group(2) ?? '') ?? 1;
       return composeNumber(
         sequence: seq,
