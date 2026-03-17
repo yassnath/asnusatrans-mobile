@@ -2887,6 +2887,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
   bool _loading = false;
   late Future<List<dynamic>> _formFuture;
   final List<Map<String, dynamic>> _details = [];
+  List<Map<String, dynamic>> _hargaPerTonRules = const [];
   bool _prefillApplied = false;
   bool _prefillArmadaResolved = false;
 
@@ -2975,6 +2976,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
     return Future.wait<dynamic>([
       widget.repository.fetchArmadas(),
       widget.repository.fetchInvoiceCustomerOptions(),
+      widget.repository.fetchHargaPerTonRules(),
     ]);
   }
 
@@ -2999,6 +3001,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
     if (selected == null) return;
 
     Map<String, dynamic> toDetailRow(Map<String, dynamic> option) {
+      final hargaText = _safeNumberInputText(option['harga']);
       return {
         'lokasi_muat': _safeInputText(option['lokasi_muat']),
         'lokasi_bongkar': _safeInputText(option['lokasi_bongkar']),
@@ -3012,7 +3015,8 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
         'armada_start_date': _safeInputText(option['armada_start_date']),
         'armada_end_date': _safeInputText(option['armada_end_date']),
         'tonase': _safeNumberInputText(option['tonase']),
-        'harga': _safeNumberInputText(option['harga']),
+        'harga': hargaText,
+        'harga_auto': hargaText.isEmpty,
       };
     }
 
@@ -3049,6 +3053,9 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
         ..addAll(sourceOptions.map(toDetailRow));
       if (_details.isEmpty) {
         _details.add(_newDetail());
+      }
+      for (final row in _details) {
+        _applyAutoHargaPerTon(row);
       }
       _detailFieldRefreshToken++;
     });
@@ -3109,6 +3116,67 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
       }
     }
     return false;
+  }
+
+  String _normalizeLokasiKey(String value) {
+    return value
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  double? _resolveHargaPerTon({
+    required String lokasiMuat,
+    required String lokasiBongkar,
+  }) {
+    if (_hargaPerTonRules.isEmpty) return null;
+    final bongkarKey = _normalizeLokasiKey(lokasiBongkar);
+    if (bongkarKey.isEmpty) return null;
+    final muatKey = _normalizeLokasiKey(lokasiMuat);
+
+    Map<String, dynamic>? exactMatch;
+    Map<String, dynamic>? fallbackMatch;
+
+    for (final rule in _hargaPerTonRules) {
+      final ruleBongkar =
+          _normalizeLokasiKey('${rule['lokasi_bongkar'] ?? ''}'.trim());
+      if (ruleBongkar != bongkarKey) continue;
+
+      final ruleMuat =
+          _normalizeLokasiKey('${rule['lokasi_muat'] ?? ''}'.trim());
+      if (muatKey.isNotEmpty && ruleMuat == muatKey) {
+        exactMatch = rule;
+        break;
+      }
+      fallbackMatch ??= rule;
+    }
+
+    final matchedRule = exactMatch ?? fallbackMatch;
+    if (matchedRule == null) return null;
+    final resolved =
+        _toNum(matchedRule['harga_per_ton'] ?? matchedRule['harga']);
+    return resolved > 0 ? resolved : null;
+  }
+
+  void _applyAutoHargaPerTon(
+    Map<String, dynamic> row, {
+    bool force = false,
+  }) {
+    final harga = _resolveHargaPerTon(
+      lokasiMuat: '${row['lokasi_muat'] ?? ''}',
+      lokasiBongkar: '${row['lokasi_bongkar'] ?? ''}',
+    );
+    if (harga == null || harga <= 0) return;
+
+    final currentHarga = _toNum(row['harga']);
+    final isAuto = row['harga_auto'] == true;
+    if (!force && currentHarga > 0 && !isAuto) {
+      return;
+    }
+
+    row['harga'] = _safeNumberInputText(harga);
+    row['harga_auto'] = true;
   }
 
   List<Map<String, dynamic>> _filterCustomerOptionsByMode(
@@ -3275,6 +3343,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
       'armada_end_date': '',
       'tonase': '',
       'harga': '',
+      'harga_auto': true,
     };
   }
 
@@ -3678,6 +3747,13 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                     .toList()
                 : const <Map<String, dynamic>>[])
             .cast<Map<String, dynamic>>();
+        final hargaPerTonRules = (payload.length > 2 && payload[2] is List)
+            ? (payload[2] as List)
+                .whereType<Map>()
+                .map((item) => Map<String, dynamic>.from(item))
+                .toList()
+            : const <Map<String, dynamic>>[];
+        _hargaPerTonRules = hargaPerTonRules;
         final isEn = _isEn;
         final filteredCustomerOptions =
             _filterCustomerOptionsByMode(customerOptions);
@@ -3868,6 +3944,10 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                                   row['lokasi_muat'] = value ?? '';
                                   row['lokasi_muat_manual'] = '';
                                 }
+                                _applyAutoHargaPerTon(
+                                  row,
+                                  force: row['harga_auto'] == true,
+                                );
                               });
                             },
                           ),
@@ -3887,6 +3967,10 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                               onChanged: (value) {
                                 row['lokasi_muat_manual'] = value;
                                 row['lokasi_muat'] = value;
+                                _applyAutoHargaPerTon(
+                                  row,
+                                  force: row['harga_auto'] == true,
+                                );
                                 setState(() {});
                               },
                             ),
@@ -3902,7 +3986,11 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                               hintText:
                                   _t('Lokasi Bongkar', 'Unloading Location'),
                             ),
-                            onChanged: (value) => row['lokasi_bongkar'] = value,
+                            onChanged: (value) {
+                              row['lokasi_bongkar'] = value;
+                              _applyAutoHargaPerTon(row, force: true);
+                              setState(() {});
+                            },
                           ),
                           const SizedBox(height: 8),
                           TextFormField(
@@ -4108,6 +4196,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                                   ),
                                   onChanged: (value) {
                                     row['harga'] = value;
+                                    row['harga_auto'] = false;
                                     setState(() {});
                                   },
                                 ),

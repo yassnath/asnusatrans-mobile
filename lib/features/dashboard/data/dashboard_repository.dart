@@ -515,6 +515,29 @@ class DashboardRepository {
     }
   }
 
+  Future<List<Map<String, dynamic>>> fetchHargaPerTonRules() async {
+    try {
+      final res = await _supabase
+          .from('harga_per_ton_rules')
+          .select(
+            'id,lokasi_muat,lokasi_bongkar,harga_per_ton,is_active,priority,created_at,updated_at',
+          )
+          .eq('is_active', true)
+          .order('priority', ascending: false)
+          .order('created_at', ascending: false);
+      return _toMapList(res);
+    } on PostgrestException catch (e) {
+      final lower = e.message.toLowerCase();
+      final missingTable = lower.contains('harga_per_ton_rules') &&
+          (lower.contains('does not exist') || lower.contains('column'));
+      if (missingTable) {
+        // Graceful fallback: feature auto-harga tetap optional jika schema belum dijalankan.
+        return <Map<String, dynamic>>[];
+      }
+      throw Exception('Gagal memuat referensi harga / ton: ${e.message}');
+    }
+  }
+
   Future<List<Map<String, dynamic>>> fetchOrders({
     bool currentUserOnly = false,
   }) async {
