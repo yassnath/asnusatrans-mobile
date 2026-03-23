@@ -2880,7 +2880,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
   final _kopDate = TextEditingController();
   final _kopLocation = TextEditingController();
   final _dueDate = TextEditingController();
-  DateTime _date = DateTime.now();
+  final DateTime _date = DateTime.now();
   bool _isCompanyInvoice = true;
   String _status = 'Unpaid';
   String _acceptedBy = 'Admin';
@@ -3273,25 +3273,6 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
     });
   }
 
-  Future<void> _pickDate() async {
-    final picked = await showDatePicker(
-      context: context,
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2100),
-      initialDate: _date,
-    );
-    if (picked != null) {
-      final previousDateText = _toInputDate(_date);
-      setState(() {
-        _date = picked;
-        final currentKop = _kopDate.text.trim();
-        if (currentKop.isEmpty || currentKop == previousDateText) {
-          _kopDate.text = _toInputDate(picked);
-        }
-      });
-    }
-  }
-
   Future<void> _pickDetailDate(int index, String field) async {
     final initial =
         Formatters.parseDate(_details[index][field]) ?? DateTime.now();
@@ -3316,18 +3297,6 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
     );
     if (picked == null) return;
     setState(() => _dueDate.text = _toInputDate(picked));
-  }
-
-  Future<void> _pickKopDate() async {
-    final initial = Formatters.parseDate(_kopDate.text) ?? _date;
-    final picked = await showDatePicker(
-      context: context,
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2100),
-      initialDate: initial,
-    );
-    if (picked == null) return;
-    setState(() => _kopDate.text = _toInputDate(picked));
   }
 
   Map<String, dynamic> _newDetail() {
@@ -3568,9 +3537,20 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
         .toSet()
         .join(', ');
 
+    DateTime? resolveDepartureDate() {
+      for (final row in detailsPayload) {
+        final parsed = Formatters.parseDate(row['armada_start_date']);
+        if (parsed != null) return parsed;
+      }
+      return Formatters.parseDate(first['armada_start_date']);
+    }
+
+    final resolvedDepartureDate = resolveDepartureDate();
+    final effectiveDate =
+        resolvedDepartureDate ?? Formatters.parseDate(_kopDate.text) ?? _date;
+
     String generatedInvoiceNo;
     try {
-      final effectiveDate = Formatters.parseDate(_kopDate.text) ?? _date;
       generatedInvoiceNo = await widget.repository.generateIncomeInvoiceNumber(
         issuedDate: effectiveDate,
         isCompany: _isCompanyInvoice,
@@ -3583,7 +3563,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
 
     final effectiveInvoiceNumber = _formatInvoiceNumber(
       generatedInvoiceNo,
-      Formatters.parseDate(_kopDate.text) ?? _date,
+      effectiveDate,
     );
 
     setState(() => _loading = true);
@@ -3594,7 +3574,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
         noInvoice: effectiveInvoiceNumber,
         includePph: _isCompanyInvoice,
         status: _status,
-        issuedDate: Formatters.parseDate(_kopDate.text) ?? _date,
+        issuedDate: effectiveDate,
         email: _email.text,
         noTelp: _phone.text,
         kopDate: Formatters.parseDate(_kopDate.text) ?? _date,
@@ -3798,18 +3778,6 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                     ],
                   ),
                   const SizedBox(height: 12),
-                  const SizedBox(height: 4),
-                  InkWell(
-                    onTap: _pickDate,
-                    borderRadius: BorderRadius.circular(10),
-                    child: InputDecorator(
-                      decoration: InputDecoration(
-                        labelText: _t('Tanggal', 'Date'),
-                      ),
-                      child: Text(Formatters.dmy(_date)),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
                   CvantDropdownField<String>(
                     initialValue: selectedCustomerValue,
                     decoration: InputDecoration(
@@ -3856,31 +3824,6 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                     decoration: InputDecoration(
                       labelText: _t('No. Telp', 'Phone Number'),
                       hintText: '0812xxxx',
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  InkWell(
-                    onTap: _pickKopDate,
-                    borderRadius: BorderRadius.circular(10),
-                    child: InputDecorator(
-                      decoration: InputDecoration(
-                        labelText:
-                            _t('Tanggal Kop Invoice', 'Invoice Header Date'),
-                      ),
-                      child: Text(
-                        _kopDate.text.trim().isEmpty
-                            ? '-'
-                            : Formatters.dmy(_kopDate.text.trim()),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: _kopLocation,
-                    decoration: InputDecoration(
-                      labelText:
-                          _t('Lokasi Kop Invoice', 'Invoice Header Location'),
-                      hintText: _t('Contoh: Sidoarjo', 'Example: Sidoarjo'),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -5277,7 +5220,7 @@ class _StatusPill extends StatelessWidget {
                     : isCancelled
                         ? AppColors.danger
                         : isUnpaid
-                            ? AppColors.neutralOutline
+                            ? AppColors.warning
                             : isWaiting
                                 ? AppColors.warning
                                 : isRecorded
@@ -5324,11 +5267,21 @@ class _AdminInvoiceListView extends StatefulWidget {
   State<_AdminInvoiceListView> createState() => _AdminInvoiceListViewState();
 }
 
+class _InvoicePrintOverrides {
+  const _InvoicePrintOverrides({
+    required this.invoiceNumber,
+    this.kopDate,
+    this.kopLocation,
+  });
+
+  final String invoiceNumber;
+  final String? kopDate;
+  final String? kopLocation;
+}
+
 class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
   static const _manualArmadaOptionId = '__other_manual_armada__';
   static const _fixedInvoicePrefsKey = 'fixed_invoice_ids_v1';
-  static DateTime? _lastAutoBackfillAt;
-  static const Duration _autoBackfillCooldown = Duration(minutes: 10);
   static const _companyKeywords = <String>[
     r'\bcv\b',
     r'\bpt\b',
@@ -5473,6 +5426,16 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
   }
 
   Future<void> _refresh() async {
+    if (!_backfillRunning) {
+      _backfillRunning = true;
+      try {
+        await widget.repository.backfillAutoSanguExpensesForExistingInvoices();
+      } catch (_) {
+        // Best effort: tetap lanjut reload data list.
+      } finally {
+        _backfillRunning = false;
+      }
+    }
     setState(() {
       _future = _load();
     });
@@ -5481,13 +5444,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
 
   void _runBackfillInBackground() {
     if (_backfillRunning) return;
-    final now = DateTime.now();
-    if (_lastAutoBackfillAt != null &&
-        now.difference(_lastAutoBackfillAt!) < _autoBackfillCooldown) {
-      return;
-    }
     _backfillRunning = true;
-    _lastAutoBackfillAt = now;
     Future<void>(() async {
       await widget.repository.backfillAutoSanguExpensesForExistingInvoices();
       if (!mounted) return;
@@ -5782,28 +5739,48 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
       return '${lines.take(4).join('\n')}\n+$others ${_t('detail lainnya', 'other details')}';
     }
 
-    Future<Map<String, String>?> openNumberEditor(
+    Future<Map<String, _InvoicePrintOverrides>?> openNumberEditor(
       List<Map<String, dynamic>> selectedRows,
     ) async {
       if (!mounted) return null;
       final generatedById = <String, String>{};
-      final controllers = <String, TextEditingController>{};
+      final defaultKopDateById = <String, String>{};
+      final defaultKopLocationById = <String, String>{};
+      final noInvoiceControllers = <String, TextEditingController>{};
+      final kopDateControllers = <String, TextEditingController>{};
+      final kopLocationControllers = <String, TextEditingController>{};
+
+      String toInputDate(dynamic raw) {
+        final parsed = Formatters.parseDate(raw);
+        if (parsed == null) return '';
+        final mm = parsed.month.toString().padLeft(2, '0');
+        final dd = parsed.day.toString().padLeft(2, '0');
+        return '${parsed.year}-$mm-$dd';
+      }
 
       for (final item in selectedRows) {
         final id = '${item['id'] ?? ''}'.trim();
         if (id.isEmpty) continue;
         final generated = resolveGeneratedNumber(item);
+        final defaultKopDate =
+            toInputDate(item['tanggal_kop'] ?? item['tanggal']);
+        final defaultKopLocation = '${item['lokasi_kop'] ?? ''}'.trim();
         generatedById[id] = generated;
-        controllers[id] = TextEditingController(text: generated);
+        defaultKopDateById[id] = defaultKopDate;
+        defaultKopLocationById[id] = defaultKopLocation;
+        noInvoiceControllers[id] = TextEditingController(text: generated);
+        kopDateControllers[id] = TextEditingController(text: defaultKopDate);
+        kopLocationControllers[id] =
+            TextEditingController(text: defaultKopLocation);
       }
-      if (controllers.isEmpty) return null;
+      if (noInvoiceControllers.isEmpty) return null;
 
-      final result = await showDialog<Map<String, String>>(
+      final result = await showDialog<Map<String, _InvoicePrintOverrides>>(
         context: context,
         barrierColor: AppColors.popupOverlay,
         builder: (context) {
           return AlertDialog(
-            title: Text(_t('Edit Nomor Invoice', 'Edit Invoice Number')),
+            title: Text(_t('Edit KOP Invoice', 'Edit Invoice Header')),
             content: SizedBox(
               width: 640,
               child: SingleChildScrollView(
@@ -5811,8 +5788,14 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: selectedRows.map((item) {
                     final id = '${item['id'] ?? ''}'.trim();
-                    final controller = controllers[id];
-                    if (controller == null) return const SizedBox.shrink();
+                    final noInvoiceController = noInvoiceControllers[id];
+                    final kopDateController = kopDateControllers[id];
+                    final kopLocationController = kopLocationControllers[id];
+                    if (noInvoiceController == null ||
+                        kopDateController == null ||
+                        kopLocationController == null) {
+                      return const SizedBox.shrink();
+                    }
                     final customer = '${item['nama_pelanggan'] ?? '-'}';
                     final modeLabel = isCompany(item)
                         ? _t('Perusahaan', 'Company')
@@ -5851,10 +5834,30 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                             ],
                             const SizedBox(height: 8),
                             TextField(
-                              controller: controller,
+                              controller: noInvoiceController,
                               decoration: InputDecoration(
                                 labelText:
                                     _t('Nomor Invoice', 'Invoice Number'),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            TextField(
+                              controller: kopDateController,
+                              decoration: InputDecoration(
+                                labelText: _t(
+                                  'Tanggal Kop Invoice (YYYY-MM-DD)',
+                                  'Invoice Header Date (YYYY-MM-DD)',
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            TextField(
+                              controller: kopLocationController,
+                              decoration: InputDecoration(
+                                labelText: _t(
+                                  'Lokasi Kop Invoice',
+                                  'Invoice Header Location',
+                                ),
                               ),
                             ),
                           ],
@@ -5879,12 +5882,38 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
               ),
               FilledButton.icon(
                 onPressed: () {
-                  final values = <String, String>{};
-                  for (final entry in controllers.entries) {
+                  final values = <String, _InvoicePrintOverrides>{};
+                  for (final entry in noInvoiceControllers.entries) {
                     final id = entry.key;
                     final typed = entry.value.text.trim();
-                    values[id] =
-                        typed.isEmpty ? (generatedById[id] ?? '-') : typed;
+                    final typedKopDateRaw = kopDateControllers[id]?.text.trim();
+                    final typedKopLocation =
+                        kopLocationControllers[id]?.text.trim();
+                    String? normalizedKopDate;
+                    if ((typedKopDateRaw ?? '').isNotEmpty) {
+                      final parsed = Formatters.parseDate(typedKopDateRaw);
+                      if (parsed == null) {
+                        _snack(
+                          _t(
+                            'Format Tanggal KOP tidak valid. Gunakan YYYY-MM-DD.',
+                            'Invalid invoice header date format. Use YYYY-MM-DD.',
+                          ),
+                          error: true,
+                        );
+                        return;
+                      }
+                      normalizedKopDate = toInputDate(parsed);
+                    }
+                    values[id] = _InvoicePrintOverrides(
+                      invoiceNumber:
+                          typed.isEmpty ? (generatedById[id] ?? '-') : typed,
+                      kopDate: (normalizedKopDate ?? '').isEmpty
+                          ? defaultKopDateById[id]
+                          : normalizedKopDate,
+                      kopLocation: (typedKopLocation ?? '').isEmpty
+                          ? defaultKopLocationById[id]
+                          : typedKopLocation,
+                    );
                   }
                   Navigator.pop(context, values);
                 },
@@ -5900,7 +5929,13 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
         },
       );
 
-      for (final controller in controllers.values) {
+      for (final controller in noInvoiceControllers.values) {
+        controller.dispose();
+      }
+      for (final controller in kopDateControllers.values) {
+        controller.dispose();
+      }
+      for (final controller in kopLocationControllers.values) {
         controller.dispose();
       }
       return result;
@@ -6207,23 +6242,81 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                     Navigator.pop(context);
                     if (!mounted) return;
 
-                    final editedNumberById = await openNumberEditor(selected);
-                    if (editedNumberById == null || editedNumberById.isEmpty) {
+                    final editedOverridesById =
+                        await openNumberEditor(selected);
+                    if (editedOverridesById == null ||
+                        editedOverridesById.isEmpty) {
                       return;
                     }
 
-                    for (final item in selected) {
-                      final id = '${item['id'] ?? ''}'.trim();
-                      await _printInvoicePdf(
-                        item,
-                        const <Map<String, dynamic>>[],
-                        markAsFixed: true,
-                        showSuccessPopup: false,
-                        invoiceNumberOverride:
-                            editedNumberById[id]?.trim().isNotEmpty == true
-                                ? editedNumberById[id]
-                                : resolveGeneratedNumber(item),
+                    try {
+                      final printMetaUpdates = <Map<String, String?>>[];
+                      final printQueue = <Map<String, dynamic>>[];
+                      for (final item in selected) {
+                        final id = '${item['id'] ?? ''}'.trim();
+                        final edited = editedOverridesById[id];
+                        final editedInvoiceNo =
+                            (edited?.invoiceNumber ?? '').trim();
+                        final editedKopDate = (edited?.kopDate ?? '').trim();
+                        final editedKopLocation =
+                            (edited?.kopLocation ?? '').trim();
+                        final effectiveInvoiceNo = editedInvoiceNo.isNotEmpty
+                            ? editedInvoiceNo
+                            : resolveGeneratedNumber(item);
+
+                        printMetaUpdates.add({
+                          'id': id,
+                          'no_invoice': effectiveInvoiceNo,
+                          'kop_date': editedKopDate,
+                          'kop_location': editedKopLocation,
+                        });
+
+                        final printItem = Map<String, dynamic>.from(item);
+                        printItem['no_invoice'] = effectiveInvoiceNo;
+                        if (editedKopDate.isNotEmpty) {
+                          printItem['tanggal_kop'] = editedKopDate;
+                        }
+                        if (editedKopLocation.isNotEmpty) {
+                          printItem['lokasi_kop'] = editedKopLocation;
+                        }
+                        printQueue.add({
+                          'item': printItem,
+                          'invoice_no': effectiveInvoiceNo,
+                          'kop_date': editedKopDate,
+                          'kop_location': editedKopLocation,
+                        });
+                      }
+
+                      await widget.repository.updateInvoicesPrintMetaBulk(
+                        updates: printMetaUpdates,
                       );
+
+                      for (final queued in printQueue) {
+                        final printItem =
+                            Map<String, dynamic>.from(queued['item'] as Map);
+                        final invoiceNo =
+                            '${queued['invoice_no'] ?? ''}'.trim();
+                        final kopDate = '${queued['kop_date'] ?? ''}'.trim();
+                        final kopLocation =
+                            '${queued['kop_location'] ?? ''}'.trim();
+                        await _printInvoicePdf(
+                          printItem,
+                          const <Map<String, dynamic>>[],
+                          markAsFixed: true,
+                          showSuccessPopup: false,
+                          invoiceNumberOverride: invoiceNo,
+                          kopDateOverride: kopDate.isEmpty ? null : kopDate,
+                          kopLocationOverride:
+                              kopLocation.isEmpty ? null : kopLocation,
+                        );
+                      }
+                    } catch (e) {
+                      if (!mounted) return;
+                      _snack(
+                        e.toString().replaceFirst('Exception: ', ''),
+                        error: true,
+                      );
+                      return;
                     }
                     if (!mounted) return;
                     _snack(
@@ -7540,6 +7633,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
     bool markAsFixed = false,
     bool showSuccessPopup = false,
     String? invoiceNumberOverride,
+    String? kopDateOverride,
+    String? kopLocationOverride,
   }) async {
     try {
       final invoiceDetailList =
@@ -7558,12 +7653,19 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
       final total = isCompanyInvoice
           ? _toNum(item['total_bayar'] ?? item['total_biaya'])
           : subtotal;
+      final effectiveKopDateRaw = (kopDateOverride ?? '').trim().isNotEmpty
+          ? kopDateOverride!.trim()
+          : '${item['tanggal_kop'] ?? item['tanggal'] ?? ''}'.trim();
+      final effectiveKopLocationRaw =
+          (kopLocationOverride ?? '').trim().isNotEmpty
+              ? kopLocationOverride!.trim()
+              : '${item['lokasi_kop'] ?? ''}'.trim();
       final invoiceNumber = _displayInvoiceNumber(
         (invoiceNumberOverride ?? '').trim().isNotEmpty
             ? invoiceNumberOverride!.trim()
             : Formatters.invoiceNumber(
                 invoiceRawNumber,
-                item['tanggal_kop'] ?? item['tanggal'],
+                effectiveKopDateRaw,
                 customerName: customerName,
                 isCompany: isCompanyInvoice,
               ),
@@ -7667,8 +7769,10 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
         }
 
         final customerName = printable(item['nama_pelanggan']) ?? '-';
-        final tanggalKop = item['tanggal_kop'] ?? item['tanggal'];
-        final kopLocation = printable(item['lokasi_kop']);
+        final tanggalKop = effectiveKopDateRaw.isEmpty
+            ? item['tanggal_kop'] ?? item['tanggal']
+            : effectiveKopDateRaw;
+        final kopLocation = printable(effectiveKopLocationRaw);
         String toTitleCase(String value) {
           final normalized = value.trim().replaceAll(RegExp(r'\s+'), ' ');
           if (normalized.isEmpty) return normalized;
@@ -10400,6 +10504,18 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
       return build(source['lokasi_muat'], source['lokasi_bongkar']);
     }
 
+    dynamic resolveIncomeDisplayDate(Map<String, dynamic> source) {
+      final details = _toDetailList(source['rincian']);
+      for (final row in details) {
+        final raw = row['armada_start_date'];
+        if (Formatters.parseDate(raw) != null) return raw;
+      }
+      if (Formatters.parseDate(source['armada_start_date']) != null) {
+        return source['armada_start_date'];
+      }
+      return source['tanggal_kop'] ?? source['tanggal'] ?? source['created_at'];
+    }
+
     Map<String, String> buildIncomeSearchFields(Map<String, dynamic> source) {
       final details = _toDetailList(source['rincian']);
       final dates = <String>{};
@@ -10463,6 +10579,164 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
       };
     }
 
+    bool isAutoSanguExpense(Map<String, dynamic> expense) {
+      final note = '${expense['note'] ?? ''}'.trim().toUpperCase();
+      if (note.startsWith('AUTO_SANGU:')) return true;
+      final ket = '${expense['keterangan'] ?? ''}'.trim().toLowerCase();
+      return ket.startsWith('auto sangu sopir -');
+    }
+
+    ({String muat, String bongkar, String driver}) extractRouteDriverFromDetail(
+      Map<String, dynamic> detail, {
+      Map<String, dynamic>? fallbackIncomeDetail,
+    }) {
+      String muat = '${detail['lokasi_muat'] ?? ''}'.trim();
+      String bongkar = '${detail['lokasi_bongkar'] ?? ''}'.trim();
+      if (muat.isEmpty || bongkar.isEmpty) {
+        final rawName = '${detail['nama'] ?? detail['name'] ?? ''}'.trim();
+        final routeRaw = RegExp(r'\(([^()]*)\)').firstMatch(rawName)?.group(1);
+        if (routeRaw != null && routeRaw.trim().isNotEmpty) {
+          final parts = routeRaw.split('-');
+          if (parts.isNotEmpty && muat.isEmpty) {
+            muat = parts.first.trim();
+          }
+          if (parts.length >= 2 && bongkar.isEmpty) {
+            bongkar = parts.sublist(1).join('-').trim();
+          }
+        }
+      }
+
+      final detailDriver = '${detail['nama_supir'] ?? detail['supir'] ?? ''}';
+      final fallbackDriver = fallbackIncomeDetail == null
+          ? ''
+          : '${fallbackIncomeDetail['nama_supir'] ?? fallbackIncomeDetail['supir'] ?? ''}';
+      final driver = detailDriver.trim().isNotEmpty
+          ? detailDriver.trim()
+          : fallbackDriver.trim();
+      return (muat: muat, bongkar: bongkar, driver: driver);
+    }
+
+    String buildAutoSanguRouteLabel(
+      Map<String, dynamic> expense,
+      Map<String, dynamic>? linkedIncome,
+    ) {
+      final expenseDetails = _toDetailList(expense['rincian']);
+      final incomeDetails = linkedIncome == null
+          ? const <Map<String, dynamic>>[]
+          : _toDetailList(linkedIncome['rincian']);
+      final entries = <String>[];
+      final seen = <String>{};
+
+      void pushEntry({
+        required String muat,
+        required String bongkar,
+        required String driver,
+      }) {
+        if (muat.isEmpty && bongkar.isEmpty) return;
+        final label =
+            '${muat.isEmpty ? '-' : muat}-${bongkar.isEmpty ? '-' : bongkar}';
+        final key = label.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
+        if (seen.add(key)) entries.add(label);
+      }
+
+      if (expenseDetails.isNotEmpty) {
+        for (var i = 0; i < expenseDetails.length; i++) {
+          final fallback = i < incomeDetails.length ? incomeDetails[i] : null;
+          final route = extractRouteDriverFromDetail(
+            expenseDetails[i],
+            fallbackIncomeDetail: fallback,
+          );
+          pushEntry(
+            muat: route.muat,
+            bongkar: route.bongkar,
+            driver: route.driver,
+          );
+        }
+      }
+
+      if (entries.isEmpty && incomeDetails.isNotEmpty) {
+        for (final row in incomeDetails) {
+          final route = extractRouteDriverFromDetail(
+            row,
+            fallbackIncomeDetail: row,
+          );
+          pushEntry(
+            muat: route.muat,
+            bongkar: route.bongkar,
+            driver: route.driver,
+          );
+        }
+      }
+
+      if (entries.isEmpty && linkedIncome != null) {
+        final fallbackRoute = extractRouteDriverFromDetail(
+          linkedIncome,
+          fallbackIncomeDetail: linkedIncome,
+        );
+        pushEntry(
+          muat: fallbackRoute.muat,
+          bongkar: fallbackRoute.bongkar,
+          driver: fallbackRoute.driver,
+        );
+      }
+
+      if (entries.isEmpty) {
+        return '${expense['keterangan'] ?? expense['kategori'] ?? '-'}';
+      }
+      return entries.join(' | ');
+    }
+
+    String buildAutoSanguDriverLabel(
+      Map<String, dynamic> expense,
+      Map<String, dynamic>? linkedIncome,
+    ) {
+      final expenseDetails = _toDetailList(expense['rincian']);
+      final incomeDetails = linkedIncome == null
+          ? const <Map<String, dynamic>>[]
+          : _toDetailList(linkedIncome['rincian']);
+      final drivers = <String>[];
+      final seen = <String>{};
+
+      void pushDriver(String value) {
+        final normalized = value.trim();
+        if (normalized.isEmpty) return;
+        final key = normalized.toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+        if (seen.add(key)) drivers.add(normalized);
+      }
+
+      if (expenseDetails.isNotEmpty) {
+        for (var i = 0; i < expenseDetails.length; i++) {
+          final fallback = i < incomeDetails.length ? incomeDetails[i] : null;
+          final route = extractRouteDriverFromDetail(
+            expenseDetails[i],
+            fallbackIncomeDetail: fallback,
+          );
+          pushDriver(route.driver);
+        }
+      }
+
+      if (drivers.isEmpty && incomeDetails.isNotEmpty) {
+        for (final row in incomeDetails) {
+          final route = extractRouteDriverFromDetail(
+            row,
+            fallbackIncomeDetail: row,
+          );
+          pushDriver(route.driver);
+        }
+      }
+
+      if (drivers.isEmpty && linkedIncome != null) {
+        final fallbackRoute = extractRouteDriverFromDetail(
+          linkedIncome,
+          fallbackIncomeDetail: linkedIncome,
+        );
+        pushDriver(fallbackRoute.driver);
+      }
+
+      if (drivers.isEmpty) return '-';
+      return drivers.join(' | ');
+    }
+
     final incomeRows = incomes.map((item) {
       final invoiceNumber = Formatters.invoiceNumber(
         item['no_invoice'],
@@ -10487,7 +10761,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
         '__number': invoiceNumber,
         '__name': item['nama_pelanggan'],
         '__total': effectiveTotal,
-        '__date': item['tanggal_kop'] ?? item['tanggal'] ?? item['created_at'],
+        '__date': resolveIncomeDisplayDate(item),
         '__status': item['status'],
         '__recorded_by': item['diterima_oleh'] ?? '-',
         '__route': resolveRoute(item),
@@ -10524,6 +10798,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
     final expenseByIncomeId = <String, List<Map<String, dynamic>>>{};
     for (final item in expenses) {
       var marker = '';
+      final autoSangu = isAutoSanguExpense(item);
       final note = '${item['note'] ?? ''}'.trim();
       if (note.toUpperCase().startsWith('AUTO_SANGU:')) {
         marker = note.substring('AUTO_SANGU:'.length).trim();
@@ -10548,17 +10823,27 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
         linkedIncomeId = incomeIdByInvoiceToken[markerKey];
       }
       if (linkedIncomeId == null || linkedIncomeId.isEmpty) continue;
+      final linkedIncome = incomeById[normalizeToken(linkedIncomeId)];
+      final autoRouteLabel =
+          autoSangu ? buildAutoSanguRouteLabel(item, linkedIncome) : '';
+      final autoDriverLabel =
+          autoSangu ? buildAutoSanguDriverLabel(item, linkedIncome) : '';
 
       final mapped = <String, dynamic>{
         ...item,
         '__type': 'Expense',
         '__number': item['no_expense'],
-        '__name': item['kategori'] ?? item['keterangan'] ?? '-',
+        '__name': autoSangu
+            ? autoDriverLabel
+            : (item['kategori'] ?? item['keterangan'] ?? '-'),
         '__total': item['total_pengeluaran'],
         '__date': item['tanggal'] ?? item['created_at'],
         '__status': item['status'],
         '__recorded_by': item['dicatat_oleh'] ?? '-',
-        '__route': item['keterangan'] ?? item['kategori'] ?? '-',
+        '__route': autoSangu
+            ? autoRouteLabel
+            : (item['keterangan'] ?? item['kategori'] ?? '-'),
+        '__is_auto_sangu': autoSangu,
       };
       expenseByIncomeId
           .putIfAbsent(linkedIncomeId, () => <Map<String, dynamic>>[])
@@ -10669,17 +10954,23 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '${_t('Nama', 'Name')}: ${item['__name'] ?? '-'}',
+                  '${item['__is_auto_sangu'] == true ? _t('Nama Sopir', 'Driver') : _t('Nama', 'Name')}: ${item['__name'] ?? '-'}',
                   style: TextStyle(color: AppColors.textMutedFor(context)),
                 ),
                 const SizedBox(height: 2),
-                Text(
-                  isIncome
-                      ? '${item['__route'] ?? '-'}'
-                      : '${item['__route'] ?? '-'}',
-                  style: TextStyle(color: AppColors.textMutedFor(context)),
-                ),
-                const SizedBox(height: 6),
+                if (() {
+                  final routeLabel = '${item['__route'] ?? '-'}'.trim();
+                  final nameLabel = '${item['__name'] ?? ''}'.trim();
+                  if (routeLabel.isEmpty || routeLabel == '-') return false;
+                  return routeLabel.toLowerCase() != nameLabel.toLowerCase();
+                }()) ...[
+                  Text(
+                    '${item['__route'] ?? '-'}',
+                    style: TextStyle(color: AppColors.textMutedFor(context)),
+                  ),
+                  const SizedBox(height: 6),
+                ] else
+                  const SizedBox(height: 6),
                 Text(
                   Formatters.rupiah(total),
                   style: TextStyle(fontWeight: FontWeight.w700),

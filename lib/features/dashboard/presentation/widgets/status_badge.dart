@@ -30,10 +30,10 @@ class StatusBadge extends StatelessWidget {
     if (isCancelled) {
       bg = const Color(0x22EF4444);
       fg = AppColors.danger;
-    } else if (isUnpaid || isInactive) {
+    } else if (isInactive) {
       bg = const Color(0x2264748B);
       fg = AppColors.neutralOutline;
-    } else if (isWaiting || isFull) {
+    } else if (isUnpaid || isWaiting || isFull) {
       bg = const Color(0x22F59E0B);
       fg = AppColors.warning;
     } else if (isPaid ||
