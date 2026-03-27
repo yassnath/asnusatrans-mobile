@@ -682,8 +682,8 @@ class DashboardRepository {
       throw Exception('Session tidak ditemukan. Silakan login ulang.');
     }
 
-    DateTime? resolveIssueDateFromDetails() {
-      for (final row in details ?? const <Map<String, dynamic>>[]) {
+    DateTime? resolveIssueDateFromDetails(List<Map<String, dynamic>> rows) {
+      for (final row in rows) {
         final parsed = Formatters.parseDate(row['armada_start_date']);
         if (parsed != null) return parsed;
       }
@@ -691,31 +691,6 @@ class DashboardRepository {
       return null;
     }
 
-    final parsedIssueDate =
-        resolveIssueDateFromDetails() ?? issuedDate ?? DateTime.now();
-    final code = (noInvoice ?? '').trim().isEmpty
-        ? _makeDocumentCode(
-            'INC',
-            referenceDate: parsedIssueDate,
-          )
-        : (() {
-            final normalized = Formatters.invoiceNumber(
-              noInvoice!.trim(),
-              kopDate ?? parsedIssueDate,
-              customerName: customerName,
-              isCompany: _isCompanyCustomerName(customerName),
-            );
-            return normalized == '-' ? noInvoice.trim() : normalized;
-          })();
-    final date = parsedIssueDate.toIso8601String().split('T').first;
-    final normalizedKopLocation =
-        kopLocation?.trim().isEmpty == true ? null : kopLocation?.trim();
-    final selectedArmadaIds =
-        _collectArmadaIds(primaryArmadaId: armadaId, details: details);
-    final driverNames = _resolveDriverNames(
-      explicitName: namaSupir,
-      details: details,
-    );
     final effectiveDetails = _buildEffectiveIncomeDetails(
       details: details,
       pickup: pickup,
@@ -728,9 +703,202 @@ class DashboardRepository {
       muatan: muatan,
       namaSupir: namaSupir,
     );
+    final sanitizedDetails = _sanitizeIncomeDetails(effectiveDetails);
+    final parsedIssueDate = resolveIssueDateFromDetails(sanitizedDetails) ??
+        issuedDate ??
+        DateTime.now();
+    final requestedInvoiceNumber =
+        (noInvoice?.trim().isEmpty ?? true) ? null : noInvoice!.trim();
+    final selectedArmadaIds =
+        _collectArmadaIds(primaryArmadaId: armadaId, details: sanitizedDetails);
 
+    if (sanitizedDetails.length > 1) {
+      final invalidDetailIndexes = <int>[];
+      for (var i = 0; i < sanitizedDetails.length; i++) {
+        if (_resolveIncomeDetailTotal(sanitizedDetails[i]) <= 0) {
+          invalidDetailIndexes.add(i + 1);
+        }
+      }
+      if (invalidDetailIndexes.isNotEmpty) {
+        final detailLabels = invalidDetailIndexes.join(', ');
+        throw Exception(
+          'Setiap keberangkatan wajib memiliki tonase dan harga. Periksa rincian ke-$detailLabels.',
+        );
+      }
+
+      for (var i = 0; i < sanitizedDetails.length; i++) {
+        final detail = Map<String, dynamic>.from(sanitizedDetails[i]);
+        final detailPickup = '${detail['lokasi_muat'] ?? pickup ?? ''}'.trim();
+        final detailDestination =
+            '${detail['lokasi_bongkar'] ?? destination ?? ''}'.trim();
+        final detailArmadaId =
+            '${detail['armada_id'] ?? armadaId ?? ''}'.trim().isEmpty
+                ? null
+                : '${detail['armada_id'] ?? armadaId}'.trim();
+        final detailArmadaStartDate =
+            Formatters.parseDate(detail['armada_start_date']) ??
+                armadaStartDate;
+        final detailArmadaEndDate =
+            Formatters.parseDate(detail['armada_end_date']) ?? armadaEndDate;
+        final detailMuatan =
+            '${detail['muatan'] ?? muatan ?? ''}'.trim().isEmpty
+                ? null
+                : '${detail['muatan'] ?? muatan}'.trim();
+        final detailDriver = _resolveDriverNames(
+          explicitName: '${detail['nama_supir'] ?? namaSupir ?? ''}',
+          details: [detail],
+        );
+        final detailTonase = _num(detail['tonase']);
+        final detailHarga = _num(detail['harga']);
+        final detailTotal = _resolveIncomeDetailTotal(detail);
+        final detailIssueDate = detailArmadaStartDate ?? parsedIssueDate;
+
+        final inserted = await _insertSingleIncomeInvoice(
+          customerName: customerName,
+          total: detailTotal,
+          requestedNoInvoice: i == 0 ? requestedInvoiceNumber : null,
+          includePph: includePph,
+          status: status,
+          issueDate: detailIssueDate,
+          email: email,
+          noTelp: noTelp,
+          kopDate: kopDate,
+          kopLocation: kopLocation,
+          dueDate: dueDate,
+          pickup: detailPickup,
+          destination: detailDestination,
+          armadaId: detailArmadaId,
+          armadaStartDate: detailArmadaStartDate,
+          armadaEndDate: detailArmadaEndDate,
+          tonase: detailTonase,
+          harga: detailHarga,
+          muatan: detailMuatan,
+          namaSupir: detailDriver,
+          acceptedBy: acceptedBy,
+          customerId: customerId,
+          orderId: orderId,
+          details: [detail],
+          createdBy: user.id,
+        );
+
+        await _createSanguExpenseFromIncomeBestEffort(
+          invoiceId: inserted['id'],
+          invoiceNumber: inserted['no_invoice'] ?? '-',
+          expenseDate: detailIssueDate,
+          details: [detail],
+          fallbackPickup: detailPickup,
+          fallbackDestination: detailDestination,
+          fallbackArmadaId: detailArmadaId,
+        );
+      }
+
+      await _setArmadaStatusBestEffort(
+        selectedArmadaIds,
+        status: 'Full',
+      );
+      await _syncArmadaStatusNowBestEffort();
+      return;
+    }
+
+    final singleDetailList =
+        sanitizedDetails.isEmpty ? effectiveDetails : sanitizedDetails;
+    final singleInserted = await _insertSingleIncomeInvoice(
+      customerName: customerName,
+      total: total,
+      requestedNoInvoice: requestedInvoiceNumber,
+      includePph: includePph,
+      status: status,
+      issueDate: parsedIssueDate,
+      email: email,
+      noTelp: noTelp,
+      kopDate: kopDate,
+      kopLocation: kopLocation,
+      dueDate: dueDate,
+      pickup: pickup,
+      destination: destination,
+      armadaId: armadaId,
+      armadaStartDate: armadaStartDate,
+      armadaEndDate: armadaEndDate,
+      tonase: tonase,
+      harga: harga,
+      muatan: muatan,
+      namaSupir: namaSupir,
+      acceptedBy: acceptedBy,
+      customerId: customerId,
+      orderId: orderId,
+      details: singleDetailList,
+      createdBy: user.id,
+    );
+
+    await _createSanguExpenseFromIncomeBestEffort(
+      invoiceId: singleInserted['id'],
+      invoiceNumber: singleInserted['no_invoice'] ?? '-',
+      expenseDate: parsedIssueDate,
+      details: singleDetailList,
+      fallbackPickup: pickup,
+      fallbackDestination: destination,
+      fallbackArmadaId: armadaId,
+    );
+
+    await _setArmadaStatusBestEffort(
+      selectedArmadaIds,
+      status: 'Full',
+    );
+    await _syncArmadaStatusNowBestEffort();
+  }
+
+  Future<Map<String, String?>> _insertSingleIncomeInvoice({
+    required String customerName,
+    required double total,
+    required bool includePph,
+    required String status,
+    required DateTime issueDate,
+    required String createdBy,
+    String? requestedNoInvoice,
+    String? email,
+    String? noTelp,
+    DateTime? kopDate,
+    String? kopLocation,
+    DateTime? dueDate,
+    String? pickup,
+    String? destination,
+    String? armadaId,
+    DateTime? armadaStartDate,
+    DateTime? armadaEndDate,
+    double? tonase,
+    double? harga,
+    String? muatan,
+    String? namaSupir,
+    String? acceptedBy,
+    String? customerId,
+    String? orderId,
+    List<Map<String, dynamic>>? details,
+  }) async {
+    final date = issueDate.toIso8601String().split('T').first;
+    final normalizedKopLocation =
+        kopLocation?.trim().isEmpty == true ? null : kopLocation?.trim();
+    final driverNames = _resolveDriverNames(
+      explicitName: namaSupir,
+      details: details,
+    );
     final pphValue = includePph ? max(0, (total * 0.02).floorToDouble()) : 0.0;
     final totalBayarValue = max(0, total - pphValue);
+    final isCompanyInvoice = _isCompanyCustomerName(customerName.trim()) ||
+        _isCompanyInvoiceNumber(requestedNoInvoice ?? '');
+    var currentCode = (requestedNoInvoice ?? '').trim().isEmpty
+        ? await generateIncomeInvoiceNumber(
+            issuedDate: issueDate,
+            isCompany: isCompanyInvoice,
+          )
+        : (() {
+            final normalized = Formatters.invoiceNumber(
+              requestedNoInvoice!.trim(),
+              kopDate ?? issueDate,
+              customerName: customerName,
+              isCompany: isCompanyInvoice,
+            );
+            return normalized == '-' ? requestedNoInvoice.trim() : normalized;
+          })();
 
     final basePayload = <String, dynamic>{
       'tanggal': date,
@@ -757,7 +925,7 @@ class DashboardRepository {
       'total_bayar': totalBayarValue,
       'diterima_oleh':
           acceptedBy?.trim().isEmpty == true ? null : acceptedBy?.trim(),
-      'created_by': user.id,
+      'created_by': createdBy,
     };
 
     if (customerId != null && customerId.trim().isNotEmpty) {
@@ -769,11 +937,10 @@ class DashboardRepository {
     if (armadaId != null && armadaId.trim().isNotEmpty) {
       basePayload['armada_id'] = armadaId.trim();
     }
-    if (effectiveDetails.isNotEmpty) {
-      basePayload['rincian'] = effectiveDetails;
+    if (details != null && details.isNotEmpty) {
+      basePayload['rincian'] = details;
     }
 
-    var currentCode = code;
     var inserted = false;
     String insertedInvoiceId = '';
     for (var attempt = 0; attempt < 5; attempt++) {
@@ -785,9 +952,10 @@ class DashboardRepository {
         final insertedRow = await _supabase
             .from('invoices')
             .insert(payload)
-            .select('id')
+            .select('id,no_invoice')
             .maybeSingle();
         insertedInvoiceId = '${insertedRow?['id'] ?? ''}'.trim();
+        currentCode = '${insertedRow?['no_invoice'] ?? currentCode}'.trim();
         inserted = true;
         break;
       } on PostgrestException catch (e) {
@@ -800,10 +968,8 @@ class DashboardRepository {
           throw Exception('Gagal menambah invoice: ${e.message}');
         }
 
-        final isCompanyInvoice = _isCompanyCustomerName(customerName.trim()) ||
-            _isCompanyInvoiceNumber(currentCode);
         currentCode = await generateIncomeInvoiceNumber(
-          issuedDate: issuedDate ?? DateTime.now(),
+          issuedDate: issueDate,
           isCompany: isCompanyInvoice,
         );
       }
@@ -815,23 +981,10 @@ class DashboardRepository {
       );
     }
 
-    // Auto-create expense "Sangu sopir - Plat nomor" per departure detail
-    // based on rules in public.sangu_driver_rules.
-    await _createSanguExpenseFromIncomeBestEffort(
-      invoiceId: insertedInvoiceId,
-      invoiceNumber: currentCode,
-      expenseDate: parsedIssueDate,
-      details: effectiveDetails,
-      fallbackPickup: pickup,
-      fallbackDestination: destination,
-      fallbackArmadaId: armadaId,
-    );
-
-    await _setArmadaStatusBestEffort(
-      selectedArmadaIds,
-      status: 'Full',
-    );
-    await _syncArmadaStatusNowBestEffort();
+    return <String, String?>{
+      'id': insertedInvoiceId,
+      'no_invoice': currentCode,
+    };
   }
 
   Future<String> generateIncomeInvoiceNumber({
@@ -2741,6 +2894,45 @@ class DashboardRepository {
     ];
   }
 
+  List<Map<String, dynamic>> _sanitizeIncomeDetails(
+    List<Map<String, dynamic>> details,
+  ) {
+    return details
+        .map((row) => Map<String, dynamic>.from(row))
+        .where(_hasMeaningfulIncomeDetail)
+        .toList();
+  }
+
+  bool _hasMeaningfulIncomeDetail(Map<String, dynamic> detail) {
+    final textKeys = <String>[
+      'lokasi_muat',
+      'lokasi_bongkar',
+      'muatan',
+      'nama_supir',
+      'armada_id',
+      'armada_manual',
+      'armada_label',
+      'armada_start_date',
+      'armada_end_date',
+    ];
+    for (final key in textKeys) {
+      if ('${detail[key] ?? ''}'.trim().isNotEmpty) {
+        return true;
+      }
+    }
+    return _resolveIncomeDetailTotal(detail) > 0;
+  }
+
+  double _resolveIncomeDetailTotal(Map<String, dynamic> detail) {
+    final explicitSubtotal = _num(
+      detail['subtotal'] ?? detail['total'] ?? detail['jumlah'],
+    );
+    if (explicitSubtotal > 0) return explicitSubtotal;
+    final tonase = _num(detail['tonase']);
+    final harga = _num(detail['harga']);
+    return max(0, tonase * harga);
+  }
+
   Future<void> _createSanguExpenseFromIncomeBestEffort({
     String? invoiceId,
     required String invoiceNumber,
@@ -3112,6 +3304,21 @@ class DashboardRepository {
       }
     }
     if (bestRule != null && bestScore > 0) return bestRule;
+
+    // Fallback khusus: lokasi bongkar Purwodadi.
+    // Tetap dianjurkan menambahkan rule di tabel sangu_driver_rules,
+    // tapi fallback ini menjaga agar auto expense tetap terbentuk.
+    if (destinationNorm == 'purwodadi' ||
+        destinationNorm.contains('purwodadi')) {
+      return <String, dynamic>{
+        'tempat': 'PURWODADI',
+        'lokasi_muat': '',
+        'lokasi_bongkar': 'PURWODADI',
+        'nominal': 920000,
+        '__muat_norm': '',
+        '__bongkar_norm': 'purwodadi',
+      };
+    }
 
     // Fallback khusus: jika lokasi bongkar di Pare dan belum ada rule yang cocok,
     // otomatis gunakan nominal yang disepakati untuk biaya supir.
