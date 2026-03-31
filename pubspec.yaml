@@ -22,6 +22,7 @@ dependencies:
   url_launcher: ^6.3.1
   pdf: ^3.11.3
   printing: ^5.13.4
+  image: ^4.5.4
 
 dependency_overrides:
   flutter_secure_storage_windows:
@@ -47,6 +48,8 @@ flutter:
     - assets/images/iconapk.png
     - assets/images/kopsurat.jpeg
     - assets/kopsurat.jpeg
+    - assets/templates/invoice_table_template.xlsx
+    - tooling/windows/render_invoice_table.ps1
     - assets/images/pp-admin.webp
     - assets/images/pp-owner.webp
 

@@ -53,6 +53,37 @@ class Formatters {
         : floored.toString();
   }
 
+  static String decimalFixed(
+    num value, {
+    int decimalDigits = 1,
+    bool useGrouping = true,
+  }) {
+    final number = value.toDouble();
+    if (!number.isFinite) {
+      final zeroFormatter = useGrouping
+          ? NumberFormat.decimalPatternDigits(
+              locale: 'id_ID',
+              decimalDigits: decimalDigits,
+            )
+          : NumberFormat(
+              decimalDigits <= 0 ? '0' : '0.${'0' * decimalDigits}',
+              'id_ID',
+            );
+      return zeroFormatter.format(0);
+    }
+
+    final formatter = useGrouping
+        ? NumberFormat.decimalPatternDigits(
+            locale: 'id_ID',
+            decimalDigits: decimalDigits,
+          )
+        : NumberFormat(
+            decimalDigits <= 0 ? '0' : '0.${'0' * decimalDigits}',
+            'id_ID',
+          );
+    return formatter.format(number);
+  }
+
   static String rupiah(
     num value, {
     int maxDecimalDigits = 12,

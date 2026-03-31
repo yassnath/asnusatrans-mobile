@@ -1388,7 +1388,12 @@ class DashboardRepository {
 
       if (payloads.isEmpty) return;
 
-      await _supabase.from('invoices').upsert(payloads, onConflict: 'id');
+      for (final payload in payloads) {
+        final id = '${payload['id'] ?? ''}'.trim();
+        if (id.isEmpty) continue;
+        final updatePayload = Map<String, dynamic>.from(payload)..remove('id');
+        await _supabase.from('invoices').update(updatePayload).eq('id', id);
+      }
     } on PostgrestException catch (e) {
       throw Exception('Gagal update KOP invoice: ${e.message}');
     }
