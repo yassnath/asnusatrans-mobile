@@ -22,6 +22,42 @@ class InvoiceDeliveryResult {
   final String? customerId;
 }
 
+class AutoSanguBackfillReport {
+  const AutoSanguBackfillReport({
+    required this.processedInvoices,
+    required this.createdExpenses,
+    required this.updatedExpenses,
+    required this.deletedExpenses,
+    required this.skippedInvoices,
+    required this.failedInvoices,
+  });
+
+  final int processedInvoices;
+  final int createdExpenses;
+  final int updatedExpenses;
+  final int deletedExpenses;
+  final int skippedInvoices;
+  final int failedInvoices;
+
+  bool get hasFailures => failedInvoices > 0;
+}
+
+class _AutoSanguSyncResult {
+  const _AutoSanguSyncResult({
+    this.created = 0,
+    this.updated = 0,
+    this.deleted = 0,
+    this.skipped = 0,
+    this.failed = 0,
+  });
+
+  final int created;
+  final int updated;
+  final int deleted;
+  final int skipped;
+  final int failed;
+}
+
 class DashboardRepository {
   DashboardRepository(this._supabase);
 
@@ -874,7 +910,8 @@ class DashboardRepository {
     String? orderId,
     List<Map<String, dynamic>>? details,
   }) async {
-    final date = issueDate.toIso8601String().split('T').first;
+    final normalizedIssueDate = issueDate.toLocal();
+    final date = _dateOnly(normalizedIssueDate);
     final normalizedKopLocation =
         kopLocation?.trim().isEmpty == true ? null : kopLocation?.trim();
     final driverNames = _resolveDriverNames(
@@ -887,7 +924,7 @@ class DashboardRepository {
         _isCompanyInvoiceNumber(requestedNoInvoice ?? '');
     var currentCode = (requestedNoInvoice ?? '').trim().isEmpty
         ? await generateIncomeInvoiceNumber(
-            issuedDate: issueDate,
+            issuedDate: normalizedIssueDate,
             isCompany: isCompanyInvoice,
           )
         : (() {
@@ -969,7 +1006,7 @@ class DashboardRepository {
         }
 
         currentCode = await generateIncomeInvoiceNumber(
-          issuedDate: issueDate,
+          issuedDate: normalizedIssueDate,
           isCompany: isCompanyInvoice,
         );
       }
@@ -992,13 +1029,14 @@ class DashboardRepository {
     required bool isCompany,
   }) async {
     try {
+      final localIssuedDate = issuedDate.toLocal();
       final res = await _supabase
           .from('invoices')
           .select('no_invoice,nama_pelanggan,tanggal_kop,tanggal');
 
       final rows = _toMapList(res);
       var maxSeq = 0;
-      final yearTwoDigits = issuedDate.year % 100;
+      final yearTwoDigits = localIssuedDate.year % 100;
       for (final row in rows) {
         final no = '${row['no_invoice'] ?? ''}';
         final customerName = '${row['nama_pelanggan'] ?? ''}'.trim();
@@ -1008,7 +1046,7 @@ class DashboardRepository {
         if (isCompany != isCompanyEntry) continue;
         final seq = _extractInvoiceSequenceForMonth(
           noInvoice: no,
-          month: issuedDate.month,
+          month: localIssuedDate.month,
           yearTwoDigits: yearTwoDigits,
           isCompany: isCompany,
           referenceDate:
@@ -1017,7 +1055,7 @@ class DashboardRepository {
         if (seq > maxSeq) maxSeq = seq;
       }
 
-      final roman = _romanMonth(issuedDate.month);
+      final roman = _romanMonth(localIssuedDate.month);
       final seq = (maxSeq + 1).toString().padLeft(3, '0');
       final yy = yearTwoDigits.toString().padLeft(2, '0');
       if (isCompany) {
@@ -1044,8 +1082,8 @@ class DashboardRepository {
       throw Exception('Session tidak ditemukan. Silakan login ulang.');
     }
 
-    final issuedDate = expenseDate ?? DateTime.now();
-    final date = issuedDate.toIso8601String().split('T').first;
+    final issuedDate = (expenseDate ?? DateTime.now()).toLocal();
+    final date = _dateOnly(issuedDate);
 
     var inserted = false;
     String? lastError;
@@ -1465,16 +1503,17 @@ class DashboardRepository {
     DateTime issuedDate, {
     String? excludeExpenseId,
   }) async {
-    final month = issuedDate.month.toString().padLeft(2, '0');
-    final year = issuedDate.year.toString();
-    final yearInt = issuedDate.year;
-    final monthInt = issuedDate.month;
+    final localIssuedDate = issuedDate.toLocal();
+    final month = localIssuedDate.month.toString().padLeft(2, '0');
+    final year = localIssuedDate.year.toString();
+    final yearInt = localIssuedDate.year;
+    final monthInt = localIssuedDate.month;
     final startDate = DateTime(yearInt, monthInt, 1);
     final endDate = (monthInt == 12)
         ? DateTime(yearInt + 1, 1, 1).subtract(const Duration(days: 1))
         : DateTime(yearInt, monthInt + 1, 1).subtract(const Duration(days: 1));
-    final startIso = startDate.toIso8601String().split('T').first;
-    final endIso = endDate.toIso8601String().split('T').first;
+    final startIso = _dateOnly(startDate);
+    final endIso = _dateOnly(endDate);
 
     try {
       final rows = _toMapList(
@@ -1592,7 +1631,7 @@ class DashboardRepository {
         'customer_id': user.id,
         'pickup': pickup.trim(),
         'destination': destination.trim(),
-        'pickup_date': pickupDate.toIso8601String().split('T').first,
+        'pickup_date': _dateOnly(pickupDate),
         'pickup_time': pickupTime,
         'service': service.trim(),
         'fleet': fleet.trim(),
@@ -2697,7 +2736,11 @@ class DashboardRepository {
   }
 
   String _dateOnly(DateTime value) {
-    return value.toIso8601String().split('T').first;
+    final local = value.toLocal();
+    final year = local.year.toString().padLeft(4, '0');
+    final month = local.month.toString().padLeft(2, '0');
+    final day = local.day.toString().padLeft(2, '0');
+    return '$year-$month-$day';
   }
 
   bool _isLikelyUuid(String value) {
@@ -2973,7 +3016,7 @@ class DashboardRepository {
     return max(0, tonase * harga);
   }
 
-  Future<void> _createSanguExpenseFromIncomeBestEffort({
+  Future<_AutoSanguSyncResult> _createSanguExpenseFromIncomeBestEffort({
     String? invoiceId,
     required String invoiceNumber,
     required DateTime expenseDate,
@@ -2984,12 +3027,16 @@ class DashboardRepository {
     List<Map<String, dynamic>>? preloadedRules,
     Map<String, String>? preloadedPlateById,
   }) async {
-    if (details.isEmpty) return;
+    if (details.isEmpty) {
+      return const _AutoSanguSyncResult(skipped: 1);
+    }
     try {
       final preferredMarker = invoiceId?.trim().isNotEmpty == true
           ? invoiceId!.trim()
           : invoiceNumber.trim();
-      if (preferredMarker.isEmpty) return;
+      if (preferredMarker.isEmpty) {
+        return const _AutoSanguSyncResult(skipped: 1);
+      }
 
       final markerCandidates = <String>{
         preferredMarker,
@@ -3104,18 +3151,21 @@ class DashboardRepository {
       }
 
       if (expenseDetails.isEmpty) {
+        var deletedCount = 0;
         if (existingAutoRows.isNotEmpty) {
           for (final row in existingAutoRows) {
             final staleId = '${row['id'] ?? ''}'.trim();
             if (staleId.isEmpty) continue;
             try {
               await deleteExpense(staleId);
-            } catch (_) {
-              // Best effort.
-            }
+              deletedCount++;
+            } catch (_) {}
           }
         }
-        return;
+        return _AutoSanguSyncResult(
+          deleted: deletedCount,
+          skipped: 1,
+        );
       }
       final totalExpense = expenseDetails.fold<double>(
         0,
@@ -3132,15 +3182,17 @@ class DashboardRepository {
           note: 'AUTO_SANGU:$preferredMarker',
           details: expenseDetails,
         );
-        return;
+        return const _AutoSanguSyncResult(created: 1);
       }
 
       final primary = existingAutoRows.first;
       final primaryId = '${primary['id'] ?? ''}'.trim();
-      if (primaryId.isEmpty) return;
+      if (primaryId.isEmpty) {
+        return const _AutoSanguSyncResult(skipped: 1);
+      }
       await updateExpense(
         id: primaryId,
-        date: expenseDate.toIso8601String().split('T').first,
+        date: _dateOnly(expenseDate),
         status: 'Paid',
         total: totalExpense,
         kategori: 'Sangu Sopir',
@@ -3150,23 +3202,37 @@ class DashboardRepository {
         details: expenseDetails,
       );
 
+      var deletedCount = 0;
       if (existingAutoRows.length > 1) {
         for (final row in existingAutoRows.skip(1)) {
           final duplicateId = '${row['id'] ?? ''}'.trim();
           if (duplicateId.isEmpty) continue;
           await deleteExpense(duplicateId);
+          deletedCount++;
         }
       }
+      return _AutoSanguSyncResult(
+        updated: 1,
+        deleted: deletedCount,
+      );
     } catch (_) {
       // Best effort: invoice income tetap sukses walau auto-expense gagal.
+      return const _AutoSanguSyncResult(failed: 1);
     }
   }
 
-  Future<void> backfillAutoSanguExpensesForExistingInvoices() async {
+  Future<AutoSanguBackfillReport>
+      backfillAutoSanguExpensesForExistingInvoices() async {
+    var processedInvoices = 0;
+    var createdExpenses = 0;
+    var updatedExpenses = 0;
+    var deletedExpenses = 0;
+    var skippedInvoices = 0;
+    var failedInvoices = 0;
     try {
       final invoices = _toMapList(
         await _supabase.from('invoices').select(
-              'id,no_invoice,tanggal,tanggal_kop,lokasi_muat,lokasi_bongkar,armada_id,rincian,nama_pelanggan',
+              'id,no_invoice,tanggal,tanggal_kop,lokasi_muat,lokasi_bongkar,armada_id,armada_start_date,rincian,nama_pelanggan',
             ),
       );
 
@@ -3216,8 +3282,9 @@ class DashboardRepository {
         if (!validMarkers.contains(markerKey)) {
           try {
             await deleteExpense(id);
+            deletedExpenses++;
           } catch (_) {
-            // Best effort: lanjutkan cleanup marker lain.
+            failedInvoices++;
           }
         }
       }
@@ -3233,6 +3300,7 @@ class DashboardRepository {
         final invoiceId = '${invoice['id'] ?? ''}'.trim();
         final invoiceNumber = '${invoice['no_invoice'] ?? ''}'.trim();
         if (invoiceId.isEmpty && invoiceNumber.isEmpty) continue;
+        processedInvoices++;
 
         final details = _buildEffectiveIncomeDetails(
           details: _toMapList(invoice['rincian']),
@@ -3240,13 +3308,16 @@ class DashboardRepository {
           destination: '${invoice['lokasi_bongkar'] ?? ''}',
           armadaId: '${invoice['armada_id'] ?? ''}',
         );
-        if (details.isEmpty) continue;
+        if (details.isEmpty) {
+          skippedInvoices++;
+          continue;
+        }
         final expenseReferenceDate = _resolveExpenseReferenceDateFromDetails(
           details,
           fallbackDate: invoice['armada_start_date'] ?? invoice['tanggal'],
         );
 
-        await _createSanguExpenseFromIncomeBestEffort(
+        final result = await _createSanguExpenseFromIncomeBestEffort(
           invoiceId: invoiceId.isEmpty ? null : invoiceId,
           invoiceNumber: invoiceNumber.isEmpty ? '-' : invoiceNumber,
           expenseDate: expenseReferenceDate,
@@ -3257,10 +3328,23 @@ class DashboardRepository {
           preloadedRules: rules,
           preloadedPlateById: plateById,
         );
+        createdExpenses += result.created;
+        updatedExpenses += result.updated;
+        deletedExpenses += result.deleted;
+        skippedInvoices += result.skipped;
+        failedInvoices += result.failed;
       }
     } catch (_) {
-      // Best effort: UI tetap jalan walau backfill gagal.
+      failedInvoices++;
     }
+    return AutoSanguBackfillReport(
+      processedInvoices: processedInvoices,
+      createdExpenses: createdExpenses,
+      updatedExpenses: updatedExpenses,
+      deletedExpenses: deletedExpenses,
+      skippedInvoices: skippedInvoices,
+      failedInvoices: failedInvoices,
+    );
   }
 
   Future<List<Map<String, dynamic>>> _fetchSanguRulesBestEffort() async {
@@ -3299,7 +3383,9 @@ class DashboardRepository {
             };
           })
           .whereType<Map<String, dynamic>>()
-          .toList();
+          .toList()
+        ..sort((a, b) =>
+            _sanguRuleSpecificity(b).compareTo(_sanguRuleSpecificity(a)));
     } catch (_) {
       return const <Map<String, dynamic>>[];
     }
@@ -3350,11 +3436,15 @@ class DashboardRepository {
 
     Map<String, dynamic>? bestRule;
     var bestScore = 0;
+    var bestSpecificity = -1;
     for (final rule in rules) {
       final score = scoreRule(rule);
-      if (score > bestScore) {
+      final specificity = _sanguRuleSpecificity(rule);
+      if (score > bestScore ||
+          (score == bestScore && score > 0 && specificity > bestSpecificity)) {
         bestScore = score;
         bestRule = rule;
+        bestSpecificity = specificity;
       }
     }
     if (bestRule != null && bestScore > 0) return bestRule;
@@ -3447,15 +3537,72 @@ class DashboardRepository {
     return '';
   }
 
+  int _sanguRuleSpecificity(Map<String, dynamic> rule) {
+    final muatNorm = '${rule['__muat_norm'] ?? ''}'.trim();
+    final bongkarNorm = '${rule['__bongkar_norm'] ?? ''}'.trim();
+    final muatTokens = muatNorm.isEmpty
+        ? 0
+        : muatNorm.split(' ').where((e) => e.isNotEmpty).length;
+    final bongkarTokens = bongkarNorm.isEmpty
+        ? 0
+        : bongkarNorm.split(' ').where((e) => e.isNotEmpty).length;
+    return (muatNorm.isNotEmpty ? 10000 : 0) +
+        (bongkarNorm.isNotEmpty ? 5000 : 0) +
+        (muatTokens * 1000) +
+        (bongkarTokens * 500) +
+        (muatNorm.length * 10) +
+        bongkarNorm.length;
+  }
+
   String _normalizeSanguPlace(String value) {
     final normalized = value
         .toLowerCase()
         .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
+    if (normalized.isEmpty) return normalized;
+    if (normalized.contains('purwodadi')) return 'purwodadi';
+    if (normalized.contains('pare')) return 'pare';
+    if (normalized.contains('sudali') || normalized.contains('soedali')) {
+      return 'sudali';
+    }
     if (normalized.contains('kedawung') || normalized.contains('dawung')) {
       return 'kedawung';
     }
+    if (normalized.contains('singosari') ||
+        (normalized.contains('ksi') && normalized.contains('singosari'))) {
+      return 'singosari';
+    }
+    if (normalized.contains('cj') && normalized.contains('mojoagung')) {
+      return 'mojoagung';
+    }
+    if (normalized.contains('mojoagung')) return 'mojoagung';
+    if (normalized.contains('bricon') && normalized.contains('mojo')) {
+      return 'bricon';
+    }
+    if (normalized.contains('bricon')) return 'bricon';
+    if (normalized.contains('kletek') && normalized.contains('bmc')) {
+      return 'kletek';
+    }
+    if (normalized.contains('safelock')) return 'safelock';
+    if (normalized.contains('tuban') || normalized.contains('jenu')) {
+      return 'tuban jenu';
+    }
+    if (normalized.contains('kediri')) return 'kediri';
+    if (normalized.contains('sragen')) return 'sragen';
+    if (normalized.contains('bimoli')) return 'bimoli';
+    if (normalized.contains('batang')) return 'batang';
+    if (normalized.contains('kig')) return 'kig';
+    if (normalized.contains('kendal')) return 'kendal';
+    if (normalized.contains('gema')) return 'gema';
+    if (normalized.contains('mkp')) return 'mkp';
+    if (normalized.contains('sgm')) return 'sgm';
+    if (normalized.contains('molindo')) return 'molindo';
+    if (normalized.contains('muncar')) return 'muncar';
+    if (normalized.contains('tongas')) return 'tongas';
+    if (normalized.contains('tanggulangin')) return 'tanggulangin';
+    if (normalized.contains('tim')) return 'tim';
+    if (normalized.contains('aspal')) return 'aspal';
     return normalized;
   }
 

@@ -40,14 +40,15 @@ class _AuthGateState extends State<AuthGate> {
 
   Future<void> _bootstrap() async {
     try {
-      await _authRepository.signOut().timeout(const Duration(seconds: 1));
+      _session = await _authRepository
+          .restoreSession()
+          .timeout(const Duration(seconds: 2));
     } catch (_) {
-      // ignore: on startup we force fresh sign in for security.
+      _session = null;
     }
     await Future<void>.delayed(_loadingDuration);
     if (!mounted) return;
     setState(() {
-      _session = null;
       _loading = false;
       _showSignUp = false;
     });

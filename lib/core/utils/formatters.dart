@@ -106,15 +106,22 @@ class Formatters {
     final ddMmYyyy = RegExp(r'^\d{2}-\d{2}-\d{4}$');
     if (ddMmYyyy.hasMatch(raw)) {
       final parts = raw.split('-');
-      return DateTime.tryParse('${parts[2]}-${parts[1]}-${parts[0]}');
+      final day = int.tryParse(parts[0]) ?? 1;
+      final month = int.tryParse(parts[1]) ?? 1;
+      final year = int.tryParse(parts[2]) ?? 1970;
+      return DateTime(year, month, day);
     }
 
     final yyyyMmDd = RegExp(r'^\d{4}-\d{2}-\d{2}$');
     if (yyyyMmDd.hasMatch(raw)) {
-      return DateTime.tryParse(raw);
+      final parts = raw.split('-');
+      final year = int.tryParse(parts[0]) ?? 1970;
+      final month = int.tryParse(parts[1]) ?? 1;
+      final day = int.tryParse(parts[2]) ?? 1;
+      return DateTime(year, month, day);
     }
 
-    return DateTime.tryParse(raw);
+    return DateTime.tryParse(raw)?.toLocal();
   }
 
   static String dmy(dynamic value) {

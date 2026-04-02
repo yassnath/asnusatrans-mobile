@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -17,6 +18,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/cvant_button_styles.dart';
 import '../../../core/theme/theme_controller.dart';
+import '../../../core/config/app_config.dart';
 import '../../../core/i18n/language_controller.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/cvant_dropdown_field.dart';
@@ -33,6 +35,8 @@ import 'widgets/latest_customers_card.dart';
 import 'widgets/metric_card.dart';
 import 'widgets/recent_activity_card.dart';
 import 'widgets/recent_transactions_card.dart';
+
+part 'dashboard_invoice_printing.dart';
 
 class _InvoicePrefillData {
   const _InvoicePrefillData({
@@ -5624,16 +5628,6 @@ class _InvoicePrintGroup {
   Map<String, dynamic> get baseItem => items.first;
 }
 
-class _InvoiceTableRenderResult {
-  const _InvoiceTableRenderResult({
-    required this.image,
-    required this.aspectRatio,
-  });
-
-  final pw.MemoryImage image;
-  final double aspectRatio;
-}
-
 class _FixedInvoiceBatch {
   const _FixedInvoiceBatch({
     required this.batchId,
@@ -5843,7 +5837,17 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
     if (!_backfillRunning) {
       _backfillRunning = true;
       try {
-        await widget.repository.backfillAutoSanguExpensesForExistingInvoices();
+        final report = await widget.repository
+            .backfillAutoSanguExpensesForExistingInvoices();
+        if (mounted && report.hasFailures) {
+          _snack(
+            _t(
+              'Sebagian auto expense sangu sopir belum berhasil disinkronkan. Coba refresh sekali lagi.',
+              'Some driver allowance auto expenses could not be synced yet. Please refresh once more.',
+            ),
+            error: true,
+          );
+        }
       } catch (_) {
         // Best effort: tetap lanjut reload data list.
       } finally {
@@ -5860,7 +5864,17 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
     if (_backfillRunning) return;
     _backfillRunning = true;
     Future<void>(() async {
-      await widget.repository.backfillAutoSanguExpensesForExistingInvoices();
+      final report = await widget.repository
+          .backfillAutoSanguExpensesForExistingInvoices();
+      if (mounted && report.hasFailures) {
+        _snack(
+          _t(
+            'Sebagian auto expense sangu sopir masih perlu sinkronisasi ulang.',
+            'Some driver allowance auto expenses still need another sync pass.',
+          ),
+          error: true,
+        );
+      }
       if (!mounted) return;
       setState(() {
         _future = _load();
@@ -8415,181 +8429,6 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
     return number.trim().isEmpty ? '-' : number.trim();
   }
 
-  String _safePdfFileName(String value) {
-    final safe = value.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
-    return safe.isEmpty ? 'invoice' : safe;
-  }
-
-  bool get _canRenderInvoiceTableWithExcel => !kIsWeb && Platform.isWindows;
-
-  Future<Uint8List?> _renderInvoiceTableImageWithExcel({
-    required List<Map<String, String>> rows,
-    required int rowCount,
-    String renderMode = 'table',
-    Map<String, String>? summaryValues,
-  }) async {
-    if (!_canRenderInvoiceTableWithExcel) return null;
-    try {
-      final tempDir = await Directory.systemTemp.createTemp(
-        'cvant_invoice_excel_',
-      );
-      final templateBytes =
-          await rootBundle.load('assets/templates/invoice_table_template.xlsx');
-      final templatePath =
-          '${tempDir.path}${Platform.pathSeparator}invoice_table_template.xlsx';
-      final payloadPath =
-          '${tempDir.path}${Platform.pathSeparator}invoice_table_payload.json';
-      final outputPath =
-          '${tempDir.path}${Platform.pathSeparator}invoice_table.pdf';
-      final scriptPath =
-          '${tempDir.path}${Platform.pathSeparator}render_invoice_table.ps1';
-
-      await File(templatePath).writeAsBytes(
-        templateBytes.buffer.asUint8List(),
-        flush: true,
-      );
-      final scriptContent = await rootBundle
-          .loadString('tooling/windows/render_invoice_table.ps1');
-      await File(scriptPath).writeAsString(scriptContent, flush: true);
-      await File(payloadPath).writeAsString(
-        jsonEncode({
-          'rowCount': rowCount,
-          'rows': rows,
-          if (summaryValues != null) 'summaryValues': summaryValues,
-        }),
-        flush: true,
-      );
-
-      final result = await Process.run(
-        'powershell',
-        <String>[
-          '-NoProfile',
-          '-ExecutionPolicy',
-          'Bypass',
-          '-File',
-          scriptPath,
-          '-TemplatePath',
-          templatePath,
-          '-PayloadPath',
-          payloadPath,
-          '-OutputPath',
-          outputPath,
-          '-RenderMode',
-          renderMode,
-        ],
-      );
-      if (result.exitCode != 0) {
-        debugPrint(
-          'Excel table render failed: ${result.stderr}\n${result.stdout}',
-        );
-        return null;
-      }
-      final file = File(outputPath);
-      if (!await file.exists()) return null;
-      final pdfBytes = await file.readAsBytes();
-      final rasterPage = await Printing.raster(
-        pdfBytes,
-        pages: const [0],
-        dpi: 300,
-      ).first;
-      final bytes = _trimWhiteMarginsFromPng(
-        await rasterPage.toPng(),
-        horizontalPadding: renderMode == 'summary' ? 0 : 6,
-        verticalPadding: renderMode == 'summary' ? 0 : 1,
-      );
-      unawaited(tempDir.delete(recursive: true));
-      return bytes;
-    } catch (error, stackTrace) {
-      debugPrint('Excel table render error: $error\n$stackTrace');
-      return null;
-    }
-  }
-
-  Future<bool> _showPdfPreviewDialog({
-    required Uint8List bytes,
-    required String title,
-  }) async {
-    if (!mounted) return false;
-    final shouldPrint = await showDialog<bool>(
-          context: context,
-          barrierColor: AppColors.popupOverlay,
-          builder: (context) {
-            return Dialog(
-              insetPadding: const EdgeInsets.all(16),
-              child: SizedBox(
-                width: 980,
-                height: 760,
-                child: Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 14, 8, 8),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              title,
-                              style: Theme.of(context).textTheme.titleLarge,
-                            ),
-                          ),
-                          IconButton(
-                            onPressed: () => Navigator.pop(context, false),
-                            icon: const Icon(Icons.close),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const Divider(height: 1),
-                    Expanded(
-                      child: PdfPreview(
-                        build: (_) async => bytes,
-                        allowPrinting: false,
-                        allowSharing: false,
-                        canChangePageFormat: false,
-                        canChangeOrientation: false,
-                        canDebug: false,
-                        pdfFileName: title,
-                      ),
-                    ),
-                    const Divider(height: 1),
-                    Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          OutlinedButton(
-                            onPressed: () => Navigator.pop(context, false),
-                            style: CvantButtonStyles.outlined(
-                              context,
-                              color: AppColors.isLight(context)
-                                  ? AppColors.textSecondaryLight
-                                  : const Color(0xFFE2E8F0),
-                              borderColor: AppColors.neutralOutline,
-                            ),
-                            child: Text(_t('Tutup', 'Close')),
-                          ),
-                          const SizedBox(width: 10),
-                          FilledButton.icon(
-                            onPressed: () => Navigator.pop(context, true),
-                            style: CvantButtonStyles.filled(
-                              context,
-                              color: AppColors.success,
-                            ),
-                            icon: const Icon(Icons.print_outlined),
-                            label: Text(_t('Cetak', 'Print')),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        ) ??
-        false;
-    return shouldPrint;
-  }
-
   Future<void> _printInvoicePdf(
     Map<String, dynamic> item,
     List<Map<String, dynamic>> detailList, {
@@ -8729,6 +8568,14 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
         String renderMode = 'table',
       }) async {
         final printableRows = buildPrintableRows(compact: compact);
+        final summaryValues = renderMode == 'table_with_summary' ||
+                renderMode == 'table_with_total'
+            ? <String, String>{
+                'subtotal': formatRupiahNoPrefix(subtotal),
+                'pph': formatRupiahNoPrefix(pph),
+                'total': formatRupiahNoPrefix(total),
+              }
+            : null;
         final payloadRows = <Map<String, String>>[];
         for (var index = 0; index < printableRows.length; index++) {
           final row = printableRows[index];
@@ -8757,19 +8604,35 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
             'total': hasData ? formatRupiahNoPrefix(rowSubtotal) : '',
           });
         }
-        final bytes = await _renderInvoiceTableImageWithExcel(
+        Uint8List? bytes;
+        var renderSource = 'Portable fallback';
+
+        bytes = await _renderInvoiceTableImageWithExcel(
           rows: payloadRows,
           rowCount: printableRows.length,
           renderMode: renderMode,
-          summaryValues: renderMode == 'table_with_summary' ||
-                  renderMode == 'table_with_total'
-              ? <String, String>{
-                  'subtotal': formatRupiahNoPrefix(subtotal),
-                  'pph': formatRupiahNoPrefix(pph),
-                  'total': formatRupiahNoPrefix(total),
-                }
-              : null,
+          summaryValues: summaryValues,
         );
+        if (bytes != null) {
+          renderSource = 'Excel local (Windows)';
+        } else {
+          bytes = await _renderInvoiceTableImageViaService(
+            rows: payloadRows,
+            rowCount: printableRows.length,
+            renderMode: renderMode,
+            summaryValues: summaryValues,
+          );
+          if (bytes != null) {
+            renderSource = 'Excel service (Windows)';
+          } else {
+            bytes = await _renderInvoiceTableImagePortable(
+              rows: payloadRows,
+              rowCount: printableRows.length,
+              renderMode: renderMode,
+              summaryValues: summaryValues,
+            );
+          }
+        }
         if (bytes == null) return null;
         final decodedImage = img.decodeImage(bytes);
         final aspectRatio = decodedImage == null || decodedImage.height == 0
@@ -8778,6 +8641,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
         return _InvoiceTableRenderResult(
           image: pw.MemoryImage(bytes),
           aspectRatio: aspectRatio,
+          renderSource: renderSource,
         );
       }
 
@@ -9890,6 +9754,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
         13.0 * PdfPageFormat.inch,
       );
       final pdfMargin = usePortrait ? 24.0 : 18.0;
+      final tableRenderInfo = usePortrait
+          ? fullExcelTableImage?.renderSource
+          : compactExcelTableImage?.renderSource;
       final doc = pw.Document();
 
       if (usePortrait) {
@@ -9939,6 +9806,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
       final confirmed = await _showPdfPreviewDialog(
         bytes: pdfBytes,
         title: pdfName,
+        renderInfo: tableRenderInfo,
       );
       if (!confirmed) return;
       await Printing.layoutPdf(

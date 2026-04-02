@@ -35,7 +35,6 @@ class _SignInPageState extends State<SignInPage> {
   bool _loading = false;
   bool _biometricLoading = false;
   bool _showBiometricButton = false;
-  bool _autoBiometricPromptShown = false;
   String _biometricLabel = 'Fingerprint';
 
   @override
@@ -58,13 +57,6 @@ class _SignInPageState extends State<SignInPage> {
       _showBiometricButton = state.canUseLogin;
       _biometricLabel = state.label;
     });
-    if (state.canUseLogin && !_autoBiometricPromptShown) {
-      _autoBiometricPromptShown = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || _loading || _biometricLoading) return;
-        _submitBiometric(showCancelPopup: false);
-      });
-    }
   }
 
   Future<void> _submit() async {
