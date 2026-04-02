@@ -1271,15 +1271,16 @@ class DashboardRepository {
           status: 'Full',
         );
       }
+      final expenseReferenceDate = _resolveExpenseReferenceDateFromDetails(
+        effectiveDetails,
+        fallbackDate: resolvedIssueDate,
+      );
       await _createSanguExpenseFromIncomeBestEffort(
         invoiceId: id,
         invoiceNumber: effectiveInvoiceNumber.isEmpty
             ? '${payload['no_invoice'] ?? ''}'.trim()
             : effectiveInvoiceNumber,
-        expenseDate: Formatters.parseDate(
-              (kopDate?.trim().isNotEmpty == true) ? kopDate : date,
-            ) ??
-            DateTime.now(),
+        expenseDate: expenseReferenceDate,
         details: effectiveDetails,
         fallbackPickup: pickup,
         fallbackDestination: destination,
@@ -2425,6 +2426,16 @@ class DashboardRepository {
     return double.tryParse(value.toString()) ?? 0;
   }
 
+  String _firstNonEmptyText(Iterable<dynamic> values) {
+    for (final value in values) {
+      final text = '${value ?? ''}'.trim();
+      if (text.isNotEmpty && text.toLowerCase() != 'null') {
+        return text;
+      }
+    }
+    return '';
+  }
+
   double _expenseDetailAmount(Map<String, dynamic> detail) {
     final candidates = <dynamic>[
       detail['jumlah'],
@@ -2486,6 +2497,30 @@ class DashboardRepository {
 
   DateTime? _invoiceReferenceDate(Map<String, dynamic> invoice) {
     return Formatters.parseDate(_invoiceReferenceDateValue(invoice));
+  }
+
+  dynamic _expenseReferenceDateValueFromDetails(
+    List<Map<String, dynamic>> details, {
+    dynamic fallbackDate,
+  }) {
+    for (final row in details) {
+      final raw = row['armada_start_date'];
+      if (Formatters.parseDate(raw) != null) return raw;
+    }
+    return fallbackDate;
+  }
+
+  DateTime _resolveExpenseReferenceDateFromDetails(
+    List<Map<String, dynamic>> details, {
+    dynamic fallbackDate,
+  }) {
+    return Formatters.parseDate(
+          _expenseReferenceDateValueFromDetails(
+            details,
+            fallbackDate: fallbackDate,
+          ),
+        ) ??
+        DateTime.now();
   }
 
   DateTime _safeDate(String dmy) {
@@ -3009,17 +3044,30 @@ class DashboardRepository {
 
       final expenseDetails = <Map<String, dynamic>>[];
       for (final detail in details) {
-        final pickup =
-            '${detail['lokasi_muat'] ?? fallbackPickup ?? ''}'.trim();
-        final bongkar =
-            '${detail['lokasi_bongkar'] ?? fallbackDestination ?? ''}'.trim();
+        final pickup = _firstNonEmptyText([
+          detail['lokasi_muat'],
+          fallbackPickup,
+        ]);
+        final bongkar = _firstNonEmptyText([
+          detail['lokasi_bongkar'],
+          fallbackDestination,
+        ]);
+        final effectiveArmadaId = _firstNonEmptyText([
+          detail['armada_id'],
+          fallbackArmadaId,
+        ]);
+        final effectiveArmadaManual = _firstNonEmptyText([
+          detail['armada_manual'],
+        ]);
+        final effectiveArmadaLabel = _firstNonEmptyText([
+          detail['armada_label'],
+          detail['armada'],
+        ]);
         final hasDepartureData = pickup.isNotEmpty ||
             bongkar.isNotEmpty ||
-            '${detail['armada_id'] ?? ''}'.trim().isNotEmpty ||
-            '${detail['armada_manual'] ?? ''}'.trim().isNotEmpty ||
-            '${detail['armada_label'] ?? detail['armada'] ?? ''}'
-                .trim()
-                .isNotEmpty;
+            effectiveArmadaId.isNotEmpty ||
+            effectiveArmadaManual.isNotEmpty ||
+            effectiveArmadaLabel.isNotEmpty;
         if (!hasDepartureData) {
           continue;
         }
@@ -3032,7 +3080,7 @@ class DashboardRepository {
         final plate = _resolvePlateTextFromDetail(
           detail,
           plateById: plateById,
-          fallbackArmadaId: fallbackArmadaId,
+          fallbackArmadaId: effectiveArmadaId,
         );
         final plateLabel = plate.isEmpty ? '-' : plate;
         final pickupLabel = pickup.isEmpty ? '-' : pickup;
@@ -3193,14 +3241,15 @@ class DashboardRepository {
           armadaId: '${invoice['armada_id'] ?? ''}',
         );
         if (details.isEmpty) continue;
+        final expenseReferenceDate = _resolveExpenseReferenceDateFromDetails(
+          details,
+          fallbackDate: invoice['armada_start_date'] ?? invoice['tanggal'],
+        );
 
         await _createSanguExpenseFromIncomeBestEffort(
           invoiceId: invoiceId.isEmpty ? null : invoiceId,
           invoiceNumber: invoiceNumber.isEmpty ? '-' : invoiceNumber,
-          expenseDate: Formatters.parseDate(
-                invoice['tanggal_kop'] ?? invoice['tanggal'],
-              ) ??
-              DateTime.now(),
+          expenseDate: expenseReferenceDate,
           details: details,
           fallbackPickup: '${invoice['lokasi_muat'] ?? ''}',
           fallbackDestination: '${invoice['lokasi_bongkar'] ?? ''}',
@@ -3360,8 +3409,10 @@ class DashboardRepository {
     required Map<String, String> plateById,
     String? fallbackArmadaId,
   }) {
-    final detailArmadaId =
-        '${detail['armada_id'] ?? fallbackArmadaId ?? ''}'.trim();
+    final detailArmadaId = _firstNonEmptyText([
+      detail['armada_id'],
+      fallbackArmadaId,
+    ]);
     if (detailArmadaId.isNotEmpty) {
       final plateByMap = plateById[detailArmadaId];
       if (plateByMap != null && plateByMap.trim().isNotEmpty) {
@@ -3369,21 +3420,25 @@ class DashboardRepository {
       }
     }
 
-    final directPlate = '${detail['plat_nomor'] ?? detail['no_polisi'] ?? ''}'
-        .trim()
-        .toUpperCase();
+    final directPlate = _firstNonEmptyText([
+      detail['plat_nomor'],
+      detail['no_polisi'],
+    ]).toUpperCase();
     if (directPlate.isNotEmpty && directPlate != '-') {
       return directPlate;
     }
 
-    final manual = '${detail['armada_manual'] ?? ''}'.trim().toUpperCase();
+    final manual = _firstNonEmptyText([
+      detail['armada_manual'],
+    ]).toUpperCase();
     if (manual.isNotEmpty && manual != '-') {
       return manual;
     }
 
-    final label = '${detail['armada_label'] ?? detail['armada'] ?? ''}'
-        .trim()
-        .toUpperCase();
+    final label = _firstNonEmptyText([
+      detail['armada_label'],
+      detail['armada'],
+    ]).toUpperCase();
     final match =
         RegExp(r'\b[A-Z]{1,2}\s?\d{1,4}\s?[A-Z]{1,3}\b').firstMatch(label);
     if (match != null) {
@@ -3393,11 +3448,15 @@ class DashboardRepository {
   }
 
   String _normalizeSanguPlace(String value) {
-    return value
+    final normalized = value
         .toLowerCase()
         .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
+    if (normalized.contains('kedawung') || normalized.contains('dawung')) {
+      return 'kedawung';
+    }
+    return normalized;
   }
 
   Future<void> _setArmadaStatusBestEffort(

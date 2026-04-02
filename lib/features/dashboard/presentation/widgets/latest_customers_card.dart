@@ -28,9 +28,9 @@ class _LatestCustomersCardState extends State<LatestCustomersCard> {
   String _typeLabel(String rawType, bool isEn) {
     final lower = rawType.toLowerCase();
     if (lower.contains('expense')) {
-      return isEn ? 'Expense' : 'Pengeluaran';
+      return 'Expense';
     }
-    return isEn ? 'Income' : 'Pemasukkan';
+    return 'Income';
   }
 
   @override

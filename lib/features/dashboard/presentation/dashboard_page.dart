@@ -2940,6 +2940,7 @@ class _AdminCreateIncomeView extends StatefulWidget {
 class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
   static const _customerManualOptionId = '__other__';
   static const _manualArmadaOptionId = '__other_manual_armada__';
+  static const _manualDriverOptionId = '__other_manual_driver__';
   static const _companyKeywords = <String>[
     r'\bcv\b',
     r'\bpt\b',
@@ -2963,6 +2964,31 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
     'Oso',
     'Legundi',
   ];
+  static const List<String> _defaultDriverOptions = [
+    'Ami',
+    'Candra',
+    'Yusak',
+    'Chrisjohn',
+    'Sulkan',
+    'Gambit',
+    'Victor',
+    'Rio',
+    'Taman',
+    'Matius',
+    'Batok',
+  ];
+  static const Map<String, String> _defaultDriverByPlate = {
+    'B 9613 TIT': 'Ami',
+    'B 9615 TIT': 'Candra',
+    'W 8045 UD': 'Yusak',
+    'L 8465 UDD': 'Chrisjohn',
+    'L 8581 UH': 'Sulkan',
+    'L 8607 UJ': 'Gambit',
+    'B 9593 UVW': 'Victor',
+    'B 9591 UVW': 'Rio',
+    'B 9064 TIU': 'Taman',
+    'L 9548 UI': 'Matius',
+  };
 
   final _customer = TextEditingController();
   final _email = TextEditingController();
@@ -2995,6 +3021,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
   String _prefillArmadaName = '';
   String _selectedCustomerOptionId = _customerManualOptionId;
   int _detailFieldRefreshToken = 0;
+  int _hargaFieldRefreshToken = 0;
   String? _linkedCustomerId;
   String? _linkedOrderId;
   bool get _isEn => LanguageController.language.value == AppLanguage.en;
@@ -3092,11 +3119,17 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
 
     Map<String, dynamic> toDetailRow(Map<String, dynamic> option) {
       final hargaText = _safeNumberInputText(option['harga']);
+      final driverText = _safeInputText(option['nama_supir']);
+      final isDriverManual =
+          driverText.isNotEmpty && !_isKnownDriverOption(driverText);
       return {
         'lokasi_muat': _safeInputText(option['lokasi_muat']),
         'lokasi_bongkar': _safeInputText(option['lokasi_bongkar']),
         'muatan': _safeInputText(option['muatan']),
-        'nama_supir': _safeInputText(option['nama_supir']),
+        'nama_supir': driverText,
+        'nama_supir_manual': isDriverManual ? driverText : '',
+        'nama_supir_is_manual': isDriverManual,
+        'nama_supir_auto': false,
         'armada_id': _safeInputText(option['armada_id']),
         'armada_manual': _safeInputText(option['armada_manual']),
         'armada_is_manual':
@@ -3216,6 +3249,25 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
         .trim();
   }
 
+  bool _lokasiKeyMatches(String inputKey, String ruleKey) {
+    if (inputKey.isEmpty || ruleKey.isEmpty) return false;
+    if (inputKey == ruleKey) return true;
+
+    final inputTokens = inputKey.split(' ').where((part) => part.isNotEmpty);
+    final ruleTokens = ruleKey.split(' ').where((part) => part.isNotEmpty);
+    final inputList = inputTokens.toList(growable: false);
+    final ruleList = ruleTokens.toList(growable: false);
+
+    if (inputList.length < 2 || ruleList.isEmpty) {
+      return false;
+    }
+
+    final shorter = inputList.length <= ruleList.length ? inputList : ruleList;
+    final longer = inputList.length <= ruleList.length ? ruleList : inputList;
+    return shorter.length >= 2 &&
+        shorter.every((token) => longer.contains(token));
+  }
+
   double? _resolveHargaPerTon({
     required String lokasiMuat,
     required String lokasiBongkar,
@@ -3231,11 +3283,13 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
     for (final rule in _hargaPerTonRules) {
       final ruleBongkar =
           _normalizeLokasiKey('${rule['lokasi_bongkar'] ?? ''}'.trim());
-      if (ruleBongkar != bongkarKey) continue;
+      if (!_lokasiKeyMatches(bongkarKey, ruleBongkar)) continue;
 
       final ruleMuat =
           _normalizeLokasiKey('${rule['lokasi_muat'] ?? ''}'.trim());
-      if (muatKey.isNotEmpty && ruleMuat == muatKey) {
+      if (muatKey.isNotEmpty &&
+          ruleMuat.isNotEmpty &&
+          _lokasiKeyMatches(muatKey, ruleMuat)) {
         exactMatch = rule;
         break;
       }
@@ -3249,24 +3303,96 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
     return resolved > 0 ? resolved : null;
   }
 
-  void _applyAutoHargaPerTon(
+  bool _applyAutoHargaPerTon(
     Map<String, dynamic> row, {
     bool force = false,
   }) {
+    final previousHarga = '${row['harga'] ?? ''}'.trim();
+    final wasAuto = row['harga_auto'] == true;
     final harga = _resolveHargaPerTon(
       lokasiMuat: '${row['lokasi_muat'] ?? ''}',
       lokasiBongkar: '${row['lokasi_bongkar'] ?? ''}',
     );
-    if (harga == null || harga <= 0) return;
+    if (harga == null || harga <= 0) {
+      if (force && wasAuto && previousHarga.isNotEmpty) {
+        row['harga'] = '';
+        row['harga_auto'] = true;
+        return true;
+      }
+      return false;
+    }
 
     final currentHarga = _toNum(row['harga']);
     final isAuto = row['harga_auto'] == true;
     if (!force && currentHarga > 0 && !isAuto) {
+      return false;
+    }
+
+    final nextHarga = _safeNumberInputText(harga);
+    row['harga'] = nextHarga;
+    row['harga_auto'] = true;
+    return previousHarga != nextHarga || !wasAuto;
+  }
+
+  bool _isKnownDriverOption(String value) {
+    final normalized = _normalizeText(value);
+    if (normalized.isEmpty) return false;
+    return _defaultDriverOptions
+        .any((option) => _normalizeText(option) == normalized);
+  }
+
+  String? _resolveDefaultDriverForRow(
+    Map<String, dynamic> row, {
+    required List<Map<String, dynamic>> armadas,
+  }) {
+    var plate = '';
+    final armadaId = '${row['armada_id'] ?? ''}'.trim();
+    if (armadaId.isNotEmpty) {
+      Map<String, dynamic>? selected;
+      for (final armada in armadas) {
+        if ('${armada['id'] ?? ''}'.trim() == armadaId) {
+          selected = armada;
+          break;
+        }
+      }
+      plate = _normalizePlateText('${selected?['plat_nomor'] ?? ''}');
+    }
+    if (plate.isEmpty) {
+      final manual = '${row['armada_manual'] ?? ''}'.trim();
+      if (manual.isNotEmpty) {
+        plate = _extractPlateFromText(manual) ?? _normalizePlateText(manual);
+      }
+    }
+    if (plate.isEmpty) return null;
+    for (final entry in _defaultDriverByPlate.entries) {
+      if (_normalizePlateText(entry.key) == plate) {
+        return entry.value;
+      }
+    }
+    return null;
+  }
+
+  void _applyDefaultDriverForRow(
+    Map<String, dynamic> row, {
+    required List<Map<String, dynamic>> armadas,
+    bool force = false,
+  }) {
+    final defaultDriver = _resolveDefaultDriverForRow(row, armadas: armadas);
+    if (defaultDriver == null || defaultDriver.trim().isEmpty) return;
+
+    final currentDriver = '${row['nama_supir'] ?? ''}'.trim();
+    final isDriverManual = row['nama_supir_is_manual'] == true;
+    final isDriverAuto = row['nama_supir_auto'] == true;
+    if (!force &&
+        currentDriver.isNotEmpty &&
+        (isDriverManual || !isDriverAuto)) {
       return;
     }
 
-    row['harga'] = _safeNumberInputText(harga);
-    row['harga_auto'] = true;
+    row['nama_supir'] = defaultDriver;
+    row['nama_supir_manual'] = '';
+    row['nama_supir_is_manual'] = false;
+    row['nama_supir_auto'] = true;
   }
 
   List<Map<String, dynamic>> _filterCustomerOptionsByMode(
@@ -3357,6 +3483,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
     _prefillArmadaResolved = true;
     if (matched == null) return;
     _details.first['armada_id'] = '${matched['id']}';
+    _applyDefaultDriverForRow(_details.first, armadas: armadas);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       setState(() {});
@@ -3395,6 +3522,9 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
       'lokasi_bongkar': '',
       'muatan': '',
       'nama_supir': '',
+      'nama_supir_manual': '',
+      'nama_supir_is_manual': false,
+      'nama_supir_auto': false,
       'armada_id': '',
       'armada_manual': '',
       'armada_is_manual': false,
@@ -3491,6 +3621,19 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
       row['armada_manual'] = '';
       row['armada_is_manual'] = false;
       changed = true;
+    }
+    for (final row in _details) {
+      final beforeDriver = '${row['nama_supir'] ?? ''}'.trim();
+      final beforeManual = '${row['nama_supir_manual'] ?? ''}'.trim();
+      final beforeIsManual = row['nama_supir_is_manual'] == true;
+      final beforeIsAuto = row['nama_supir_auto'] == true;
+      _applyDefaultDriverForRow(row, armadas: armadas);
+      if (beforeDriver != '${row['nama_supir'] ?? ''}'.trim() ||
+          beforeManual != '${row['nama_supir_manual'] ?? ''}'.trim() ||
+          beforeIsManual != (row['nama_supir_is_manual'] == true) ||
+          beforeIsAuto != (row['nama_supir_auto'] == true)) {
+        changed = true;
+      }
     }
     if (changed) {
       _detailFieldRefreshToken++;
@@ -3977,10 +4120,13 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                                   row['lokasi_muat'] = value ?? '';
                                   row['lokasi_muat_manual'] = '';
                                 }
-                                _applyAutoHargaPerTon(
+                                final hargaChanged = _applyAutoHargaPerTon(
                                   row,
                                   force: row['harga_auto'] == true,
                                 );
+                                if (hargaChanged) {
+                                  _hargaFieldRefreshToken++;
+                                }
                               });
                             },
                           ),
@@ -4000,11 +4146,15 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                               onChanged: (value) {
                                 row['lokasi_muat_manual'] = value;
                                 row['lokasi_muat'] = value;
-                                _applyAutoHargaPerTon(
+                                final hargaChanged = _applyAutoHargaPerTon(
                                   row,
                                   force: row['harga_auto'] == true,
                                 );
-                                setState(() {});
+                                setState(() {
+                                  if (hargaChanged) {
+                                    _hargaFieldRefreshToken++;
+                                  }
+                                });
                               },
                             ),
                             const SizedBox(height: 8),
@@ -4021,8 +4171,13 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                             ),
                             onChanged: (value) {
                               row['lokasi_bongkar'] = value;
-                              _applyAutoHargaPerTon(row, force: true);
-                              setState(() {});
+                              final hargaChanged =
+                                  _applyAutoHargaPerTon(row, force: true);
+                              setState(() {
+                                if (hargaChanged) {
+                                  _hargaFieldRefreshToken++;
+                                }
+                              });
                             },
                           ),
                           const SizedBox(height: 8),
@@ -4036,18 +4191,6 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                                   _t('Muatan (Opsional)', 'Cargo (Optional)'),
                             ),
                             onChanged: (value) => row['muatan'] = value,
-                          ),
-                          const SizedBox(height: 8),
-                          TextFormField(
-                            key: ValueKey(
-                              'nama_supir-$index-$_detailFieldRefreshToken',
-                            ),
-                            initialValue: '${row['nama_supir'] ?? ''}',
-                            decoration: InputDecoration(
-                              hintText: _t('Nama Supir (Opsional)',
-                                  'Driver Name (Optional)'),
-                            ),
-                            onChanged: (value) => row['nama_supir'] = value,
                           ),
                           const SizedBox(height: 8),
                           CvantDropdownField<String>(
@@ -4117,6 +4260,10 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                                     row['armada_manual'] = '';
                                   }
                                 }
+                                _applyDefaultDriverForRow(
+                                  row,
+                                  armadas: armadas,
+                                );
                               });
                             },
                           ),
@@ -4137,8 +4284,104 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                                   'Manual Plate Number (Other/Combined)',
                                 ),
                               ),
-                              onChanged: (value) =>
-                                  row['armada_manual'] = value,
+                              onChanged: (value) => setState(() {
+                                row['armada_manual'] = value;
+                                _applyDefaultDriverForRow(
+                                  row,
+                                  armadas: armadas,
+                                );
+                              }),
+                            ),
+                          ],
+                          const SizedBox(height: 8),
+                          CvantDropdownField<String>(
+                            initialValue: () {
+                              final driver =
+                                  '${row['nama_supir'] ?? ''}'.trim();
+                              final driverManual =
+                                  '${row['nama_supir_manual'] ?? ''}'.trim();
+                              final isManual =
+                                  row['nama_supir_is_manual'] == true;
+                              if (isManual ||
+                                  driverManual.isNotEmpty ||
+                                  (driver.isNotEmpty &&
+                                      !_isKnownDriverOption(driver))) {
+                                return _manualDriverOptionId;
+                              }
+                              return driver;
+                            }(),
+                            decoration: InputDecoration(
+                              hintText:
+                                  _t('Pilih Nama Supir', 'Select Driver Name'),
+                            ),
+                            items: [
+                              DropdownMenuItem<String>(
+                                value: '',
+                                child: Text(_t(
+                                  '-- Pilih Nama Supir --',
+                                  '-- Select Driver Name --',
+                                )),
+                              ),
+                              ..._defaultDriverOptions.map(
+                                (driver) => DropdownMenuItem<String>(
+                                  value: driver,
+                                  child: Text(driver),
+                                ),
+                              ),
+                              DropdownMenuItem<String>(
+                                value: _manualDriverOptionId,
+                                child: Text(_t(
+                                  'Other (Input Manual)',
+                                  'Other (Manual Input)',
+                                )),
+                              ),
+                            ],
+                            onChanged: (value) {
+                              setState(() {
+                                if (value == _manualDriverOptionId) {
+                                  final currentDriver =
+                                      '${row['nama_supir'] ?? ''}'.trim();
+                                  row['nama_supir_is_manual'] = true;
+                                  row['nama_supir_manual'] =
+                                      !_isKnownDriverOption(currentDriver)
+                                          ? currentDriver
+                                          : '';
+                                  row['nama_supir'] =
+                                      '${row['nama_supir_manual'] ?? ''}';
+                                } else {
+                                  row['nama_supir'] = value ?? '';
+                                  row['nama_supir_manual'] = '';
+                                  row['nama_supir_is_manual'] = false;
+                                }
+                                row['nama_supir_auto'] = false;
+                              });
+                            },
+                          ),
+                          if (row['nama_supir_is_manual'] == true ||
+                              ('${row['nama_supir_manual'] ?? ''}'
+                                      .trim()
+                                      .isNotEmpty &&
+                                  !_isKnownDriverOption(
+                                    '${row['nama_supir'] ?? ''}',
+                                  ))) ...[
+                            const SizedBox(height: 8),
+                            TextFormField(
+                              key: ValueKey(
+                                'nama_supir_manual-$index-$_detailFieldRefreshToken',
+                              ),
+                              initialValue: '${row['nama_supir_manual'] ?? ''}',
+                              decoration: InputDecoration(
+                                hintText: _t(
+                                  'Nama Supir (Manual)',
+                                  'Driver Name (Manual)',
+                                ),
+                              ),
+                              onChanged: (value) => setState(() {
+                                row['nama_supir_manual'] = value;
+                                row['nama_supir'] = value;
+                                row['nama_supir_is_manual'] = true;
+                                row['nama_supir_auto'] = false;
+                              }),
                             ),
                           ],
                           const SizedBox(height: 8),
@@ -4217,7 +4460,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                               Expanded(
                                 child: TextFormField(
                                   key: ValueKey(
-                                    'harga-$index-$_detailFieldRefreshToken',
+                                    'harga-$index-$_detailFieldRefreshToken-$_hargaFieldRefreshToken',
                                   ),
                                   initialValue: '${row['harga']}',
                                   keyboardType:
@@ -5443,6 +5686,14 @@ class _FixedInvoiceBatch {
 
 class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
   static const _manualArmadaOptionId = '__other_manual_armada__';
+  static const List<String> _defaultMuatOptions = [
+    'Depo',
+    'T. Langon',
+    'Maspion',
+    'Betoyo',
+    'Oso',
+    'Legundi',
+  ];
   static const _fixedInvoicePrefsKey = 'fixed_invoice_ids_v1';
   static const _fixedInvoiceBatchPrefsKey = 'fixed_invoice_batches_v1';
   static const _companyKeywords = <String>[
@@ -6187,154 +6438,191 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
         context: context,
         barrierColor: AppColors.popupOverlay,
         builder: (context) {
-          return AlertDialog(
-            title: Text(_t('Edit KOP Invoice', 'Edit Invoice Header')),
-            content: SizedBox(
-              width: 640,
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: selectedGroups.map((group) {
-                    final item = group.baseItem;
-                    final id = group.id;
-                    final noInvoiceController = noInvoiceControllers[id];
-                    final kopDateController = kopDateControllers[id];
-                    final kopLocationController = kopLocationControllers[id];
-                    if (noInvoiceController == null ||
-                        kopDateController == null ||
-                        kopLocationController == null) {
-                      return const SizedBox.shrink();
-                    }
-                    final customer = '${item['nama_pelanggan'] ?? '-'}';
-                    final modeLabel = isCompany(item)
-                        ? _t('Perusahaan', 'Company')
-                        : _t('Pribadi', 'Personal');
-                    final departureLines =
-                        buildDepartureSummaryForItems(group.items)
-                            .split('\n')
-                            .where((line) => line.trim().isNotEmpty)
-                            .toList();
-                    final departureFirst =
-                        departureLines.isEmpty ? null : departureLines.first;
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          border:
-                              Border.all(color: AppColors.cardBorder(context)),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '$customer • $modeLabel${group.items.length > 1 ? ' • ${group.items.length} ${_t('data', 'records')}' : ''}',
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.w700),
+          return StatefulBuilder(
+            builder: (context, setDialogState) {
+              Future<void> pickKopDate(String id) async {
+                final initial =
+                    Formatters.parseDate(kopDateControllers[id]?.text) ??
+                        Formatters.parseDate(defaultKopDateById[id]) ??
+                        DateTime.now();
+                final picked = await showDatePicker(
+                  context: context,
+                  firstDate: DateTime(2020),
+                  lastDate: DateTime(2100),
+                  initialDate: initial,
+                );
+                if (picked == null) return;
+                setDialogState(() {
+                  kopDateControllers[id]?.text = toDisplayDate(picked);
+                });
+              }
+
+              return AlertDialog(
+                title: Text(_t('Edit KOP Invoice', 'Edit Invoice Header')),
+                content: SizedBox(
+                  width: 640,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: selectedGroups.map((group) {
+                        final item = group.baseItem;
+                        final id = group.id;
+                        final noInvoiceController = noInvoiceControllers[id];
+                        final kopDateController = kopDateControllers[id];
+                        final kopLocationController =
+                            kopLocationControllers[id];
+                        if (noInvoiceController == null ||
+                            kopDateController == null ||
+                            kopLocationController == null) {
+                          return const SizedBox.shrink();
+                        }
+                        final customer = '${item['nama_pelanggan'] ?? '-'}';
+                        final modeLabel = isCompany(item)
+                            ? _t('Perusahaan', 'Company')
+                            : _t('Pribadi', 'Personal');
+                        final departureLines =
+                            buildDepartureSummaryForItems(group.items)
+                                .split('\n')
+                                .where((line) => line.trim().isNotEmpty)
+                                .toList();
+                        final departureFirst = departureLines.isEmpty
+                            ? null
+                            : departureLines.first;
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: AppColors.cardBorder(context),
+                              ),
+                              borderRadius: BorderRadius.circular(10),
                             ),
-                            if ((departureFirst ?? '').isNotEmpty) ...[
-                              const SizedBox(height: 2),
-                              Text(
-                                departureFirst!,
-                                style: TextStyle(
-                                  color: AppColors.textMutedFor(context),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '$customer • $modeLabel${group.items.length > 1 ? ' • ${group.items.length} ${_t('data', 'records')}' : ''}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                  ),
                                 ),
-                              ),
-                            ],
-                            const SizedBox(height: 8),
-                            TextField(
-                              controller: noInvoiceController,
-                              decoration: InputDecoration(
-                                labelText:
-                                    _t('Nomor Invoice', 'Invoice Number'),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            TextField(
-                              controller: kopDateController,
-                              decoration: InputDecoration(
-                                labelText: _t(
-                                  'Tanggal Kop Invoice (dd-mm-yyyy)',
-                                  'Invoice Header Date (dd-mm-yyyy)',
+                                if ((departureFirst ?? '').isNotEmpty) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    departureFirst!,
+                                    style: TextStyle(
+                                      color: AppColors.textMutedFor(context),
+                                    ),
+                                  ),
+                                ],
+                                const SizedBox(height: 8),
+                                TextField(
+                                  controller: noInvoiceController,
+                                  decoration: InputDecoration(
+                                    labelText:
+                                        _t('Nomor Invoice', 'Invoice Number'),
+                                  ),
                                 ),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            TextField(
-                              controller: kopLocationController,
-                              decoration: InputDecoration(
-                                labelText: _t(
-                                  'Lokasi Kop Invoice',
-                                  'Invoice Header Location',
+                                const SizedBox(height: 8),
+                                InkWell(
+                                  onTap: () => pickKopDate(id),
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: InputDecorator(
+                                    decoration: InputDecoration(
+                                      labelText: _t(
+                                        'Tanggal Kop Invoice',
+                                        'Invoice Header Date',
+                                      ),
+                                    ),
+                                    child: Text(
+                                      kopDateController.text.trim().isEmpty
+                                          ? '-'
+                                          : Formatters.dmy(
+                                              kopDateController.text,
+                                            ),
+                                    ),
+                                  ),
                                 ),
-                              ),
+                                const SizedBox(height: 8),
+                                TextField(
+                                  controller: kopLocationController,
+                                  decoration: InputDecoration(
+                                    labelText: _t(
+                                      'Lokasi Kop Invoice',
+                                      'Invoice Header Location',
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
-            ),
-            actions: [
-              OutlinedButton(
-                onPressed: () => Navigator.pop(context),
-                style: CvantButtonStyles.outlined(
-                  context,
-                  color: AppColors.isLight(context)
-                      ? AppColors.textSecondaryLight
-                      : const Color(0xFFE2E8F0),
-                  borderColor: AppColors.neutralOutline,
-                ),
-                child: Text(_t('Batal', 'Cancel')),
-              ),
-              FilledButton.icon(
-                onPressed: () {
-                  final values = <String, _InvoicePrintOverrides>{};
-                  for (final entry in noInvoiceControllers.entries) {
-                    final id = entry.key;
-                    final typed = entry.value.text.trim();
-                    final typedKopDateRaw = kopDateControllers[id]?.text.trim();
-                    final typedKopLocation =
-                        kopLocationControllers[id]?.text.trim();
-                    String? normalizedKopDate;
-                    if ((typedKopDateRaw ?? '').isNotEmpty) {
-                      final parsed = Formatters.parseDate(typedKopDateRaw);
-                      if (parsed == null) {
-                        _snack(
-                          _t(
-                            'Format Tanggal KOP tidak valid. Gunakan dd-mm-yyyy.',
-                            'Invalid invoice header date format. Use dd-mm-yyyy.',
                           ),
-                          error: true,
                         );
-                        return;
-                      }
-                      normalizedKopDate = toDbDate(parsed);
-                    }
-                    values[id] = _InvoicePrintOverrides(
-                      invoiceNumber:
-                          typed.isEmpty ? (generatedById[id] ?? '-') : typed,
-                      kopDate: (normalizedKopDate ?? '').isEmpty
-                          ? defaultKopDateById[id]
-                          : normalizedKopDate,
-                      kopLocation: (typedKopLocation ?? '').isEmpty
-                          ? defaultKopLocationById[id]
-                          : typedKopLocation,
-                    );
-                  }
-                  Navigator.pop(context, values);
-                },
-                style: CvantButtonStyles.filled(
-                  context,
-                  color: AppColors.success,
+                      }).toList(),
+                    ),
+                  ),
                 ),
-                icon: const Icon(Icons.print_outlined),
-                label: Text(_t('Cetak Invoice', 'Print Invoice')),
-              ),
-            ],
+                actions: [
+                  OutlinedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: CvantButtonStyles.outlined(
+                      context,
+                      color: AppColors.isLight(context)
+                          ? AppColors.textSecondaryLight
+                          : const Color(0xFFE2E8F0),
+                      borderColor: AppColors.neutralOutline,
+                    ),
+                    child: Text(_t('Batal', 'Cancel')),
+                  ),
+                  FilledButton.icon(
+                    onPressed: () {
+                      final values = <String, _InvoicePrintOverrides>{};
+                      for (final entry in noInvoiceControllers.entries) {
+                        final id = entry.key;
+                        final typed = entry.value.text.trim();
+                        final typedKopDateRaw =
+                            kopDateControllers[id]?.text.trim();
+                        final typedKopLocation =
+                            kopLocationControllers[id]?.text.trim();
+                        String? normalizedKopDate;
+                        if ((typedKopDateRaw ?? '').isNotEmpty) {
+                          final parsed = Formatters.parseDate(typedKopDateRaw);
+                          if (parsed == null) {
+                            _snack(
+                              _t(
+                                'Format Tanggal KOP tidak valid. Gunakan dd-mm-yyyy.',
+                                'Invalid invoice header date format. Use dd-mm-yyyy.',
+                              ),
+                              error: true,
+                            );
+                            return;
+                          }
+                          normalizedKopDate = toDbDate(parsed);
+                        }
+                        values[id] = _InvoicePrintOverrides(
+                          invoiceNumber: typed.isEmpty
+                              ? (generatedById[id] ?? '-')
+                              : typed,
+                          kopDate: (normalizedKopDate ?? '').isEmpty
+                              ? defaultKopDateById[id]
+                              : normalizedKopDate,
+                          kopLocation: (typedKopLocation ?? '').isEmpty
+                              ? defaultKopLocationById[id]
+                              : typedKopLocation,
+                        );
+                      }
+                      Navigator.pop(context, values);
+                    },
+                    style: CvantButtonStyles.filled(
+                      context,
+                      color: AppColors.success,
+                    ),
+                    icon: const Icon(Icons.print_outlined),
+                    label: Text(_t('Cetak Invoice', 'Print Invoice')),
+                  ),
+                ],
+              );
+            },
           );
         },
       );
@@ -7955,13 +8243,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
         final subtotal = _toNum(item['total_biaya']);
         final pph = isCompanyInvoice ? _toNum(item['pph']) : 0.0;
         final total = isCompanyInvoice ? max(0.0, subtotal - pph) : subtotal;
-        final invoiceTitle = Formatters.invoiceNumber(
-          item['no_invoice'],
-          item['tanggal_kop'] ?? item['tanggal'],
-          customerName: item['nama_pelanggan'],
-        );
         return AlertDialog(
-          title: Text('${_t('Preview', 'Preview')} $invoiceTitle'),
+          title: Text(_t('Preview Invoice', 'Invoice Preview')),
           content: SizedBox(
             width: 520,
             child: SingleChildScrollView(
@@ -7972,7 +8255,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                       '${_t('Customer', 'Customer')}: ${item['nama_pelanggan'] ?? '-'}'),
                   Text('${_t('Email', 'Email')}: ${item['email'] ?? '-'}'),
                   Text(
-                      '${_t('Tanggal', 'Date')}: ${Formatters.dmy(item['tanggal'])}'),
+                      '${_t('Tanggal', 'Date')}: ${Formatters.dmy(item['tanggal'] ?? item['armada_start_date'])}'),
                   Text('${_t('Status', 'Status')}: ${item['status'] ?? '-'}'),
                   const SizedBox(height: 8),
                   Text(
@@ -7982,20 +8265,67 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                   if (detailList.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     Text(
-                      _t('Rincian', 'Details'),
+                      _t('Rincian Invoice', 'Invoice Details'),
                       style: TextStyle(fontWeight: FontWeight.w700),
                     ),
                     const SizedBox(height: 6),
-                    ...detailList.map((row) {
+                    ...detailList.asMap().entries.map((entry) {
+                      final index = entry.key;
+                      final row = entry.value;
                       final tonase = _toNum(row['tonase']);
                       final harga = _toNum(row['harga']);
+                      final subtotalDetail = tonase * harga;
                       final driver = '${row['nama_supir'] ?? ''}'.trim();
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 6),
-                        child: Text(
-                          driver.isEmpty
-                              ? '- ${row['lokasi_muat'] ?? '-'} -> ${row['lokasi_bongkar'] ?? '-'} | ${formatInvoiceTonase(tonase)} x ${formatInvoiceHargaPerTon(harga)}'
-                              : '- ${row['lokasi_muat'] ?? '-'} -> ${row['lokasi_bongkar'] ?? '-'} | Supir: $driver | ${formatInvoiceTonase(tonase)} x ${formatInvoiceHargaPerTon(harga)}',
+                      final muatan = '${row['muatan'] ?? ''}'.trim();
+                      final plate =
+                          '${row['plat_nomor'] ?? row['no_polisi'] ?? row['armada_manual'] ?? ''}'
+                              .trim();
+                      final departureDate = Formatters.dmy(
+                        row['armada_start_date'] ?? item['armada_start_date'],
+                      );
+                      return Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          border:
+                              Border.all(color: AppColors.cardBorder(context)),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${_t('Rincian', 'Detail')} ${index + 1}',
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${_t('Keberangkatan', 'Departure')}: $departureDate',
+                            ),
+                            Text(
+                              '${_t('Rute', 'Route')}: ${row['lokasi_muat'] ?? '-'} - ${row['lokasi_bongkar'] ?? '-'}',
+                            ),
+                            if (plate.isNotEmpty)
+                              Text('${_t('Plat', 'Plate')}: $plate'),
+                            if (muatan.isNotEmpty)
+                              Text('${_t('Muatan', 'Cargo')}: $muatan'),
+                            if (driver.isNotEmpty)
+                              Text('${_t('Nama Supir', 'Driver')}: $driver'),
+                            Text(
+                              '${_t('Tonase', 'Tonnage')}: ${formatInvoiceTonase(tonase)}',
+                            ),
+                            Text(
+                              '${_t('Harga / Ton', 'Price / Ton')}: ${formatInvoiceHargaPerTon(harga)}',
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${_t('Subtotal', 'Subtotal')}: ${Formatters.rupiah(subtotalDetail)}',
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                          ],
                         ),
                       );
                     }),
@@ -10168,7 +10498,6 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
     );
     String status = '${item['status'] ?? 'Unpaid'}';
     String acceptedBy = '${item['diterima_oleh'] ?? 'Admin'}';
-    String tanggal = _toInputDate(item['tanggal']);
     bool saving = false;
     bool isCompanyInvoiceMode = _resolveIsCompanyInvoice(
       invoiceNumber: item['no_invoice'],
@@ -10176,10 +10505,107 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
     );
 
     List<Map<String, dynamic>> armadas = const <Map<String, dynamic>>[];
+    List<Map<String, dynamic>> hargaPerTonRules =
+        const <Map<String, dynamic>>[];
+    int editHargaFieldRefreshToken = 0;
     try {
       armadas = await widget.repository.fetchArmadas();
+      hargaPerTonRules = await widget.repository.fetchHargaPerTonRules();
     } catch (_) {}
     final armadaIdByPlate = _buildArmadaIdByPlate(armadas);
+
+    String normalizeLokasiKey(String value) {
+      return value
+          .toLowerCase()
+          .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim();
+    }
+
+    bool lokasiKeyMatches(String inputKey, String ruleKey) {
+      if (inputKey.isEmpty || ruleKey.isEmpty) return false;
+      if (inputKey == ruleKey) return true;
+
+      final inputList = inputKey
+          .split(' ')
+          .where((part) => part.isNotEmpty)
+          .toList(growable: false);
+      final ruleList = ruleKey
+          .split(' ')
+          .where((part) => part.isNotEmpty)
+          .toList(growable: false);
+
+      if (inputList.length < 2 || ruleList.isEmpty) {
+        return false;
+      }
+
+      final shorter =
+          inputList.length <= ruleList.length ? inputList : ruleList;
+      final longer = inputList.length <= ruleList.length ? ruleList : inputList;
+      return shorter.length >= 2 &&
+          shorter.every((token) => longer.contains(token));
+    }
+
+    double? resolveHargaPerTon({
+      required String lokasiMuat,
+      required String lokasiBongkar,
+    }) {
+      if (hargaPerTonRules.isEmpty) return null;
+      final bongkarKey = normalizeLokasiKey(lokasiBongkar);
+      if (bongkarKey.isEmpty) return null;
+      final muatKey = normalizeLokasiKey(lokasiMuat);
+
+      Map<String, dynamic>? exactMatch;
+      Map<String, dynamic>? fallbackMatch;
+      for (final rule in hargaPerTonRules) {
+        final ruleBongkar =
+            normalizeLokasiKey('${rule['lokasi_bongkar'] ?? ''}'.trim());
+        if (!lokasiKeyMatches(bongkarKey, ruleBongkar)) continue;
+        final ruleMuat =
+            normalizeLokasiKey('${rule['lokasi_muat'] ?? ''}'.trim());
+        if (muatKey.isNotEmpty &&
+            ruleMuat.isNotEmpty &&
+            lokasiKeyMatches(muatKey, ruleMuat)) {
+          exactMatch = rule;
+          break;
+        }
+        fallbackMatch ??= rule;
+      }
+
+      final matched = exactMatch ?? fallbackMatch;
+      if (matched == null) return null;
+      final resolved = _toNum(matched['harga_per_ton'] ?? matched['harga']);
+      return resolved > 0 ? resolved : null;
+    }
+
+    bool applyAutoHargaPerTon(
+      Map<String, dynamic> row, {
+      bool force = false,
+    }) {
+      final previousHarga = '${row['harga'] ?? ''}'.trim();
+      final wasAuto = row['harga_auto'] == true;
+      final harga = resolveHargaPerTon(
+        lokasiMuat: '${row['lokasi_muat'] ?? ''}',
+        lokasiBongkar: '${row['lokasi_bongkar'] ?? ''}',
+      );
+      if (harga == null || harga <= 0) {
+        if (force && wasAuto && previousHarga.isNotEmpty) {
+          row['harga'] = '';
+          row['harga_auto'] = true;
+          return true;
+        }
+        return false;
+      }
+      final currentHarga = _toNum(row['harga']);
+      final isAuto = row['harga_auto'] == true;
+      if (!force && currentHarga > 0 && !isAuto) {
+        return false;
+      }
+      final nextHarga = harga.floor().toString();
+      row['harga'] = nextHarga;
+      row['harga_auto'] = true;
+      return previousHarga != nextHarga || !wasAuto;
+    }
 
     Map<String, dynamic> mapDetailRow(Map<String, dynamic> row) {
       final rawArmadaId = '${row['armada_id'] ?? ''}'.trim();
@@ -10192,8 +10618,17 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
         armadaIdByPlate: armadaIdByPlate,
       );
       final useManual = resolvedArmadaId.isEmpty && rawManual.isNotEmpty;
+      final muatText = '${row['lokasi_muat'] ?? ''}'.trim();
+      final muatIsManual =
+          muatText.isNotEmpty && !_defaultMuatOptions.contains(muatText);
+      final hargaText = _formatEditableNumber(row['harga']);
+      final resolvedHarga = resolveHargaPerTon(
+        lokasiMuat: muatText,
+        lokasiBongkar: '${row['lokasi_bongkar'] ?? ''}',
+      );
       return <String, dynamic>{
-        'lokasi_muat': '${row['lokasi_muat'] ?? ''}',
+        'lokasi_muat': muatText,
+        'lokasi_muat_manual': muatIsManual ? muatText : '',
         'lokasi_bongkar': '${row['lokasi_bongkar'] ?? ''}',
         'muatan': '${row['muatan'] ?? ''}',
         'nama_supir': '${row['nama_supir'] ?? ''}',
@@ -10203,7 +10638,10 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
         'armada_start_date': _toInputDate(row['armada_start_date']),
         'armada_end_date': _toInputDate(row['armada_end_date']),
         'tonase': _formatEditableNumber(row['tonase']),
-        'harga': _formatEditableNumber(row['harga']),
+        'harga': hargaText,
+        'harga_auto': resolvedHarga != null &&
+            resolvedHarga > 0 &&
+            _toNum(hargaText) == resolvedHarga.floorToDouble(),
       };
     }
 
@@ -10292,28 +10730,10 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                         ),
                         const SizedBox(height: 8),
                         _dateSelect(
-                          label:
-                              _t('Tanggal Kop Invoice', 'Invoice Header Date'),
-                          value: kopDate.text,
+                          label: _t('Tanggal Pelunasan', 'Payment Date'),
+                          value: dueDate.text,
                           onChanged: (v) =>
-                              setDialogState(() => kopDate.text = v),
-                        ),
-                        const SizedBox(height: 8),
-                        _dialogField(
-                          kopLocation,
-                          _t('Lokasi Kop Invoice', 'Invoice Header Location'),
-                        ),
-                        const SizedBox(height: 8),
-                        _dateSelect(
-                          label: _t('Tanggal Invoice', 'Invoice Date'),
-                          value: tanggal,
-                          onChanged: (v) => setDialogState(() => tanggal = v),
-                        ),
-                        const SizedBox(height: 8),
-                        _dialogField(
-                          dueDate,
-                          _t('Tanggal Pelunasan (dd-mm-yyyy)',
-                              'Payment Date (dd-mm-yyyy)'),
+                              setDialogState(() => dueDate.text = v),
                         ),
                         const SizedBox(height: 12),
                         Text(
@@ -10328,6 +10748,13 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                           final index = entry.key;
                           final row = entry.value;
                           final rowSubtotal = detailSubtotal(row);
+                          final muatValue =
+                              '${row['lokasi_muat'] ?? ''}'.trim();
+                          final muatManual =
+                              '${row['lokasi_muat_manual'] ?? ''}'.trim();
+                          final isMuatManual = muatManual.isNotEmpty ||
+                              (muatValue.isNotEmpty &&
+                                  !_defaultMuatOptions.contains(muatValue));
                           return Container(
                             margin: EdgeInsets.only(
                               bottom: index == details.length - 1 ? 0 : 10,
@@ -10341,24 +10768,101 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                             ),
                             child: Column(
                               children: [
-                                TextFormField(
-                                  initialValue: '${row['lokasi_muat']}',
+                                CvantDropdownField<String>(
+                                  initialValue: isMuatManual
+                                      ? 'Other (Input Manual)'
+                                      : (muatValue.isNotEmpty
+                                          ? muatValue
+                                          : null),
                                   decoration: InputDecoration(
                                     hintText:
                                         _t('Lokasi Muat', 'Loading Location'),
                                   ),
-                                  onChanged: (value) =>
-                                      row['lokasi_muat'] = value,
+                                  items: [
+                                    ..._defaultMuatOptions.map(
+                                      (option) => DropdownMenuItem<String>(
+                                        value: option,
+                                        child: Text(option),
+                                      ),
+                                    ),
+                                    DropdownMenuItem<String>(
+                                      value: 'Other (Input Manual)',
+                                      child: Text(
+                                        _t(
+                                          'Other (Input Manual)',
+                                          'Other (Manual Input)',
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                  onChanged: (value) {
+                                    setDialogState(() {
+                                      if (value == 'Other (Input Manual)') {
+                                        row['lokasi_muat'] = '';
+                                        row['lokasi_muat_manual'] = '';
+                                      } else {
+                                        row['lokasi_muat'] = value ?? '';
+                                        row['lokasi_muat_manual'] = '';
+                                      }
+                                      final hargaChanged = applyAutoHargaPerTon(
+                                        row,
+                                        force: row['harga_auto'] == true,
+                                      );
+                                      if (hargaChanged) {
+                                        editHargaFieldRefreshToken++;
+                                      }
+                                    });
+                                  },
                                 ),
-                                const SizedBox(height: 8),
+                                if (isMuatManual) ...[
+                                  const SizedBox(height: 8),
+                                  TextFormField(
+                                    key: ValueKey(
+                                      'edit-lokasi-muat-manual-$index',
+                                    ),
+                                    initialValue: muatManual,
+                                    decoration: InputDecoration(
+                                      hintText: _t(
+                                        'Lokasi Muat (Manual)',
+                                        'Loading Location (Manual)',
+                                      ),
+                                    ),
+                                    onChanged: (value) {
+                                      row['lokasi_muat_manual'] = value;
+                                      row['lokasi_muat'] = value;
+                                      final hargaChanged = applyAutoHargaPerTon(
+                                        row,
+                                        force: row['harga_auto'] == true,
+                                      );
+                                      setDialogState(() {
+                                        if (hargaChanged) {
+                                          editHargaFieldRefreshToken++;
+                                        }
+                                      });
+                                    },
+                                  ),
+                                  const SizedBox(height: 8),
+                                ] else
+                                  const SizedBox(height: 8),
                                 TextFormField(
+                                  key: ValueKey(
+                                    'edit-lokasi-bongkar-$index',
+                                  ),
                                   initialValue: '${row['lokasi_bongkar']}',
                                   decoration: InputDecoration(
                                     hintText: _t(
                                         'Lokasi Bongkar', 'Unloading Location'),
                                   ),
-                                  onChanged: (value) =>
-                                      row['lokasi_bongkar'] = value,
+                                  onChanged: (value) {
+                                    row['lokasi_bongkar'] = value;
+                                    final hargaChanged =
+                                        applyAutoHargaPerTon(row, force: true);
+                                    setDialogState(() {
+                                      if (hargaChanged) {
+                                        editHargaFieldRefreshToken++;
+                                      }
+                                    });
+                                  },
                                 ),
                                 const SizedBox(height: 8),
                                 TextFormField(
@@ -10511,6 +11015,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                   children: [
                                     Expanded(
                                       child: TextFormField(
+                                        key: ValueKey('edit-tonase-$index'),
                                         initialValue: '${row['tonase']}',
                                         keyboardType: const TextInputType
                                             .numberWithOptions(
@@ -10528,6 +11033,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                     const SizedBox(width: 8),
                                     Expanded(
                                       child: TextFormField(
+                                        key: ValueKey(
+                                          'edit-harga-$index-$editHargaFieldRefreshToken',
+                                        ),
                                         initialValue: '${row['harga']}',
                                         keyboardType: const TextInputType
                                             .numberWithOptions(
@@ -10539,6 +11047,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                         ),
                                         onChanged: (value) {
                                           row['harga'] = value;
+                                          row['harga_auto'] = false;
                                           setDialogState(() {});
                                         },
                                       ),
@@ -10577,6 +11086,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                             details.add(
                               <String, dynamic>{
                                 'lokasi_muat': '',
+                                'lokasi_muat_manual': '',
                                 'lokasi_bongkar': '',
                                 'muatan': '',
                                 'nama_supir': '',
@@ -10587,6 +11097,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                 'armada_end_date': '',
                                 'tonase': '',
                                 'harga': '',
+                                'harga_auto': true,
                               },
                             );
                           }),
@@ -10620,15 +11131,14 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                           decoration: InputDecoration(
                             labelText: _t('Status', 'Status'),
                           ),
-                          items:
-                              const ['Unpaid', 'Paid', 'Waiting', 'Cancelled']
-                                  .map(
-                                    (item) => DropdownMenuItem(
-                                      value: item,
-                                      child: Text(item),
-                                    ),
-                                  )
-                                  .toList(),
+                          items: const ['Unpaid', 'Paid', 'Waiting']
+                              .map(
+                                (item) => DropdownMenuItem(
+                                  value: item,
+                                  child: Text(item),
+                                ),
+                              )
+                              .toList(),
                           onChanged: (value) =>
                               setDialogState(() => status = value ?? status),
                         ),
@@ -10682,12 +11192,11 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                     : () async {
                                         final first = details.first;
                                         if (customer.text.trim().isEmpty ||
-                                            subtotal <= 0 ||
-                                            tanggal.trim().isEmpty) {
+                                            subtotal <= 0) {
                                           _snack(
                                             _t(
-                                              'Nama customer, tanggal, dan total wajib diisi.',
-                                              'Customer name, date, and total are required.',
+                                              'Nama customer dan total wajib diisi.',
+                                              'Customer name and total are required.',
                                             ),
                                             error: true,
                                           );
@@ -10818,27 +11327,30 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                         setDialogState(() => saving = true);
                                         try {
                                           String? regeneratedInvoiceNo;
-                                          final editedDate =
-                                              Formatters.parseDate(tanggal);
                                           final originalDate =
                                               Formatters.parseDate(
                                             item['tanggal'],
                                           );
-                                          final editedKopDate =
-                                              Formatters.parseDate(
-                                                    kopDate.text.trim(),
-                                                  ) ??
-                                                  editedDate;
-                                          final originalKopDate =
-                                              Formatters.parseDate(
-                                                    item['tanggal_kop'],
-                                                  ) ??
-                                                  originalDate;
-                                          final effectiveDate = editedKopDate ??
-                                              editedDate ??
-                                              originalKopDate ??
-                                              originalDate ??
-                                              DateTime.now();
+                                          DateTime? resolveEditedIssueDate() {
+                                            for (final row in detailsPayload) {
+                                              final parsed =
+                                                  Formatters.parseDate(
+                                                row['armada_start_date'],
+                                              );
+                                              if (parsed != null) return parsed;
+                                            }
+                                            final primary =
+                                                Formatters.parseDate(
+                                              item['armada_start_date'],
+                                            );
+                                            if (primary != null) return primary;
+                                            return originalDate;
+                                          }
+
+                                          final effectiveDate =
+                                              resolveEditedIssueDate() ??
+                                                  originalDate ??
+                                                  DateTime.now();
                                           final editedCustomer =
                                               customer.text.trim();
                                           final currentRawInvoiceNo =
@@ -10848,14 +11360,11 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                               isCompanyInvoiceMode;
 
                                           final monthOrYearChanged =
-                                              editedKopDate != null &&
-                                                  originalKopDate != null &&
-                                                  (editedKopDate.year !=
-                                                          originalKopDate
-                                                              .year ||
-                                                      editedKopDate.month !=
-                                                          originalKopDate
-                                                              .month);
+                                              originalDate != null &&
+                                                  (effectiveDate.year !=
+                                                          originalDate.year ||
+                                                      effectiveDate.month !=
+                                                          originalDate.month);
                                           final typeChanged =
                                               currentRawInvoiceNo.isNotEmpty &&
                                                   (_isCompanyInvoiceNumber(
@@ -10892,9 +11401,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                           await widget.repository.updateInvoice(
                                             id: '${item['id']}',
                                             customerName: customer.text.trim(),
-                                            date: kopDate.text.trim().isEmpty
-                                                ? _toDbDate(tanggal)
-                                                : _toDbDate(kopDate.text),
+                                            date: _toDbDate(effectiveDate),
                                             status: status,
                                             totalBiaya: subtotal,
                                             pph: pph,
@@ -10902,9 +11409,10 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                             email: email.text,
                                             noTelp: phone.text,
                                             kopDate: kopDate.text.trim().isEmpty
-                                                ? _toDbDate(tanggal)
+                                                ? null
                                                 : _toDbDate(kopDate.text),
-                                            kopLocation: kopLocation.text,
+                                            kopLocation:
+                                                kopLocation.text.trim(),
                                             dueDate: dueDate.text.trim().isEmpty
                                                 ? null
                                                 : _toDbDate(dueDate.text),
@@ -12476,7 +12984,7 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
     final invoiceNumber = _resolveDisplayNumber(item);
     final customerName = '${item['nama_pelanggan'] ?? '-'}';
     final total = _toNum(item['total_bayar'] ?? item['total_biaya']);
-    await showDialog<void>(
+    final wantsPrint = await showDialog<bool>(
       context: context,
       barrierColor: AppColors.popupOverlay,
       builder: (context) {
@@ -12580,10 +13088,28 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
               ),
               child: Text(_t('Tutup', 'Close')),
             ),
+            const SizedBox(width: 8),
+            FilledButton.icon(
+              onPressed: () => Navigator.pop(context, true),
+              style: CvantButtonStyles.filled(
+                context,
+                color: AppColors.success,
+              ),
+              icon: const Icon(Icons.print_outlined, size: 16),
+              label: Text(_t('Print', 'Print')),
+            ),
           ],
         );
       },
     );
+    if (wantsPrint == true && mounted) {
+      _snack(
+        _t(
+          'Cetak dari Fix Invoice masih memakai alur Cetak Invoice utama. Tombol print sudah disiapkan di preview ini sebagai jalur berikutnya.',
+          'Printing from Fixed Invoice still follows the main Print Invoice flow. The print button is prepared here as the next step.',
+        ),
+      );
+    }
   }
 
   Future<void> _returnToInvoiceList(Map<String, dynamic> item) async {

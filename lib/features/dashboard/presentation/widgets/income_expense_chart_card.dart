@@ -21,9 +21,9 @@ class IncomeExpenseChartCard extends StatelessWidget {
     final muted = AppColors.textMutedFor(context);
     final border = AppColors.cardBorder(context);
     final isEn = LanguageController.language.value == AppLanguage.en;
-    final chartTitle = isEn ? 'Income Vs Expense' : 'Pemasukan vs Pengeluaran';
-    final incomeLabel = isEn ? 'Income' : 'Pemasukan';
-    final expenseLabel = isEn ? 'Expense' : 'Pengeluaran';
+    final chartTitle = 'Income Vs Expense';
+    final incomeLabel = 'Income';
+    final expenseLabel = 'Expense';
     final months = isEn
         ? const [
             'Jan',
