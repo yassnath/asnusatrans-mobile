@@ -1,5 +1,5 @@
 param(
-  [string]$Host = '0.0.0.0',
+  [string]$BindHost = '0.0.0.0',
   [int]$Port = 8787
 )
 
@@ -9,7 +9,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..\..')
 Set-Location $repoRoot
 
-Write-Host "Starting invoice render service on http://$Host`:$Port"
+Write-Host "Starting invoice render service on http://$BindHost`:$Port"
 Write-Host ""
 Write-Host "Detected IPv4 addresses for mobile access:" -ForegroundColor Cyan
 $lanAddresses = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
@@ -32,4 +32,4 @@ Write-Host ""
 Write-Host "APK build example:" -ForegroundColor Cyan
 Write-Host "flutter build apk --dart-define=INVOICE_RENDER_SERVICE_URL=http://$sampleIp`:$Port"
 Write-Host ""
-dart run tooling/windows/invoice_render_service.dart --host $Host --port $Port
+dart run tooling/windows/invoice_render_service.dart --host $BindHost --port $Port

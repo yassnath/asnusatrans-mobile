@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -35,6 +37,7 @@ class _SignInPageState extends State<SignInPage> {
   bool _loading = false;
   bool _biometricLoading = false;
   bool _showBiometricButton = false;
+  bool _didAutoPromptBiometric = false;
   String _biometricLabel = 'Fingerprint';
 
   @override
@@ -57,6 +60,17 @@ class _SignInPageState extends State<SignInPage> {
       _showBiometricButton = state.canUseLogin;
       _biometricLabel = state.label;
     });
+    if (state.canUseLogin && !_didAutoPromptBiometric) {
+      _didAutoPromptBiometric = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(
+          Future<void>.delayed(const Duration(milliseconds: 250), () async {
+            if (!mounted || _loading || _biometricLoading) return;
+            await _submitBiometric(showCancelPopup: false);
+          }),
+        );
+      });
+    }
   }
 
   Future<void> _submit() async {

@@ -115,9 +115,13 @@ class RecentTransactionsCard extends StatelessWidget {
                           Expanded(
                             child: Text(
                               item.type.toLowerCase().contains('expense')
-                                  ? (isEn
-                                      ? 'Driver Allowance: ${item.customer}'
-                                      : 'Sangu Sopir: ${item.customer}')
+                                  ? item.isAutoSangu
+                                      ? (isEn
+                                          ? 'Driver Allowance: ${item.customer}'
+                                          : 'Sangu Sopir: ${item.customer}')
+                                      : (isEn
+                                          ? 'Expense: ${item.customer}'
+                                          : 'Pengeluaran: ${item.customer}')
                                   : (isEn
                                       ? 'Customer: ${item.customer}'
                                       : 'Pelanggan: ${item.customer}'),

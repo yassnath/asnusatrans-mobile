@@ -19,11 +19,11 @@ extension _AdminInvoiceListViewPrinting on _AdminInvoiceListViewState {
   }
 
   bool get _canRenderInvoiceTableWithExcel => !kIsWeb && Platform.isWindows;
-  bool get _canRenderInvoiceTableViaService =>
+  bool get _canRenderInvoiceTableViaCloudService =>
       !kIsWeb && AppConfig.hasInvoiceRenderService;
 
   Uri? _invoiceRenderServiceUri() {
-    if (!_canRenderInvoiceTableViaService) return null;
+    if (!_canRenderInvoiceTableViaCloudService) return null;
     final base = AppConfig.invoiceRenderServiceUrl.trim();
     if (base.isEmpty) return null;
     final normalized =
@@ -124,7 +124,7 @@ extension _AdminInvoiceListViewPrinting on _AdminInvoiceListViewState {
     }
   }
 
-  Future<Uint8List?> _renderInvoiceTableImageViaService({
+  Future<Uint8List?> _renderInvoiceTableImageViaCloudService({
     required List<Map<String, String>> rows,
     required int rowCount,
     String renderMode = 'table',
@@ -148,7 +148,7 @@ extension _AdminInvoiceListViewPrinting on _AdminInvoiceListViewState {
       );
 
       final response = await request.close().timeout(
-            const Duration(seconds: 25),
+            const Duration(seconds: 30),
           );
       final bytesBuilder = BytesBuilder(copy: false);
       await for (final chunk in response) {
@@ -159,7 +159,7 @@ extension _AdminInvoiceListViewPrinting on _AdminInvoiceListViewState {
       if (response.statusCode != HttpStatus.ok) {
         final errorText = utf8.decode(responseBytes, allowMalformed: true);
         debugPrint(
-          'Remote invoice table render failed '
+          'Cloud invoice table render failed '
           '(${response.statusCode}): $errorText',
         );
         return null;
@@ -170,7 +170,7 @@ extension _AdminInvoiceListViewPrinting on _AdminInvoiceListViewState {
         renderMode: renderMode,
       );
     } catch (error, stackTrace) {
-      debugPrint('Remote invoice table render error: $error\n$stackTrace');
+      debugPrint('Cloud invoice table render error: $error\n$stackTrace');
       return null;
     } finally {
       client.close(force: true);

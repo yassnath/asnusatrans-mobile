@@ -90,7 +90,7 @@ class DashboardRepository {
         _supabase
             .from('expenses')
             .select(
-              'id,no_expense,tanggal,total_pengeluaran,status,rincian,created_at',
+              'id,no_expense,tanggal,total_pengeluaran,status,kategori,keterangan,note,rincian,created_at',
             )
             .order('tanggal', ascending: false),
         _supabase
@@ -147,7 +147,7 @@ class DashboardRepository {
         _supabase
             .from('expenses')
             .select(
-              'id,no_expense,tanggal,total_pengeluaran,rincian,created_at',
+              'id,no_expense,tanggal,total_pengeluaran,status,kategori,keterangan,note,rincian,created_at',
             )
             .order('tanggal', ascending: false),
         _supabase
@@ -2165,6 +2165,75 @@ class DashboardRepository {
     List<Map<String, dynamic>> invoices,
     List<Map<String, dynamic>> expenses,
   ) {
+    DateTime resolveCreatedAt(dynamic value) {
+      return Formatters.parseDate(value) ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+    }
+
+    bool isAutoSanguExpense(Map<String, dynamic> expense) {
+      final note = '${expense['note'] ?? ''}'.trim().toUpperCase();
+      if (note.startsWith('AUTO_SANGU:')) return true;
+      final description = '${expense['keterangan'] ?? ''}'.trim().toLowerCase();
+      return description.startsWith('auto sangu sopir -');
+    }
+
+    String expenseDashboardLabel(Map<String, dynamic> expense) {
+      if (isAutoSanguExpense(expense)) {
+        return _expenseRouteLabel(expense);
+      }
+      final category = '${expense['kategori'] ?? ''}'.trim();
+      if (category.isNotEmpty) return category;
+      final description = '${expense['keterangan'] ?? ''}'.trim();
+      if (description.isNotEmpty) return description;
+      return _expenseRouteLabel(expense);
+    }
+
+    void ensureEntry({
+      required List<Map<String, dynamic>> selected,
+      required bool Function(Map<String, dynamic> row) predicate,
+      required Map<String, dynamic> candidate,
+      int Function(List<Map<String, dynamic>> selected)? replaceIndexBuilder,
+    }) {
+      if (candidate.isEmpty || selected.any(predicate)) return;
+      if (selected.length < 6) {
+        selected.add(candidate);
+        return;
+      }
+      final replaceIndex = replaceIndexBuilder?.call(selected) ?? -1;
+      selected[replaceIndex >= 0 ? replaceIndex : selected.length - 1] =
+          candidate;
+    }
+
+    void ensureMinimumCount({
+      required List<Map<String, dynamic>> selected,
+      required Iterable<Map<String, dynamic>> candidates,
+      required bool Function(Map<String, dynamic> row) predicate,
+      required int minimum,
+      required int Function(List<Map<String, dynamic>> selected)
+          replaceIndexBuilder,
+    }) {
+      if (minimum <= 0) return;
+      final presentCount = selected.where(predicate).length;
+      if (presentCount >= minimum) return;
+      final needed = minimum - presentCount;
+      final missingCandidates = candidates
+          .where((candidate) => candidate.isNotEmpty)
+          .where(
+            (candidate) =>
+                !selected.any((row) => row['item'] == candidate['item']),
+          )
+          .take(needed)
+          .toList();
+      for (final candidate in missingCandidates) {
+        ensureEntry(
+          selected: selected,
+          predicate: (row) => row['item'] == candidate['item'],
+          candidate: candidate,
+          replaceIndexBuilder: replaceIndexBuilder,
+        );
+      }
+    }
+
     final entries = <Map<String, dynamic>>[
       ...invoices.map((invoice) {
         final id = (invoice['id'] ?? '').toString();
@@ -2172,6 +2241,7 @@ class DashboardRepository {
         return {
           'type': 'income',
           'date': _invoiceReferenceDate(invoice),
+          'timestamp': resolveCreatedAt(invoice['created_at'] ?? dateValue),
           'item': TransactionItem(
             id: id,
             type: 'Income',
@@ -2191,9 +2261,12 @@ class DashboardRepository {
       ...expenses.map((expense) {
         final id = (expense['id'] ?? '').toString();
         final dateValue = expense['tanggal'] ?? expense['created_at'];
+        final autoSangu = isAutoSanguExpense(expense);
         return {
           'type': 'expense',
+          'isAutoSangu': autoSangu,
           'date': Formatters.parseDate(dateValue),
+          'timestamp': resolveCreatedAt(expense['created_at'] ?? dateValue),
           'item': TransactionItem(
             id: id,
             type: 'Expense',
@@ -2201,11 +2274,12 @@ class DashboardRepository {
               expense['no_expense'],
               expense['tanggal'],
             ),
-            customer: _expenseRouteLabel(expense),
+            customer: expenseDashboardLabel(expense),
             dateLabel: Formatters.dmy(dateValue),
             total: _expenseTotal(expense),
             status: (expense['status'] ?? 'Recorded').toString(),
             link: '/expense-preview?id=$id',
+            isAutoSangu: autoSangu,
           ),
         };
       }),
@@ -2216,38 +2290,92 @@ class DashboardRepository {
           (a['date'] as DateTime?) ?? DateTime.fromMillisecondsSinceEpoch(0);
       final bd =
           (b['date'] as DateTime?) ?? DateTime.fromMillisecondsSinceEpoch(0);
-      return bd.compareTo(ad);
+      final byDate = bd.compareTo(ad);
+      if (byDate != 0) return byDate;
+      final at = (a['timestamp'] as DateTime?) ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+      final bt = (b['timestamp'] as DateTime?) ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+      final byTimestamp = bt.compareTo(at);
+      if (byTimestamp != 0) return byTimestamp;
+      if (a['type'] == b['type']) return 0;
+      if (a['type'] == 'expense') return -1;
+      return 1;
     });
 
     final selected = entries.take(6).toList();
-    final hasIncome = selected.any((row) => row['type'] == 'income');
-    final hasExpense = selected.any((row) => row['type'] == 'expense');
-    if (!hasExpense) {
-      final latestExpense = entries.firstWhere(
-        (row) => row['type'] == 'expense',
-        orElse: () => const <String, dynamic>{},
-      );
-      if (latestExpense.isNotEmpty) {
-        if (selected.length >= 6) {
-          selected[selected.length - 1] = latestExpense;
-        } else {
-          selected.add(latestExpense);
-        }
-      }
-    }
-    if (!hasIncome) {
-      final latestIncome = entries.firstWhere(
-        (row) => row['type'] == 'income',
-        orElse: () => const <String, dynamic>{},
-      );
-      if (latestIncome.isNotEmpty) {
-        if (selected.length >= 6) {
-          selected[selected.length - 1] = latestIncome;
-        } else {
-          selected.add(latestIncome);
-        }
-      }
-    }
+    final expenseEntries = entries
+        .where((row) => row['type'] == 'expense')
+        .toList(growable: false);
+    final autoSanguEntries = entries
+        .where((row) => row['type'] == 'expense' && row['isAutoSangu'] == true)
+        .toList(growable: false);
+    final incomeEntries =
+        entries.where((row) => row['type'] == 'income').toList(growable: false);
+    final latestExpense = expenseEntries.isEmpty
+        ? const <String, dynamic>{}
+        : expenseEntries.first;
+    final latestAutoSanguExpense = autoSanguEntries.isEmpty
+        ? const <String, dynamic>{}
+        : autoSanguEntries.first;
+    final latestIncome =
+        incomeEntries.isEmpty ? const <String, dynamic>{} : incomeEntries.first;
+
+    ensureEntry(
+      selected: selected,
+      predicate: (row) => row['type'] == 'expense',
+      candidate: latestExpense,
+      replaceIndexBuilder: (rows) => rows.lastIndexWhere(
+        (row) => row['type'] != 'income',
+      ),
+    );
+    ensureEntry(
+      selected: selected,
+      predicate: (row) => row['isAutoSangu'] == true,
+      candidate: latestAutoSanguExpense,
+      replaceIndexBuilder: (rows) {
+        final regularExpenseIndex = rows.lastIndexWhere(
+          (row) => row['type'] == 'expense' && row['isAutoSangu'] != true,
+        );
+        if (regularExpenseIndex >= 0) return regularExpenseIndex;
+        return rows.lastIndexWhere((row) => row['type'] != 'income');
+      },
+    );
+    ensureMinimumCount(
+      selected: selected,
+      candidates: expenseEntries,
+      predicate: (row) => row['type'] == 'expense',
+      minimum: min(2, expenseEntries.length),
+      replaceIndexBuilder: (rows) => rows.lastIndexWhere(
+        (row) => row['type'] == 'income' && row['isAutoSangu'] != true,
+      ),
+    );
+    ensureEntry(
+      selected: selected,
+      predicate: (row) => row['type'] == 'income',
+      candidate: latestIncome,
+      replaceIndexBuilder: (rows) => rows.lastIndexWhere(
+        (row) => row['type'] == 'expense' && row['isAutoSangu'] != true,
+      ),
+    );
+
+    selected.sort((a, b) {
+      final ad =
+          (a['date'] as DateTime?) ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final bd =
+          (b['date'] as DateTime?) ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final byDate = bd.compareTo(ad);
+      if (byDate != 0) return byDate;
+      final at = (a['timestamp'] as DateTime?) ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+      final bt = (b['timestamp'] as DateTime?) ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+      final byTimestamp = bt.compareTo(at);
+      if (byTimestamp != 0) return byTimestamp;
+      if (a['type'] == b['type']) return 0;
+      if (a['type'] == 'expense') return -1;
+      return 1;
+    });
     return selected
         .map((row) => row['item'] as TransactionItem)
         .take(6)

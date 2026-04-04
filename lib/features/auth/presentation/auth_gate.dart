@@ -40,9 +40,8 @@ class _AuthGateState extends State<AuthGate> {
 
   Future<void> _bootstrap() async {
     try {
-      _session = await _authRepository
-          .restoreSession()
-          .timeout(const Duration(seconds: 2));
+      await _authRepository.signOut();
+      _session = null;
     } catch (_) {
       _session = null;
     }

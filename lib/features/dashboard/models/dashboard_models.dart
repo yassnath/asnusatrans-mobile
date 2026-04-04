@@ -42,6 +42,7 @@ class TransactionItem {
     required this.total,
     required this.status,
     required this.link,
+    this.isAutoSangu = false,
   });
 
   final String id;
@@ -52,6 +53,7 @@ class TransactionItem {
   final double total;
   final String status;
   final String link;
+  final bool isAutoSangu;
 }
 
 class ActivityItem {
