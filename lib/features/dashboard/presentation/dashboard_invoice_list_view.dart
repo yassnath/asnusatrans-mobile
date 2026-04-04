@@ -208,7 +208,6 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
   void initState() {
     super.initState();
     _future = _load();
-    _runBackfillInBackground();
   }
 
   @override
@@ -246,8 +245,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
     return [filteredIncomes, rawExpenses];
   }
 
-  Future<void> _refresh() async {
-    if (!_backfillRunning) {
+  Future<void> _refresh({bool runBackfill = false}) async {
+    if (runBackfill && !_backfillRunning) {
       _backfillRunning = true;
       try {
         final report = await widget.repository
@@ -271,31 +270,6 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
       _future = _load();
     });
     await _future;
-  }
-
-  void _runBackfillInBackground() {
-    if (_backfillRunning) return;
-    _backfillRunning = true;
-    Future<void>(() async {
-      final report = await widget.repository
-          .backfillAutoSanguExpensesForExistingInvoices();
-      if (mounted && report.hasFailures) {
-        _snack(
-          _t(
-            'Sebagian auto expense sangu sopir masih perlu sinkronisasi ulang.',
-            'Some driver allowance auto expenses still need another sync pass.',
-          ),
-          error: true,
-        );
-      }
-      if (!mounted) return;
-      setState(() {
-        _future = _load();
-      });
-      await _future;
-    }).whenComplete(() {
-      _backfillRunning = false;
-    });
   }
 
   void _notifyDataChanged() {
@@ -6691,7 +6665,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
     }
 
     return RefreshIndicator(
-      onRefresh: _refresh,
+      onRefresh: () => _refresh(runBackfill: true),
       child: ListView.separated(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(10),
