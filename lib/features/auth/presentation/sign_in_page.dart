@@ -84,7 +84,7 @@ class _SignInPageState extends State<SignInPage> {
         context: context,
         type: CvantPopupType.warning,
         title: 'Validasi Login',
-        message: 'Email/username dan password wajib diisi.',
+        message: 'Mohon isi username dan password terlebih dahulu!',
       );
       return;
     }
@@ -93,7 +93,7 @@ class _SignInPageState extends State<SignInPage> {
         context: context,
         type: CvantPopupType.warning,
         title: 'Validasi Login',
-        message: 'Email/username masih kosong, harap diisi.',
+        message: 'Mohon isi username terlebih dahulu!',
       );
       return;
     }
@@ -102,7 +102,7 @@ class _SignInPageState extends State<SignInPage> {
         context: context,
         type: CvantPopupType.warning,
         title: 'Validasi Login',
-        message: 'Password masih kosong, harap diisi.',
+        message: 'Mohon isi password terlebih dahulu!',
       );
       return;
     }
@@ -134,15 +134,34 @@ class _SignInPageState extends State<SignInPage> {
       widget.onSignedIn(session);
     } catch (e) {
       if (!mounted) return;
+      final rawMessage = e.toString().replaceFirst('Exception: ', '');
       await showCvantPopup(
         context: context,
         type: CvantPopupType.error,
         title: 'Login Failed',
-        message: e.toString().replaceFirst('Exception: ', ''),
+        message: _mapLoginErrorMessage(rawMessage),
       );
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  String _mapLoginErrorMessage(String rawMessage) {
+    final normalized = rawMessage.trim().toLowerCase();
+    const invalidCredentialMessages = <String>[
+      'login gagal. periksa email/username dan password.',
+      'invalid login credentials',
+      'invalid email or password',
+      'email or password is invalid',
+      'invalid_credentials',
+    ];
+    final isInvalidCredentials = invalidCredentialMessages.any(
+      (message) => normalized.contains(message),
+    );
+    if (isInvalidCredentials) {
+      return 'Username/Password tidak valid, Mohon dicek kembali!';
+    }
+    return rawMessage;
   }
 
   Future<void> _submitBiometric({bool showCancelPopup = true}) async {
