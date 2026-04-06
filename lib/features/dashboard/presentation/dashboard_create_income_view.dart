@@ -491,11 +491,13 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
   void _syncDriverWithArmadaSelection(
     Map<String, dynamic> row, {
     required List<Map<String, dynamic>> armadas,
+    bool overrideManualDriver = false,
   }) {
-    if (row['nama_supir_is_manual'] == true) return;
-
     final defaultDriver =
         _resolveDefaultDriverForRow(row, armadas: armadas)?.trim() ?? '';
+    if (row['nama_supir_is_manual'] == true && !overrideManualDriver) {
+      return;
+    }
     if (defaultDriver.isNotEmpty) {
       _applyDefaultDriverForRow(row, armadas: armadas, force: true);
       return;
@@ -558,29 +560,6 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
         _detailFieldRefreshToken++;
       }
     });
-  }
-
-  String _formatInvoiceNumber(String raw, DateTime issuedDate) {
-    final candidate = raw.trim();
-    if (candidate.isEmpty) return candidate;
-
-    final monthRoman = _romanMonth(issuedDate.month);
-    final yearSuffix = (issuedDate.year % 100).toString().padLeft(2, '0');
-
-    final cleaned = candidate
-        .replaceAll(RegExp(r'\s*Rp\.?\s*', caseSensitive: false), '')
-        .toUpperCase();
-
-    final seqMatch = RegExp(r'^(\d{1,3})').firstMatch(cleaned);
-    if (seqMatch == null) {
-      return candidate;
-    }
-
-    final seq = seqMatch.group(1)!.padLeft(3, '0');
-    if (_isCompanyInvoice) {
-      return '$seq / CV.ANT / $monthRoman / $yearSuffix';
-    }
-    return '$seq / BS / $monthRoman / $yearSuffix';
   }
 
   String _normalizeText(String value) {
@@ -909,29 +888,12 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
     final effectiveDate =
         resolvedDepartureDate ?? Formatters.parseDate(_kopDate.text) ?? _date;
 
-    String generatedInvoiceNo;
-    try {
-      generatedInvoiceNo = await widget.repository.generateIncomeInvoiceNumber(
-        issuedDate: effectiveDate,
-        isCompany: _isCompanyInvoice,
-      );
-    } catch (e) {
-      if (!mounted) return;
-      _snack(e.toString().replaceFirst('Exception: ', ''), error: true);
-      return;
-    }
-
-    final effectiveInvoiceNumber = _formatInvoiceNumber(
-      generatedInvoiceNo,
-      effectiveDate,
-    );
-
     setState(() => _loading = true);
     try {
       await widget.repository.createInvoice(
         customerName: customer,
         total: _subtotal,
-        noInvoice: effectiveInvoiceNumber,
+        noInvoice: null,
         includePph: _isCompanyInvoice,
         status: _status,
         issuedDate: effectiveDate,
@@ -1396,6 +1358,9 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                                 _syncDriverWithArmadaSelection(
                                   row,
                                   armadas: armadas,
+                                  overrideManualDriver: value != null &&
+                                      value.isNotEmpty &&
+                                      value != _manualArmadaOptionId,
                                 );
                                 _detailFieldRefreshToken++;
                               });
@@ -1424,7 +1389,6 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                                   row,
                                   armadas: armadas,
                                 );
-                                _detailFieldRefreshToken++;
                               }),
                             ),
                           ],

@@ -93,6 +93,7 @@ class _FixedInvoiceBatch {
 
 class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
   static const _manualArmadaOptionId = '__other_manual_armada__';
+  static const _manualDriverOptionId = '__other_manual_driver__';
   static const List<String> _defaultMuatOptions = [
     'Depo',
     'T. Langon',
@@ -101,6 +102,31 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
     'Oso',
     'Legundi',
   ];
+  static const List<String> _defaultDriverOptions = [
+    'Ami',
+    'Candra',
+    'Yusak',
+    'Chrisjohn',
+    'Sulkan',
+    'Gambit',
+    'Victor',
+    'Rio',
+    'Taman',
+    'Matius',
+    'Batok',
+  ];
+  static const Map<String, String> _defaultDriverByPlate = {
+    'B 9613 TIT': 'Ami',
+    'B 9615 TIT': 'Candra',
+    'W 8045 UD': 'Yusak',
+    'L 8465 UDD': 'Chrisjohn',
+    'L 8581 UH': 'Sulkan',
+    'L 8607 UJ': 'Gambit',
+    'B 9593 UVW': 'Victor',
+    'B 9591 UVW': 'Rio',
+    'B 9064 TIU': 'Taman',
+    'L 9548 UI': 'Matius',
+  };
   static const _fixedInvoicePrefsKey = 'fixed_invoice_ids_v1';
   static const _fixedInvoiceBatchPrefsKey = 'fixed_invoice_batches_v1';
   static const _companyKeywords = <String>[
@@ -202,6 +228,107 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
     final extracted = _extractPlateFromText(manual);
     final normalized = _normalizePlateText(manual);
     return armadaIdByPlate[extracted ?? normalized] ?? '';
+  }
+
+  String _normalizeText(String value) {
+    return value.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  bool _isKnownDriverOption(String value) {
+    final normalized = _normalizeText(value);
+    if (normalized.isEmpty) return false;
+    return _defaultDriverOptions
+        .any((option) => _normalizeText(option) == normalized);
+  }
+
+  String? _resolveDefaultDriverForRow(
+    Map<String, dynamic> row, {
+    required List<Map<String, dynamic>> armadas,
+  }) {
+    var plate = '';
+    final armadaId = '${row['armada_id'] ?? ''}'.trim();
+    if (armadaId.isNotEmpty) {
+      Map<String, dynamic>? selected;
+      for (final armada in armadas) {
+        if ('${armada['id'] ?? ''}'.trim() == armadaId) {
+          selected = armada;
+          break;
+        }
+      }
+      plate = _normalizePlateText('${selected?['plat_nomor'] ?? ''}');
+    }
+    if (plate.isEmpty) {
+      final manual = '${row['armada_manual'] ?? ''}'.trim();
+      if (manual.isNotEmpty) {
+        plate = _extractPlateFromText(manual) ?? _normalizePlateText(manual);
+      }
+    }
+    if (plate.isEmpty) return null;
+    for (final entry in _defaultDriverByPlate.entries) {
+      if (_normalizePlateText(entry.key) == plate) {
+        return entry.value;
+      }
+    }
+    return null;
+  }
+
+  void _applyDefaultDriverForRow(
+    Map<String, dynamic> row, {
+    required List<Map<String, dynamic>> armadas,
+    bool force = false,
+  }) {
+    final defaultDriver = _resolveDefaultDriverForRow(row, armadas: armadas);
+    if (defaultDriver == null || defaultDriver.trim().isEmpty) return;
+
+    final currentDriver = '${row['nama_supir'] ?? ''}'.trim();
+    final isDriverManual = row['nama_supir_is_manual'] == true;
+    final isDriverAuto = row['nama_supir_auto'] == true;
+    if (!force &&
+        currentDriver.isNotEmpty &&
+        (isDriverManual || !isDriverAuto)) {
+      return;
+    }
+
+    row['nama_supir'] = defaultDriver;
+    row['nama_supir_manual'] = '';
+    row['nama_supir_is_manual'] = false;
+    row['nama_supir_auto'] = true;
+  }
+
+  void _syncDriverWithArmadaSelection(
+    Map<String, dynamic> row, {
+    required List<Map<String, dynamic>> armadas,
+    bool overrideManualDriver = false,
+  }) {
+    final defaultDriver =
+        _resolveDefaultDriverForRow(row, armadas: armadas)?.trim() ?? '';
+    if (row['nama_supir_is_manual'] == true && !overrideManualDriver) {
+      return;
+    }
+    if (defaultDriver.isNotEmpty) {
+      _applyDefaultDriverForRow(row, armadas: armadas, force: true);
+      return;
+    }
+
+    final currentDriver = '${row['nama_supir'] ?? ''}'.trim();
+    if (currentDriver.isEmpty ||
+        row['nama_supir_auto'] == true ||
+        _isKnownDriverOption(currentDriver)) {
+      row['nama_supir'] = '';
+      row['nama_supir_manual'] = '';
+      row['nama_supir_is_manual'] = false;
+      row['nama_supir_auto'] = false;
+    }
+  }
+
+  void _enableManualDriverInput(Map<String, dynamic> row) {
+    final currentDriver = '${row['nama_supir'] ?? ''}'.trim();
+    final currentManual = '${row['nama_supir_manual'] ?? ''}'.trim();
+    final seed = currentManual.isNotEmpty ? currentManual : currentDriver;
+    row['nama_supir_is_manual'] = true;
+    row['nama_supir_manual'] = !_isKnownDriverOption(seed) ? seed : '';
+    row['nama_supir'] = '${row['nama_supir_manual'] ?? ''}';
+    row['nama_supir_auto'] = false;
   }
 
   @override
@@ -675,6 +802,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
     String customerKind = 'all';
     final selectedIds = <String>{};
     final searchController = TextEditingController();
+    final fixedInvoiceBatches = await _loadFixedInvoiceBatches();
 
     bool isCompany(Map<String, dynamic> item) {
       return _resolveIsCompanyInvoice(
@@ -683,13 +811,142 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
       );
     }
 
-    String resolveGeneratedNumber(Map<String, dynamic> item) {
-      return Formatters.invoiceNumber(
-        item['no_invoice'],
-        item['tanggal_kop'] ?? item['tanggal'],
-        customerName: item['nama_pelanggan'],
-        isCompany: isCompany(item),
-      );
+    Map<String, String> buildGeneratedNumbersForGroups(
+      List<_InvoicePrintGroup> groups,
+    ) {
+      final maxSeqByBucket = <String, int>{};
+
+      String bucketKey({
+        required DateTime issuedDate,
+        required bool isCompany,
+      }) {
+        final localDate = issuedDate.toLocal();
+        final kind = isCompany ? 'company' : 'personal';
+        return '$kind|${localDate.year % 100}|${localDate.month}';
+      }
+
+      void consumeExistingInvoiceNumber({
+        required String invoiceNumber,
+        required DateTime issuedDate,
+        required bool isCompany,
+        DateTime? referenceDate,
+      }) {
+        final localDate = issuedDate.toLocal();
+        final seq = _extractPrintInvoiceSequence(
+          invoiceNumber: invoiceNumber,
+          month: localDate.month,
+          yearTwoDigits: localDate.year % 100,
+          isCompany: isCompany,
+          referenceDate: referenceDate ?? localDate,
+        );
+        if (seq <= 0) return;
+        final key = bucketKey(
+          issuedDate: localDate,
+          isCompany: isCompany,
+        );
+        final currentMax = maxSeqByBucket[key] ?? 0;
+        if (seq > currentMax) {
+          maxSeqByBucket[key] = seq;
+        }
+      }
+
+      for (final income in incomes) {
+        final rawNumber = '${income['no_invoice'] ?? ''}'.trim();
+        if (rawNumber.isEmpty) continue;
+        final issuedDate = Formatters.parseDate(
+              income['tanggal_kop'] ??
+                  income['tanggal'] ??
+                  income['created_at'],
+            ) ??
+            now;
+        consumeExistingInvoiceNumber(
+          invoiceNumber: rawNumber,
+          issuedDate: issuedDate,
+          isCompany: isCompany(income),
+          referenceDate: issuedDate,
+        );
+      }
+
+      for (final batch in fixedInvoiceBatches) {
+        final rawNumber = batch.invoiceNumber.trim();
+        if (rawNumber.isEmpty) continue;
+        final referenceDate =
+            Formatters.parseDate(batch.kopDate ?? batch.createdAt) ?? now;
+        consumeExistingInvoiceNumber(
+          invoiceNumber: rawNumber,
+          issuedDate: referenceDate,
+          isCompany: _resolveIsCompanyInvoice(
+            invoiceNumber: batch.invoiceNumber,
+            customerName: batch.customerName,
+          ),
+          referenceDate: referenceDate,
+        );
+      }
+
+      final generatedById = <String, String>{};
+      final sortedGroups = groups.toList()
+        ..sort((a, b) {
+          final aDate = Formatters.parseDate(
+                a.baseItem['tanggal_kop'] ??
+                    a.baseItem['tanggal'] ??
+                    a.baseItem['created_at'],
+              ) ??
+              now;
+          final bDate = Formatters.parseDate(
+                b.baseItem['tanggal_kop'] ??
+                    b.baseItem['tanggal'] ??
+                    b.baseItem['created_at'],
+              ) ??
+              now;
+          final byDate = aDate.compareTo(bDate);
+          if (byDate != 0) return byDate;
+          final byCompany = (isCompany(a.baseItem) ? 1 : 0)
+              .compareTo(isCompany(b.baseItem) ? 1 : 0);
+          if (byCompany != 0) return byCompany;
+          final aName = '${a.baseItem['nama_pelanggan'] ?? ''}'.trim();
+          final bName = '${b.baseItem['nama_pelanggan'] ?? ''}'.trim();
+          return aName.toLowerCase().compareTo(bName.toLowerCase());
+        });
+
+      for (final group in sortedGroups) {
+        final item = group.baseItem;
+        final issuedDate = Formatters.parseDate(
+              item['tanggal_kop'] ?? item['tanggal'] ?? item['created_at'],
+            ) ??
+            now;
+        final companyMode = isCompany(item);
+        final normalizedExisting = Formatters.invoiceNumber(
+          item['no_invoice'],
+          item['tanggal_kop'] ?? item['tanggal'],
+          customerName: item['nama_pelanggan'],
+          isCompany: companyMode,
+        );
+
+        if (normalizedExisting != '-') {
+          generatedById[group.id] = normalizedExisting;
+          consumeExistingInvoiceNumber(
+            invoiceNumber: normalizedExisting,
+            issuedDate: issuedDate,
+            isCompany: companyMode,
+            referenceDate: issuedDate,
+          );
+          continue;
+        }
+
+        final key = bucketKey(
+          issuedDate: issuedDate,
+          isCompany: companyMode,
+        );
+        final nextSeq = (maxSeqByBucket[key] ?? 0) + 1;
+        maxSeqByBucket[key] = nextSeq;
+        generatedById[group.id] = _buildPrintInvoiceNumber(
+          sequence: nextSeq,
+          issuedDate: issuedDate,
+          isCompany: companyMode,
+        );
+      }
+
+      return generatedById;
     }
 
     String extractPlate(Map<String, dynamic> row) {
@@ -795,7 +1052,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
       List<_InvoicePrintGroup> selectedGroups,
     ) async {
       if (!mounted) return null;
-      final generatedById = <String, String>{};
+      final generatedById = buildGeneratedNumbersForGroups(selectedGroups);
       final defaultKopDateById = <String, String>{};
       final defaultKopLocationById = <String, String>{};
       final noInvoiceControllers = <String, TextEditingController>{};
@@ -821,11 +1078,10 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
       for (final group in selectedGroups) {
         final item = group.baseItem;
         final id = group.id;
-        final generated = resolveGeneratedNumber(item);
+        final generated = generatedById[id] ?? '-';
         final defaultKopDate =
             toDisplayDate(item['tanggal_kop'] ?? item['tanggal']);
         final defaultKopLocation = '${item['lokasi_kop'] ?? ''}'.trim();
-        generatedById[id] = generated;
         defaultKopDateById[id] = defaultKopDate;
         defaultKopLocationById[id] = defaultKopLocation;
         noInvoiceControllers[id] = TextEditingController(text: generated);
@@ -1339,6 +1595,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                             selectedIds.contains('${item['id'] ?? ''}'))
                         .toList();
                     final selectedGroups = _buildInvoicePrintGroups(selected);
+                    final generatedNumbersByGroupId =
+                        buildGeneratedNumbersForGroups(selectedGroups);
                     Navigator.pop(context);
                     if (!mounted) return;
 
@@ -1350,7 +1608,6 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                     }
 
                     try {
-                      final printMetaUpdates = <Map<String, String?>>[];
                       final printQueue = <Map<String, dynamic>>[];
                       for (final group in selectedGroups) {
                         final baseItem = group.baseItem;
@@ -1360,9 +1617,11 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                         final editedKopDate = (edited?.kopDate ?? '').trim();
                         final editedKopLocation =
                             (edited?.kopLocation ?? '').trim();
+                        final generatedInvoiceNo =
+                            generatedNumbersByGroupId[group.id] ?? '-';
                         final effectiveInvoiceNo = editedInvoiceNo.isNotEmpty
                             ? editedInvoiceNo
-                            : resolveGeneratedNumber(baseItem);
+                            : generatedInvoiceNo;
                         final effectiveKopDate = editedKopDate.isNotEmpty
                             ? editedKopDate
                             : '${baseItem['tanggal_kop'] ?? baseItem['tanggal'] ?? ''}'
@@ -1375,6 +1634,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                             .map((item) => '${item['id'] ?? ''}'.trim())
                             .where((id) => id.isNotEmpty)
                             .toList();
+                        final groupPrintMetaUpdates = <Map<String, String?>>[];
 
                         for (var index = 0;
                             index < group.items.length;
@@ -1382,7 +1642,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                           final item = group.items[index];
                           final id = '${item['id'] ?? ''}'.trim();
                           if (id.isEmpty) continue;
-                          printMetaUpdates.add({
+                          groupPrintMetaUpdates.add({
                             'id': id,
                             // Keep secondary invoices unique in DB to avoid
                             // violating the unique no_invoice constraint.
@@ -1409,6 +1669,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                           'invoice_no': effectiveInvoiceNo,
                           'kop_date': effectiveKopDate,
                           'kop_location': effectiveKopLocation,
+                          'print_meta_updates': groupPrintMetaUpdates,
                           'fixed_invoice_ids': fixedInvoiceIds,
                           'fixed_batch': _FixedInvoiceBatch(
                             batchId: _buildFixedInvoiceBatchId(fixedInvoiceIds),
@@ -1427,10 +1688,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                         });
                       }
 
-                      await widget.repository.updateInvoicesPrintMetaBulk(
-                        updates: printMetaUpdates,
-                      );
-
+                      var printedGroupCount = 0;
+                      var printedInvoiceCount = 0;
                       for (final queued in printQueue) {
                         final printItem =
                             Map<String, dynamic>.from(queued['item'] as Map);
@@ -1444,7 +1703,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                         final kopDate = '${queued['kop_date'] ?? ''}'.trim();
                         final kopLocation =
                             '${queued['kop_location'] ?? ''}'.trim();
-                        await _printInvoicePdf(
+                        final printed = await _printInvoicePdf(
                           printItem,
                           printDetails,
                           markAsFixed: true,
@@ -1461,7 +1720,46 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                           fixedBatch:
                               queued['fixed_batch'] as _FixedInvoiceBatch?,
                         );
+                        if (!printed) continue;
+                        await widget.repository.updateInvoicesPrintMetaBulk(
+                          updates:
+                              (queued['print_meta_updates'] as List<dynamic>? ??
+                                      const <dynamic>[])
+                                  .whereType<Map>()
+                                  .map(
+                                    (row) => Map<String, String?>.from(
+                                      row.map(
+                                        (key, value) =>
+                                            MapEntry('$key', value as String?),
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                        );
+                        printedGroupCount++;
+                        printedInvoiceCount +=
+                            (queued['fixed_invoice_ids'] as List<dynamic>? ??
+                                    const <dynamic>[])
+                                .length;
                       }
+                      if (printedGroupCount <= 0) {
+                        _snack(
+                          _t(
+                            'Belum ada invoice yang dicetak.',
+                            'No invoices were printed yet.',
+                          ),
+                        );
+                        return;
+                      }
+                      if (!mounted) return;
+                      _snack(
+                        _t(
+                          '$printedInvoiceCount invoice selesai diproses menjadi $printedGroupCount dokumen cetak.',
+                          '$printedInvoiceCount invoices have been grouped into $printedGroupCount printable documents.',
+                        ),
+                      );
+                      await _refresh();
+                      _notifyDataChanged();
                     } catch (e) {
                       if (!mounted) return;
                       _snack(
@@ -1470,15 +1768,6 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                       );
                       return;
                     }
-                    if (!mounted) return;
-                    _snack(
-                      _t(
-                        '${selected.length} invoice selesai diproses menjadi ${selectedGroups.length} dokumen cetak.',
-                        '${selected.length} invoices have been grouped into ${selectedGroups.length} printable documents.',
-                      ),
-                    );
-                    await _refresh();
-                    _notifyDataChanged();
                   },
                   style: CvantButtonStyles.filled(
                     context,
@@ -2762,11 +3051,6 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
     );
   }
 
-  bool _isCompanyInvoiceNumber(String number) {
-    final resolved = _companyModeFromInvoiceNumber(number);
-    return resolved ?? true;
-  }
-
   String _normalizeCompanyText(String value) {
     return value
         .toLowerCase()
@@ -2816,7 +3100,119 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
     return number.trim().isEmpty ? '-' : number.trim();
   }
 
-  Future<void> _printInvoicePdf(
+  String _printInvoiceRomanMonth(int month) {
+    const romans = <String>[
+      'I',
+      'II',
+      'III',
+      'IV',
+      'V',
+      'VI',
+      'VII',
+      'VIII',
+      'IX',
+      'X',
+      'XI',
+      'XII',
+    ];
+    final safeMonth = month.clamp(1, 12);
+    return romans[safeMonth - 1];
+  }
+
+  int _printInvoiceRomanToMonth(String roman) {
+    const monthByRoman = <String, int>{
+      'I': 1,
+      'II': 2,
+      'III': 3,
+      'IV': 4,
+      'V': 5,
+      'VI': 6,
+      'VII': 7,
+      'VIII': 8,
+      'IX': 9,
+      'X': 10,
+      'XI': 11,
+      'XII': 12,
+    };
+    return monthByRoman[roman.trim().toUpperCase()] ?? 0;
+  }
+
+  String _buildPrintInvoiceNumber({
+    required int sequence,
+    required DateTime issuedDate,
+    required bool isCompany,
+  }) {
+    final seq = sequence.toString().padLeft(3, '0');
+    final yy = (issuedDate.toLocal().year % 100).toString().padLeft(2, '0');
+    final code = isCompany ? 'CV.ANT' : 'BS';
+    return '$seq / $code / ${_printInvoiceRomanMonth(issuedDate.month)} / $yy';
+  }
+
+  int _extractPrintInvoiceSequence({
+    required String invoiceNumber,
+    required int month,
+    required int yearTwoDigits,
+    required bool isCompany,
+    DateTime? referenceDate,
+  }) {
+    final cleaned = invoiceNumber
+        .replaceFirst(RegExp(r'^\s*NO\s*:\s*', caseSensitive: false), '')
+        .trim();
+    if (cleaned.isEmpty) return 0;
+
+    final newPattern = RegExp(
+      r'^(\d{1,4})\s*\/\s*(CV\.ANT|BS|ANT)\s*\/\s*([IVX]+)\s*\/\s*(\d{2})\s*$',
+      caseSensitive: false,
+    );
+    final newMatch = newPattern.firstMatch(cleaned);
+    if (newMatch != null) {
+      final seq = int.tryParse(newMatch.group(1) ?? '') ?? 0;
+      final prefix = (newMatch.group(2) ?? '').toUpperCase().trim();
+      final rowMonth = _printInvoiceRomanToMonth(newMatch.group(3) ?? '');
+      final rowYear = int.tryParse(newMatch.group(4) ?? '') ?? -1;
+      final sameType =
+          isCompany ? prefix == 'CV.ANT' : (prefix == 'BS' || prefix == 'ANT');
+      if (sameType && rowMonth == month && rowYear == yearTwoDigits) {
+        return seq;
+      }
+      return 0;
+    }
+
+    final legacyPattern = RegExp(
+      r'^(480\s*\/\s*CV\.ANT|268\s*\/\s*ANT)\s*\/\s*([IVX]+)\s*\/\s*(\d+)\s*$',
+      caseSensitive: false,
+    );
+    final legacyMatch = legacyPattern.firstMatch(cleaned);
+    if (legacyMatch != null) {
+      final prefix =
+          (legacyMatch.group(1) ?? '').toUpperCase().replaceAll(' ', '');
+      final sameType = isCompany
+          ? prefix.startsWith('480/CV.ANT')
+          : prefix.startsWith('268/ANT');
+      if (!sameType) return 0;
+
+      final rowMonth = _printInvoiceRomanToMonth(legacyMatch.group(2) ?? '');
+      if (rowMonth != month) return 0;
+      final rowYear =
+          referenceDate == null ? yearTwoDigits : (referenceDate.year % 100);
+      if (rowYear != yearTwoDigits) return 0;
+      return int.tryParse(legacyMatch.group(3) ?? '') ?? 0;
+    }
+
+    final oldInc =
+        RegExp(r'^INC-(\d{2})-(\d{4})-(\d{1,})$', caseSensitive: false)
+            .firstMatch(cleaned.toUpperCase());
+    if (oldInc != null) {
+      final rowMonth = int.tryParse(oldInc.group(1) ?? '') ?? 0;
+      final rowYear = (int.tryParse(oldInc.group(2) ?? '') ?? 0) % 100;
+      if (rowMonth != month || rowYear != yearTwoDigits) return 0;
+      return int.tryParse(oldInc.group(3) ?? '') ?? 0;
+    }
+
+    return 0;
+  }
+
+  Future<bool> _printInvoicePdf(
     Map<String, dynamic> item,
     List<Map<String, dynamic>> detailList, {
     bool markAsFixed = false,
@@ -2830,9 +3226,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
     try {
       final invoiceDetailList =
           detailList.isNotEmpty ? detailList : _toDetailList(item['rincian']);
-      // <= 13 detail rows: print in half-sheet layout (50:50 on portrait paper).
-      // > 13 detail rows: switch to full-sheet portrait layout.
-      final usePortrait = invoiceDetailList.length > 13;
+      // <= 16 detail rows: print in half-sheet layout (50:50 on portrait paper).
+      // > 16 detail rows: switch to full-sheet portrait layout.
+      final usePortrait = invoiceDetailList.length > 16;
       final invoiceRawNumber = '${item['no_invoice'] ?? '-'}';
       final customerName = '${item['nama_pelanggan'] ?? ''}';
       final isCompanyInvoice = _resolveIsCompanyInvoice(
@@ -2931,8 +3327,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
         required bool compact,
       }) {
         final baseRowsPerSheet = compact
-            ? (isCompanyInvoice ? 13 : 18)
-            : (isCompanyInvoice ? 35 : 40);
+            ? (isCompanyInvoice ? 18 : 21)
+            : (isCompanyInvoice ? 40 : 43);
         final extraRows = extraBlankRowsForMultiSheet(
           dataRows: invoiceDetailList.length,
           baseRowsPerSheet: baseRowsPerSheet,
@@ -3032,6 +3428,13 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
         );
       }
 
+      late final pw.Font invoiceTitleFont;
+      try {
+        invoiceTitleFont = await PdfGoogleFonts.archivoBlack();
+      } catch (_) {
+        invoiceTitleFont = pw.Font.helveticaBold();
+      }
+
       pw.Widget buildInvoiceContent({
         required bool compact,
         _InvoiceTableRenderResult? excelTableRender,
@@ -3040,7 +3443,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
       }) {
         const infoFont = 9.5;
         final summaryValueGap = compact ? 8.0 : 10.0;
-        final summaryBoxGap = 4.0;
+        final summaryBoxGap = 2.0;
         final signatureLeftOffset = compact ? 72.0 : 86.0;
         final signatureNameOffset = compact ? 5.0 : 6.0;
         const signatureTextFontSize = 11.0;
@@ -3095,8 +3498,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
         final tanggalRow = kopLocationTitle == null || kopLocationTitle.isEmpty
             ? tanggalLong
             : '$kopLocationTitle, $tanggalLong';
-        final logoHeight = compact ? 42.0 : 56.0;
-        final companyKopHeight = compact ? 50.0 : 66.0;
+        final logoHeight = compact ? 39.0 : 52.0;
+        final companyKopHeight = compact ? 50.0 : 65.0;
         final recipientBaseLineWidth = compact
             ? (isCompanyInvoice ? 168.0 : 122.0)
             : (isCompanyInvoice ? 242.0 : 158.0);
@@ -3120,16 +3523,17 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
         );
         const tableRowVPadding = 2.4;
         const tableBodyRowHeight = 16.0;
-        final invoiceBlockWidth = compact ? 156.0 : 196.0;
-        final tableHorizontalBleedLeft = compact ? 7.2 : 5.6;
-        final tableHorizontalBleedRight = compact ? 8.0 : 6.0;
+        final tableHorizontalBleedLeft =
+            isCompanyInvoice ? (compact ? 1.1 : 0.7) : (compact ? 11.2 : 7.2);
+        final tableHorizontalBleedRight =
+            isCompanyInvoice ? (compact ? 1.5 : 1.0) : (compact ? 12.0 : 7.8);
         final incomeColumnWidths = _buildIncomeTableColumnWidths(printableRows);
         final excelTableImage = excelTableRender?.image;
         final excelTableIncludesSummary =
             excelTableHasEmbeddedSummary && excelTableRender != null;
         final compactExcelRenderHeight = isCompanyInvoice
-            ? (excelTableIncludesSummary ? 268.0 : 213.0)
-            : (excelTableIncludesSummary ? 282.5 : 233.5);
+            ? (excelTableIncludesSummary ? 309.0 : 256.0)
+            : (excelTableIncludesSummary ? 323.0 : 271.0);
         final kopWordStyle = pw.TextStyle(
           fontSize: compact ? 34.0 : 47.0,
           fontWeight: pw.FontWeight.bold,
@@ -3181,6 +3585,59 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
         double flexColWeight(int index) {
           final width = incomeColumnWidths[index];
           return width is pw.FlexColumnWidth ? width.flex : 0;
+        }
+
+        double invoiceDividerWidthFor(double availableWidth) {
+          final fallbackWidth = compact ? 146.0 : 186.0;
+          if (availableWidth <= 0) {
+            return fallbackWidth;
+          }
+
+          final fixedWidthTotal = List<double>.generate(
+            incomeColumnWidths.length,
+            (i) => fixedColWidth(i),
+          ).fold(0.0, (sum, width) => sum + width);
+          final flexWeightTotal = List<double>.generate(
+            incomeColumnWidths.length,
+            (i) => flexColWeight(i),
+          ).fold(0.0, (sum, width) => sum + width);
+          final usableFlexWidth = max(0.0, availableWidth - fixedWidthTotal);
+
+          double colWidth(int index) {
+            final fixed = fixedColWidth(index);
+            if (fixed > 0) return fixed;
+            final flex = flexColWeight(index);
+            if (flexWeightTotal <= 0 || flex <= 0) return 0;
+            return usableFlexWidth * (flex / flexWeightTotal);
+          }
+
+          final logicalTableWidth = fixedWidthTotal + usableFlexWidth <= 0
+              ? availableWidth
+              : fixedWidthTotal + usableFlexWidth;
+          final renderedTableWidth = compact &&
+                  excelTableRender != null &&
+                  excelTableRender.aspectRatio > 0
+              ? compactExcelRenderHeight * excelTableRender.aspectRatio
+              : availableWidth +
+                  tableHorizontalBleedLeft +
+                  tableHorizontalBleedRight;
+          final expandedWidth = availableWidth +
+              tableHorizontalBleedLeft +
+              tableHorizontalBleedRight;
+          final renderedLeft = -tableHorizontalBleedLeft +
+              ((expandedWidth - renderedTableWidth) / 2);
+          final tableScale = logicalTableWidth <= 0
+              ? 1.0
+              : renderedTableWidth / logicalTableWidth;
+          final muatanRightBoundary = renderedLeft +
+              ((colWidth(0) + colWidth(1) + colWidth(2) + colWidth(3)) *
+                  tableScale);
+          final safeRightBoundary =
+              max(0.0, muatanRightBoundary - (compact ? 20.0 : 24.0));
+          if (safeRightBoundary > 0) {
+            return min(safeRightBoundary, availableWidth);
+          }
+          return min(fallbackWidth, availableWidth);
         }
 
         pw.Widget buildCompanySummaryRow(
@@ -3393,8 +3850,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
               if (companyKopImage != null)
                 pw.Container(
                   margin: const pw.EdgeInsets.only(
-                    left: -7,
-                    right: -7.5,
+                    left: -5.8,
+                    right: -6.8,
                     top: 0,
                   ),
                   width: double.infinity,
@@ -3442,76 +3899,116 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                   color: PdfColors.black,
                 ),
               ],
-              pw.SizedBox(height: 2),
+              pw.SizedBox(height: 0.5),
             ],
-            pw.Row(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                pw.Column(
+            pw.LayoutBuilder(
+              builder: (context, constraints) {
+                final availableWidth = constraints?.maxWidth ?? 0;
+                final invoiceDividerWidth =
+                    invoiceDividerWidthFor(availableWidth);
+                return pw.Row(
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
-                    pw.SizedBox(
-                      width: invoiceBlockWidth,
-                      child: pw.Center(
-                        child: pw.Text(
-                          'I N V O I C E',
-                          style: pw.TextStyle(
-                            fontSize: compact ? 18 : 23,
-                            fontWeight: pw.FontWeight.bold,
+                    pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.SizedBox(
+                          width: invoiceDividerWidth,
+                          child: pw.Center(
+                            child: pw.Text(
+                              'I  N  V  O  I  C  E',
+                              style: pw.TextStyle(
+                                font: invoiceTitleFont,
+                                fontSize: compact ? 24 : 29,
+                                fontWeight: pw.FontWeight.bold,
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                    ),
-                    pw.SizedBox(height: 1.0),
-                    pw.Container(
-                      width: invoiceBlockWidth,
-                      height: 0.8,
-                      color: PdfColors.black,
-                    ),
-                    pw.SizedBox(height: 0.8),
-                    pw.Container(
-                      width: invoiceBlockWidth,
-                      height: 0.8,
-                      color: PdfColors.black,
-                    ),
-                    pw.SizedBox(height: 2.5),
-                    pw.SizedBox(
-                      width: invoiceBlockWidth,
-                      child: pw.Center(
-                        child: pw.Text(
-                          'NO : $invoiceNumber',
-                          style: pw.TextStyle(
-                            fontSize: compact ? 10 : 11,
-                            fontWeight: pw.FontWeight.bold,
-                            color: PdfColors.black,
+                        pw.SizedBox(height: 1.0),
+                        pw.Container(
+                          width: invoiceDividerWidth,
+                          height: 0.8,
+                          color: PdfColors.black,
+                        ),
+                        pw.SizedBox(height: 0.8),
+                        pw.Container(
+                          width: invoiceDividerWidth,
+                          height: 0.8,
+                          color: PdfColors.black,
+                        ),
+                        pw.SizedBox(height: 2.5),
+                        pw.SizedBox(
+                          width: invoiceDividerWidth,
+                          child: pw.Center(
+                            child: pw.Text(
+                              'NO : $invoiceNumber',
+                              style: pw.TextStyle(
+                                fontSize: compact ? 10 : 11,
+                                fontWeight: pw.FontWeight.bold,
+                                color: PdfColors.black,
+                              ),
+                            ),
                           ),
                         ),
-                      ),
+                      ],
                     ),
-                  ],
-                ),
-                pw.Spacer(),
-                pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.end,
-                  children: [
-                    pw.Text(
-                      tanggalRow,
-                      textAlign: pw.TextAlign.right,
-                      style: const pw.TextStyle(fontSize: infoFont),
-                    ),
-                    pw.SizedBox(height: 4),
-                    pw.Padding(
-                      padding: pw.EdgeInsets.only(right: recipientShiftLeft),
-                      child: pw.Row(
-                        mainAxisSize: pw.MainAxisSize.min,
-                        crossAxisAlignment: pw.CrossAxisAlignment.end,
-                        children: [
-                          pw.Text(
-                            'Kepada Yth: ',
-                            textAlign: pw.TextAlign.right,
-                            style: const pw.TextStyle(fontSize: infoFont),
+                    pw.Spacer(),
+                    pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.end,
+                      children: [
+                        pw.Text(
+                          tanggalRow,
+                          textAlign: pw.TextAlign.right,
+                          style: const pw.TextStyle(fontSize: infoFont),
+                        ),
+                        pw.SizedBox(height: 3),
+                        pw.Padding(
+                          padding:
+                              pw.EdgeInsets.only(right: recipientShiftLeft),
+                          child: pw.Row(
+                            mainAxisSize: pw.MainAxisSize.min,
+                            crossAxisAlignment: pw.CrossAxisAlignment.end,
+                            children: [
+                              pw.Text(
+                                'Kepada Yth: ',
+                                textAlign: pw.TextAlign.right,
+                                style: const pw.TextStyle(fontSize: infoFont),
+                              ),
+                              pw.Container(
+                                width: recipientLineWidth,
+                                alignment: pw.Alignment.center,
+                                padding: const pw.EdgeInsets.only(bottom: 1),
+                                decoration: const pw.BoxDecoration(
+                                  border: pw.Border(
+                                    bottom: pw.BorderSide(
+                                      color: PdfColors.black,
+                                      width: 0.9,
+                                    ),
+                                  ),
+                                ),
+                                child: pw.FittedBox(
+                                  fit: pw.BoxFit.scaleDown,
+                                  child: pw.Text(
+                                    customerName.replaceAll(' ', '\u00A0'),
+                                    maxLines: 1,
+                                    textAlign: pw.TextAlign.center,
+                                    style: pw.TextStyle(
+                                      fontSize: infoFont,
+                                      fontWeight: pw.FontWeight.bold,
+                                      fontStyle: pw.FontStyle.italic,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                          pw.Container(
+                        ),
+                        pw.SizedBox(height: 3),
+                        pw.Padding(
+                          padding:
+                              pw.EdgeInsets.only(right: recipientShiftLeft),
+                          child: pw.Container(
                             width: recipientLineWidth,
                             alignment: pw.Alignment.center,
                             padding: const pw.EdgeInsets.only(bottom: 1),
@@ -3526,7 +4023,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                             child: pw.FittedBox(
                               fit: pw.BoxFit.scaleDown,
                               child: pw.Text(
-                                customerName.replaceAll(' ', '\u00A0'),
+                                (kopLocationUpper ?? '-')
+                                    .replaceAll(' ', '\u00A0'),
                                 maxLines: 1,
                                 textAlign: pw.TextAlign.center,
                                 style: pw.TextStyle(
@@ -3537,44 +4035,14 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                               ),
                             ),
                           ),
-                        ],
-                      ),
-                    ),
-                    pw.SizedBox(height: 4),
-                    pw.Padding(
-                      padding: pw.EdgeInsets.only(right: recipientShiftLeft),
-                      child: pw.Container(
-                        width: recipientLineWidth,
-                        alignment: pw.Alignment.center,
-                        padding: const pw.EdgeInsets.only(bottom: 1),
-                        decoration: const pw.BoxDecoration(
-                          border: pw.Border(
-                            bottom: pw.BorderSide(
-                              color: PdfColors.black,
-                              width: 0.9,
-                            ),
-                          ),
                         ),
-                        child: pw.FittedBox(
-                          fit: pw.BoxFit.scaleDown,
-                          child: pw.Text(
-                            (kopLocationUpper ?? '-').replaceAll(' ', '\u00A0'),
-                            maxLines: 1,
-                            textAlign: pw.TextAlign.center,
-                            style: pw.TextStyle(
-                              fontSize: infoFont,
-                              fontWeight: pw.FontWeight.bold,
-                              fontStyle: pw.FontStyle.italic,
-                            ),
-                          ),
-                        ),
-                      ),
+                      ],
                     ),
                   ],
-                ),
-              ],
+                );
+              },
             ),
-            pw.SizedBox(height: 10),
+            pw.SizedBox(height: 5),
             if (excelTableImage != null)
               compact
                   ? pw.Container(
@@ -3914,7 +4382,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                             crossAxisAlignment: pw.CrossAxisAlignment.start,
                             children: [
                               pw.SizedBox(height: signatureTextFontSize + 1),
-                              pw.SizedBox(height: compact ? 72 : 102),
+                              pw.SizedBox(height: compact ? 58 : 84),
                               pw.Padding(
                                 padding: pw.EdgeInsets.only(
                                   left: signatureNameOffset +
@@ -4077,7 +4545,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                       ((leadPrefixWidth + (leftMergeWidth / 2)) * tableScale);
                   final antokWidth = compact ? 100.0 : 112.0;
                   final antokShiftLeft = compact ? 8.0 : 9.0;
-                  final antokTopOffset = compact ? 3.0 : 4.0;
+                  final antokTopOffset = compact ? 2.0 : 3.0;
                   final antokLeft = max(
                     0.0,
                     min(
@@ -4087,10 +4555,10 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                   );
 
                   return pw.Padding(
-                    padding: pw.EdgeInsets.only(top: compact ? 4 : 6),
+                    padding: pw.EdgeInsets.only(top: compact ? 3 : 5),
                     child: pw.SizedBox(
                       width: availableWidth,
-                      height: signatureTextFontSize + 4,
+                      height: signatureTextFontSize + 3,
                       child: pw.Stack(
                         children: [
                           pw.Positioned(
@@ -4140,7 +4608,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
         8.5 * PdfPageFormat.inch,
         13.0 * PdfPageFormat.inch,
       );
-      final pdfMargin = usePortrait ? 24.0 : 18.0;
+      final pdfMarginHorizontal = usePortrait ? 24.0 : 18.0;
+      final pdfMarginTop = usePortrait ? 12.0 : 6.5;
+      final pdfMarginBottom = usePortrait ? 15.0 : 9.0;
       final tableRenderInfo = usePortrait
           ? fullExcelTableImage?.renderSource
           : compactExcelTableImage?.renderSource;
@@ -4150,7 +4620,12 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
         doc.addPage(
           pw.MultiPage(
             pageFormat: pdfPageFormat,
-            margin: pw.EdgeInsets.all(pdfMargin),
+            margin: pw.EdgeInsets.fromLTRB(
+              pdfMarginHorizontal,
+              pdfMarginTop,
+              pdfMarginHorizontal,
+              pdfMarginBottom,
+            ),
             build: (_) => [
               buildInvoiceContent(
                 compact: false,
@@ -4161,18 +4636,24 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
           ),
         );
       } else {
-        final usableHeight = pdfPageFormat.height - (pdfMargin * 2);
+        final usableHeight =
+            pdfPageFormat.height - pdfMarginTop - pdfMarginBottom;
         final halfHeight = usableHeight / 2;
         doc.addPage(
           pw.Page(
             pageFormat: pdfPageFormat,
-            margin: pw.EdgeInsets.all(pdfMargin),
+            margin: pw.EdgeInsets.fromLTRB(
+              pdfMarginHorizontal,
+              pdfMarginTop,
+              pdfMarginHorizontal,
+              pdfMarginBottom,
+            ),
             build: (_) {
               return pw.Column(
                 children: [
                   pw.Container(
                     height: halfHeight,
-                    padding: const pw.EdgeInsets.only(bottom: 8),
+                    padding: const pw.EdgeInsets.only(bottom: 2),
                     child: buildInvoiceContent(
                       compact: true,
                       excelTableRender: compactExcelTableImage,
@@ -4195,7 +4676,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
         title: pdfName,
         renderInfo: tableRenderInfo,
       );
-      if (!confirmed) return;
+      if (!confirmed) return false;
       await Printing.layoutPdf(
         name: pdfName,
         onLayout: (_) async => pdfBytes,
@@ -4214,12 +4695,14 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
           ),
         );
       }
+      return true;
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted) return false;
       _snack(
         'Gagal print invoice: ${e.toString().replaceFirst('Exception: ', '')}',
         error: true,
       );
+      return false;
     }
   }
 
@@ -4304,14 +4787,14 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
               },
             ];
 
-      final usePortrait = rows.length > 13;
+      final usePortrait = rows.length > 14;
       final totalExpense = _toNum(item['total_pengeluaran']);
       final expenseNumber = '${item['no_expense'] ?? '-'}';
 
       pw.Widget buildExpenseContent({required bool compact}) {
         const infoFont = 9.5;
         const tableBodyRowHeight = 16.0;
-        final minRows = compact ? 13 : 35;
+        final minRows = compact ? 14 : 36;
         final printableRows = rows.length >= minRows
             ? rows
             : <Map<String, dynamic>>[
@@ -4762,6 +5245,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
     List<Map<String, dynamic>> armadas = const <Map<String, dynamic>>[];
     List<Map<String, dynamic>> hargaPerTonRules =
         const <Map<String, dynamic>>[];
+    int editDetailFieldRefreshToken = 0;
     int editHargaFieldRefreshToken = 0;
     try {
       armadas = await widget.repository.fetchArmadas();
@@ -4877,16 +5361,22 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
       final muatIsManual =
           muatText.isNotEmpty && !_defaultMuatOptions.contains(muatText);
       final hargaText = _formatEditableNumber(row['harga']);
+      final driverText = '${row['nama_supir'] ?? ''}'.trim();
+      final isDriverManual =
+          driverText.isNotEmpty && !_isKnownDriverOption(driverText);
       final resolvedHarga = resolveHargaPerTon(
         lokasiMuat: muatText,
         lokasiBongkar: '${row['lokasi_bongkar'] ?? ''}',
       );
-      return <String, dynamic>{
+      final mappedRow = <String, dynamic>{
         'lokasi_muat': muatText,
         'lokasi_muat_manual': muatIsManual ? muatText : '',
         'lokasi_bongkar': '${row['lokasi_bongkar'] ?? ''}',
         'muatan': '${row['muatan'] ?? ''}',
-        'nama_supir': '${row['nama_supir'] ?? ''}',
+        'nama_supir': driverText,
+        'nama_supir_manual': isDriverManual ? driverText : '',
+        'nama_supir_is_manual': isDriverManual,
+        'nama_supir_auto': false,
         'armada_id': resolvedArmadaId,
         'armada_manual': useManual ? rawManual : '',
         'armada_is_manual': useManual,
@@ -4898,6 +5388,19 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
             resolvedHarga > 0 &&
             _toNum(hargaText) == resolvedHarga.floorToDouble(),
       };
+      final defaultDriver =
+          _resolveDefaultDriverForRow(mappedRow, armadas: armadas)?.trim() ??
+              '';
+      if (!isDriverManual && defaultDriver.isNotEmpty) {
+        if (driverText.isEmpty ||
+            _normalizeText(driverText) == _normalizeText(defaultDriver)) {
+          mappedRow['nama_supir'] = defaultDriver;
+          mappedRow['nama_supir_manual'] = '';
+          mappedRow['nama_supir_is_manual'] = false;
+          mappedRow['nama_supir_auto'] = true;
+        }
+      }
+      return mappedRow;
     }
 
     final existingDetails = _toDetailList(item['rincian']);
@@ -5121,6 +5624,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                 ),
                                 const SizedBox(height: 8),
                                 TextFormField(
+                                  key: ValueKey(
+                                    'edit-muatan-$index-$editDetailFieldRefreshToken',
+                                  ),
                                   initialValue: '${row['muatan'] ?? ''}',
                                   decoration: InputDecoration(
                                     hintText: _t('Muatan (Opsional)',
@@ -5129,17 +5635,10 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                   onChanged: (value) => row['muatan'] = value,
                                 ),
                                 const SizedBox(height: 8),
-                                TextFormField(
-                                  initialValue: '${row['nama_supir'] ?? ''}',
-                                  decoration: InputDecoration(
-                                    hintText: _t('Nama Supir (Opsional)',
-                                        'Driver Name (Optional)'),
-                                  ),
-                                  onChanged: (value) =>
-                                      row['nama_supir'] = value,
-                                ),
-                                const SizedBox(height: 8),
                                 CvantDropdownField<String>(
+                                  key: ValueKey(
+                                    'edit-armada-$index-${row['armada_id']}-${row['armada_manual']}-${row['armada_is_manual']}',
+                                  ),
                                   initialValue: () {
                                     final armadaId =
                                         '${row['armada_id']}'.trim();
@@ -5212,6 +5711,14 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                           row['armada_manual'] = '';
                                         }
                                       }
+                                      _syncDriverWithArmadaSelection(
+                                        row,
+                                        armadas: armadas,
+                                        overrideManualDriver: value != null &&
+                                            value.isNotEmpty &&
+                                            value != _manualArmadaOptionId,
+                                      );
+                                      editDetailFieldRefreshToken++;
                                     });
                                   },
                                 ),
@@ -5224,6 +5731,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                             .isEmpty)) ...[
                                   const SizedBox(height: 8),
                                   TextFormField(
+                                    key: ValueKey(
+                                      'edit-armada-manual-$index-$editDetailFieldRefreshToken',
+                                    ),
                                     initialValue:
                                         '${row['armada_manual'] ?? ''}',
                                     decoration: InputDecoration(
@@ -5232,8 +5742,106 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                         'Manual Plate Number (Other/Combined)',
                                       ),
                                     ),
-                                    onChanged: (value) =>
-                                        row['armada_manual'] = value,
+                                    onChanged: (value) => setDialogState(() {
+                                      row['armada_manual'] = value;
+                                      _syncDriverWithArmadaSelection(
+                                        row,
+                                        armadas: armadas,
+                                      );
+                                    }),
+                                  ),
+                                ],
+                                const SizedBox(height: 8),
+                                CvantDropdownField<String>(
+                                  key: ValueKey(
+                                    'edit-driver-$index-${row['nama_supir']}-${row['nama_supir_manual']}-${row['nama_supir_is_manual']}-${row['nama_supir_auto']}',
+                                  ),
+                                  initialValue: () {
+                                    final driver =
+                                        '${row['nama_supir'] ?? ''}'.trim();
+                                    final driverManual =
+                                        '${row['nama_supir_manual'] ?? ''}'
+                                            .trim();
+                                    final isManual =
+                                        row['nama_supir_is_manual'] == true;
+                                    if (isManual ||
+                                        driverManual.isNotEmpty ||
+                                        (driver.isNotEmpty &&
+                                            !_isKnownDriverOption(driver))) {
+                                      return _manualDriverOptionId;
+                                    }
+                                    return driver;
+                                  }(),
+                                  decoration: InputDecoration(
+                                    hintText: _t(
+                                      'Pilih Nama Supir',
+                                      'Select Driver Name',
+                                    ),
+                                  ),
+                                  items: [
+                                    DropdownMenuItem<String>(
+                                      value: '',
+                                      child: Text(_t(
+                                        '-- Pilih Nama Supir --',
+                                        '-- Select Driver Name --',
+                                      )),
+                                    ),
+                                    ..._defaultDriverOptions.map(
+                                      (driver) => DropdownMenuItem<String>(
+                                        value: driver,
+                                        child: Text(driver),
+                                      ),
+                                    ),
+                                    DropdownMenuItem<String>(
+                                      value: _manualDriverOptionId,
+                                      child: Text(
+                                        _t(
+                                          'Other (Input Manual)',
+                                          'Other (Manual Input)',
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                  onChanged: (value) {
+                                    setDialogState(() {
+                                      if (value == _manualDriverOptionId) {
+                                        _enableManualDriverInput(row);
+                                      } else {
+                                        row['nama_supir'] = value ?? '';
+                                        row['nama_supir_manual'] = '';
+                                        row['nama_supir_is_manual'] = false;
+                                      }
+                                      row['nama_supir_auto'] = false;
+                                      editDetailFieldRefreshToken++;
+                                    });
+                                  },
+                                ),
+                                if (row['nama_supir_is_manual'] == true ||
+                                    ('${row['nama_supir_manual'] ?? ''}'
+                                            .trim()
+                                            .isNotEmpty &&
+                                        !_isKnownDriverOption(
+                                          '${row['nama_supir'] ?? ''}',
+                                        ))) ...[
+                                  const SizedBox(height: 8),
+                                  TextFormField(
+                                    key: ValueKey(
+                                      'edit-driver-manual-$index-$editDetailFieldRefreshToken',
+                                    ),
+                                    initialValue:
+                                        '${row['nama_supir_manual'] ?? ''}',
+                                    decoration: InputDecoration(
+                                      hintText: _t(
+                                        'Nama Supir (Manual)',
+                                        'Driver Name (Manual)',
+                                      ),
+                                    ),
+                                    onChanged: (value) => setDialogState(() {
+                                      row['nama_supir_manual'] = value;
+                                      row['nama_supir'] = value;
+                                      row['nama_supir_is_manual'] = true;
+                                      row['nama_supir_auto'] = false;
+                                    }),
                                   ),
                                 ],
                                 const SizedBox(height: 8),
@@ -5270,7 +5878,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                   children: [
                                     Expanded(
                                       child: TextFormField(
-                                        key: ValueKey('edit-tonase-$index'),
+                                        key: ValueKey(
+                                          'edit-tonase-$index-$editDetailFieldRefreshToken',
+                                        ),
                                         initialValue: '${row['tonase']}',
                                         keyboardType: const TextInputType
                                             .numberWithOptions(
@@ -5289,7 +5899,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                     Expanded(
                                       child: TextFormField(
                                         key: ValueKey(
-                                          'edit-harga-$index-$editHargaFieldRefreshToken',
+                                          'edit-harga-$index-$editDetailFieldRefreshToken-$editHargaFieldRefreshToken',
                                         ),
                                         initialValue: '${row['harga']}',
                                         keyboardType: const TextInputType
@@ -5345,6 +5955,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                 'lokasi_bongkar': '',
                                 'muatan': '',
                                 'nama_supir': '',
+                                'nama_supir_manual': '',
+                                'nama_supir_is_manual': false,
+                                'nama_supir_auto': false,
                                 'armada_id': '',
                                 'armada_manual': '',
                                 'armada_is_manual': false,
@@ -5355,6 +5968,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                 'harga_auto': true,
                               },
                             );
+                            editDetailFieldRefreshToken++;
                           }),
                           child: Text(_t('+ Tambah Rincian', '+ Add Detail')),
                         ),
@@ -5581,7 +6195,6 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
 
                                         setDialogState(() => saving = true);
                                         try {
-                                          String? regeneratedInvoiceNo;
                                           final originalDate =
                                               Formatters.parseDate(
                                             item['tanggal'],
@@ -5606,52 +6219,6 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                               resolveEditedIssueDate() ??
                                                   originalDate ??
                                                   DateTime.now();
-                                          final editedCustomer =
-                                              customer.text.trim();
-                                          final currentRawInvoiceNo =
-                                              '${item['no_invoice'] ?? ''}'
-                                                  .trim();
-                                          final isCompanyInvoice =
-                                              isCompanyInvoiceMode;
-
-                                          final monthOrYearChanged =
-                                              originalDate != null &&
-                                                  (effectiveDate.year !=
-                                                          originalDate.year ||
-                                                      effectiveDate.month !=
-                                                          originalDate.month);
-                                          final typeChanged =
-                                              currentRawInvoiceNo.isNotEmpty &&
-                                                  (_isCompanyInvoiceNumber(
-                                                        currentRawInvoiceNo,
-                                                      ) !=
-                                                      isCompanyInvoice);
-                                          final normalizedExisting =
-                                              Formatters.invoiceNumber(
-                                            currentRawInvoiceNo,
-                                            effectiveDate,
-                                            customerName: editedCustomer,
-                                            isCompany: isCompanyInvoice,
-                                          );
-                                          final needsFreshSequence =
-                                              currentRawInvoiceNo.isEmpty ||
-                                                  normalizedExisting == '-' ||
-                                                  monthOrYearChanged ||
-                                                  typeChanged;
-
-                                          if (needsFreshSequence) {
-                                            regeneratedInvoiceNo = await widget
-                                                .repository
-                                                .generateIncomeInvoiceNumber(
-                                              issuedDate: effectiveDate,
-                                              isCompany: isCompanyInvoice,
-                                            );
-                                          } else if (normalizedExisting
-                                                  .trim() !=
-                                              currentRawInvoiceNo) {
-                                            regeneratedInvoiceNo =
-                                                normalizedExisting.trim();
-                                          }
 
                                           await widget.repository.updateInvoice(
                                             id: '${item['id']}',
@@ -5702,7 +6269,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                             namaSupir: driverNames.isEmpty
                                                 ? null
                                                 : driverNames,
-                                            noInvoice: regeneratedInvoiceNo,
+                                            noInvoice: null,
                                             details: detailsPayload,
                                             acceptedBy: acceptedBy,
                                           );
@@ -6346,6 +6913,20 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
       Map<String, dynamic> detail, {
       Map<String, dynamic>? fallbackIncomeDetail,
     }) {
+      String firstDriverPart(String value) {
+        for (final part in value.split(RegExp(r'[,;/]'))) {
+          final normalized = part.trim();
+          final lowered = normalized.toLowerCase();
+          if (normalized.isNotEmpty &&
+              lowered != 'null' &&
+              lowered != 'undefined' &&
+              lowered != '-') {
+            return normalized;
+          }
+        }
+        return '';
+      }
+
       String muat = '${detail['lokasi_muat'] ?? ''}'.trim();
       String bongkar = '${detail['lokasi_bongkar'] ?? ''}'.trim();
       if (muat.isEmpty || bongkar.isEmpty) {
@@ -6367,8 +6948,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
           ? ''
           : '${fallbackIncomeDetail['nama_supir'] ?? fallbackIncomeDetail['supir'] ?? ''}';
       final driver = detailDriver.trim().isNotEmpty
-          ? detailDriver.trim()
-          : fallbackDriver.trim();
+          ? firstDriverPart(detailDriver.trim())
+          : firstDriverPart(fallbackDriver.trim());
       return (muat: muat, bongkar: bongkar, driver: driver);
     }
 

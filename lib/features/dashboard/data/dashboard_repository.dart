@@ -62,6 +62,7 @@ class DashboardRepository {
   DashboardRepository(this._supabase);
 
   final SupabaseClient _supabase;
+  bool? _invoiceNumberColumnAvailable;
   static const _companyKeywords = <String>[
     r'\bcv\b',
     r'\bpt\b',
@@ -79,14 +80,17 @@ class DashboardRepository {
 
   Future<DashboardBundle> loadAdminDashboard() async {
     try {
+      const invoiceColumns =
+          'id,no_invoice,tanggal,tanggal_kop,nama_pelanggan,status,total_bayar,total_biaya,pph,'
+          'armada_id,armada_start_date,armada_end_date,muatan,created_at,rincian';
       final response = await Future.wait<dynamic>([
-        _supabase
-            .from('invoices')
-            .select(
-              'id,no_invoice,tanggal,tanggal_kop,nama_pelanggan,status,total_bayar,total_biaya,pph,'
-              'armada_id,armada_start_date,armada_end_date,muatan,created_at,rincian',
-            )
-            .order('tanggal', ascending: false),
+        _runInvoiceSelectWithFallback(
+          invoiceColumns,
+          (columns) => _supabase
+              .from('invoices')
+              .select(columns)
+              .order('tanggal', ascending: false),
+        ),
         _supabase
             .from('expenses')
             .select(
@@ -136,14 +140,16 @@ class DashboardRepository {
 
   Future<DashboardLiveSections> loadAdminLiveSections() async {
     try {
+      const invoiceColumns = 'id,no_invoice,tanggal,tanggal_kop,nama_pelanggan,'
+          'armada_id,armada_start_date,armada_end_date,created_at,rincian';
       final response = await Future.wait<dynamic>([
-        _supabase
-            .from('invoices')
-            .select(
-              'id,no_invoice,tanggal,tanggal_kop,nama_pelanggan,'
-              'armada_id,armada_start_date,armada_end_date,created_at,rincian',
-            )
-            .order('tanggal', ascending: false),
+        _runInvoiceSelectWithFallback(
+          invoiceColumns,
+          (columns) => _supabase
+              .from('invoices')
+              .select(columns)
+              .order('tanggal', ascending: false),
+        ),
         _supabase
             .from('expenses')
             .select(
@@ -240,15 +246,18 @@ class DashboardRepository {
 
   Future<List<Map<String, dynamic>>> fetchInvoices() async {
     try {
-      final res = await _supabase
-          .from('invoices')
-          .select(
-            'id,no_invoice,tanggal,tanggal_kop,lokasi_kop,nama_pelanggan,email,no_telp,due_date,'
-            'lokasi_muat,lokasi_bongkar,armada_start_date,armada_end_date,'
-            'tonase,harga,muatan,nama_supir,status,total_bayar,total_biaya,pph,diterima_oleh,'
-            'customer_id,armada_id,order_id,rincian,created_at,updated_at',
-          )
-          .order('tanggal', ascending: false);
+      const invoiceColumns =
+          'id,no_invoice,tanggal,tanggal_kop,lokasi_kop,nama_pelanggan,email,no_telp,due_date,'
+          'lokasi_muat,lokasi_bongkar,armada_start_date,armada_end_date,'
+          'tonase,harga,muatan,nama_supir,status,total_bayar,total_biaya,pph,diterima_oleh,'
+          'customer_id,armada_id,order_id,rincian,created_at,updated_at';
+      final res = await _runInvoiceSelectWithFallback(
+        invoiceColumns,
+        (columns) => _supabase
+            .from('invoices')
+            .select(columns)
+            .order('tanggal', ascending: false),
+      );
       return _toMapList(res);
     } on PostgrestException catch (e) {
       throw Exception('Gagal memuat invoice: ${e.message}');
@@ -260,16 +269,21 @@ class DashboardRepository {
     final dd = since.day.toString().padLeft(2, '0');
     final iso = '${since.year}-$mm-$dd';
     try {
-      final res = await _supabase
-          .from('invoices')
-          .select(
-            'id,no_invoice,tanggal,tanggal_kop,lokasi_kop,nama_pelanggan,email,no_telp,due_date,'
-            'lokasi_muat,lokasi_bongkar,armada_start_date,armada_end_date,'
-            'tonase,harga,muatan,nama_supir,status,total_bayar,total_biaya,pph,diterima_oleh,'
-            'customer_id,armada_id,order_id,rincian,created_at,updated_at',
-          )
-          .or('tanggal.gte.$iso,tanggal_kop.gte.$iso,armada_start_date.gte.$iso')
-          .order('tanggal', ascending: false);
+      const invoiceColumns =
+          'id,no_invoice,tanggal,tanggal_kop,lokasi_kop,nama_pelanggan,email,no_telp,due_date,'
+          'lokasi_muat,lokasi_bongkar,armada_start_date,armada_end_date,'
+          'tonase,harga,muatan,nama_supir,status,total_bayar,total_biaya,pph,diterima_oleh,'
+          'customer_id,armada_id,order_id,rincian,created_at,updated_at';
+      final res = await _runInvoiceSelectWithFallback(
+        invoiceColumns,
+        (columns) => _supabase
+            .from('invoices')
+            .select(columns)
+            .or(
+              'tanggal.gte.$iso,tanggal_kop.gte.$iso,armada_start_date.gte.$iso',
+            )
+            .order('tanggal', ascending: false),
+      );
       return _toMapList(res);
     } on PostgrestException catch (e) {
       throw Exception('Gagal memuat invoice: ${e.message}');
@@ -922,20 +936,16 @@ class DashboardRepository {
     final totalBayarValue = max(0, total - pphValue);
     final isCompanyInvoice = _isCompanyCustomerName(customerName.trim()) ||
         _isCompanyInvoiceNumber(requestedNoInvoice ?? '');
-    var currentCode = (requestedNoInvoice ?? '').trim().isEmpty
-        ? await generateIncomeInvoiceNumber(
-            issuedDate: normalizedIssueDate,
-            isCompany: isCompanyInvoice,
-          )
-        : (() {
-            final normalized = Formatters.invoiceNumber(
-              requestedNoInvoice!.trim(),
-              kopDate ?? issueDate,
-              customerName: customerName,
-              isCompany: isCompanyInvoice,
-            );
-            return normalized == '-' ? requestedNoInvoice.trim() : normalized;
-          })();
+    var currentCode = '';
+    if ((requestedNoInvoice ?? '').trim().isNotEmpty) {
+      final normalized = Formatters.invoiceNumber(
+        requestedNoInvoice!.trim(),
+        kopDate ?? issueDate,
+        customerName: customerName,
+        isCompany: isCompanyInvoice,
+      );
+      currentCode = normalized == '-' ? requestedNoInvoice.trim() : normalized;
+    }
 
     final basePayload = <String, dynamic>{
       'tanggal': date,
@@ -978,41 +988,28 @@ class DashboardRepository {
       basePayload['rincian'] = details;
     }
 
-    var inserted = false;
     String insertedInvoiceId = '';
-    for (var attempt = 0; attempt < 5; attempt++) {
-      final payload = <String, dynamic>{
-        ...basePayload,
-        'no_invoice': currentCode,
-      };
-      try {
-        final insertedRow = await _supabase
-            .from('invoices')
-            .insert(payload)
-            .select('id,no_invoice')
-            .maybeSingle();
-        insertedInvoiceId = '${insertedRow?['id'] ?? ''}'.trim();
-        currentCode = '${insertedRow?['no_invoice'] ?? currentCode}'.trim();
-        inserted = true;
-        break;
-      } on PostgrestException catch (e) {
-        final msg = e.message.toLowerCase();
-        final duplicateNoInvoice = e.code == '23505' ||
-            msg.contains('duplicate key') ||
-            msg.contains('invoices_no_invoice_key') ||
-            msg.contains('no_invoice_key');
-        if (!duplicateNoInvoice || attempt >= 4) {
-          throw Exception('Gagal menambah invoice: ${e.message}');
-        }
-
-        currentCode = await generateIncomeInvoiceNumber(
-          issuedDate: normalizedIssueDate,
-          isCompany: isCompanyInvoice,
-        );
+    final payload = <String, dynamic>{
+      ...basePayload,
+      if (currentCode.isNotEmpty) 'no_invoice': currentCode,
+    };
+    try {
+      final insertedRow = await _insertInvoiceWithFallback(
+        payload,
+        selectColumns: 'id,no_invoice',
+      );
+      insertedInvoiceId = '${insertedRow?['id'] ?? ''}'.trim();
+      currentCode = '${insertedRow?['no_invoice'] ?? currentCode}'.trim();
+    } on PostgrestException catch (e) {
+      final msg = e.message.toLowerCase();
+      final duplicateNoInvoice = currentCode.isNotEmpty &&
+          (e.code == '23505' ||
+              msg.contains('duplicate key') ||
+              msg.contains('invoices_no_invoice_key') ||
+              msg.contains('no_invoice_key'));
+      if (!duplicateNoInvoice) {
+        throw Exception('Gagal menambah invoice: ${e.message}');
       }
-    }
-
-    if (!inserted) {
       throw Exception(
         'Gagal menambah invoice: nomor invoice bentrok, silakan coba lagi.',
       );
@@ -1028,11 +1025,18 @@ class DashboardRepository {
     required DateTime issuedDate,
     required bool isCompany,
   }) async {
+    if (_invoiceNumberColumnAvailable == false) {
+      return '';
+    }
     try {
       final localIssuedDate = issuedDate.toLocal();
-      final res = await _supabase
-          .from('invoices')
-          .select('no_invoice,nama_pelanggan,tanggal_kop,tanggal');
+      final res = await _runInvoiceSelectWithFallback(
+        'no_invoice,nama_pelanggan,tanggal_kop,tanggal',
+        (columns) => _supabase.from('invoices').select(columns),
+      );
+      if (_invoiceNumberColumnAvailable == false) {
+        return '';
+      }
 
       final rows = _toMapList(res);
       var maxSeq = 0;
@@ -1165,16 +1169,19 @@ class DashboardRepository {
 
   Future<Map<String, dynamic>?> fetchInvoiceById(String id) async {
     try {
-      final res = await _supabase
-          .from('invoices')
-          .select(
-            'id,no_invoice,tanggal,tanggal_kop,lokasi_kop,nama_pelanggan,email,no_telp,due_date,'
-            'lokasi_muat,lokasi_bongkar,armada_start_date,armada_end_date,'
-            'tonase,harga,muatan,nama_supir,status,total_biaya,pph,total_bayar,diterima_oleh,'
-            'customer_id,armada_id,order_id,rincian,created_at,updated_at',
-          )
-          .eq('id', id)
-          .maybeSingle();
+      const invoiceColumns =
+          'id,no_invoice,tanggal,tanggal_kop,lokasi_kop,nama_pelanggan,email,no_telp,due_date,'
+          'lokasi_muat,lokasi_bongkar,armada_start_date,armada_end_date,'
+          'tonase,harga,muatan,nama_supir,status,total_biaya,pph,total_bayar,diterima_oleh,'
+          'customer_id,armada_id,order_id,rincian,created_at,updated_at';
+      final res = await _runInvoiceSelectWithFallback(
+        invoiceColumns,
+        (columns) => _supabase
+            .from('invoices')
+            .select(columns)
+            .eq('id', id)
+            .maybeSingle(),
+      );
       if (res == null) return null;
       return Map<String, dynamic>.from(res);
     } on PostgrestException catch (e) {
@@ -1227,18 +1234,6 @@ class DashboardRepository {
       details: details,
     );
     var effectiveInvoiceNumber = noInvoice?.trim() ?? '';
-    if (effectiveInvoiceNumber.isEmpty) {
-      try {
-        final current = await _supabase
-            .from('invoices')
-            .select('no_invoice')
-            .eq('id', id)
-            .maybeSingle();
-        effectiveInvoiceNumber = '${current?['no_invoice'] ?? ''}'.trim();
-      } catch (_) {
-        // Best effort: auto expense tetap dicoba walau gagal baca nomor invoice existing.
-      }
-    }
     try {
       final normalizedKopLocation =
           kopLocation?.trim().isEmpty == true ? null : kopLocation?.trim();
@@ -1302,7 +1297,7 @@ class DashboardRepository {
         payload['armada_id'] = null;
       }
 
-      await _supabase.from('invoices').update(payload).eq('id', id);
+      await _updateInvoiceWithFallback(id, payload);
       if (selectedArmadaIds.isNotEmpty) {
         await _setArmadaStatusBestEffort(
           selectedArmadaIds,
@@ -1315,9 +1310,7 @@ class DashboardRepository {
       );
       await _createSanguExpenseFromIncomeBestEffort(
         invoiceId: id,
-        invoiceNumber: effectiveInvoiceNumber.isEmpty
-            ? '${payload['no_invoice'] ?? ''}'.trim()
-            : effectiveInvoiceNumber,
+        invoiceNumber: effectiveInvoiceNumber,
         expenseDate: expenseReferenceDate,
         details: effectiveDetails,
         fallbackPickup: pickup,
@@ -1365,10 +1358,11 @@ class DashboardRepository {
       if (cleanUpdates.isEmpty) return;
 
       final ids = cleanUpdates.map((item) => item['id']!).toSet().toList();
-      final current = await _supabase
-          .from('invoices')
-          .select('id,no_invoice,nama_pelanggan,tanggal,tanggal_kop,lokasi_kop')
-          .inFilter('id', ids);
+      final current = await _runInvoiceSelectWithFallback(
+        'id,no_invoice,nama_pelanggan,tanggal,tanggal_kop,lokasi_kop',
+        (columns) =>
+            _supabase.from('invoices').select(columns).inFilter('id', ids),
+      );
       final currentRows = _toMapList(current);
       if (currentRows.isEmpty) {
         throw Exception('Invoice tidak ditemukan.');
@@ -1419,7 +1413,8 @@ class DashboardRepository {
           'lokasi_kop':
               effectiveKopLocation.isEmpty ? null : effectiveKopLocation,
         };
-        if (normalizedNoInvoice.isNotEmpty) {
+        if (normalizedNoInvoice.isNotEmpty &&
+            _invoiceNumberColumnAvailable != false) {
           payload['no_invoice'] = normalizedNoInvoice;
         }
         payloads.add(payload);
@@ -1431,7 +1426,7 @@ class DashboardRepository {
         final id = '${payload['id'] ?? ''}'.trim();
         if (id.isEmpty) continue;
         final updatePayload = Map<String, dynamic>.from(payload)..remove('id');
-        await _supabase.from('invoices').update(updatePayload).eq('id', id);
+        await _updateInvoiceWithFallback(id, updatePayload);
       }
     } on PostgrestException catch (e) {
       throw Exception('Gagal update KOP invoice: ${e.message}');
@@ -1691,16 +1686,18 @@ class DashboardRepository {
 
   Future<Map<String, dynamic>?> findInvoiceForOrder(String orderId) async {
     try {
-      final res = await _supabase
-          .from('invoices')
-          .select(
-            'id,no_invoice,status,total_biaya,pph,total_bayar,'
-            'lokasi_muat,lokasi_bongkar,armada_id,tanggal,order_id,created_at',
-          )
-          .eq('order_id', orderId)
-          .order('created_at', ascending: false)
-          .limit(1)
-          .maybeSingle();
+      const invoiceColumns = 'id,no_invoice,status,total_biaya,pph,total_bayar,'
+          'lokasi_muat,lokasi_bongkar,armada_id,tanggal,order_id,created_at';
+      final res = await _runInvoiceSelectWithFallback(
+        invoiceColumns,
+        (columns) => _supabase
+            .from('invoices')
+            .select(columns)
+            .eq('order_id', orderId)
+            .order('created_at', ascending: false)
+            .limit(1)
+            .maybeSingle(),
+      );
       if (res == null) return null;
       return Map<String, dynamic>.from(res);
     } on PostgrestException catch (e) {
@@ -2587,6 +2584,132 @@ class DashboardRepository {
     return [];
   }
 
+  bool _selectColumnsInclude(String columns, String target) {
+    final normalizedTarget = target.trim().toLowerCase();
+    return columns
+        .split(',')
+        .map((column) => column.trim().toLowerCase())
+        .any((column) => column == normalizedTarget);
+  }
+
+  String _removeSelectColumn(String columns, String target) {
+    final normalizedTarget = target.trim().toLowerCase();
+    return columns
+        .split(',')
+        .map((column) => column.trim())
+        .where(
+          (column) =>
+              column.isNotEmpty && column.toLowerCase() != normalizedTarget,
+        )
+        .join(',');
+  }
+
+  bool _isMissingInvoiceNumberColumnError(PostgrestException error) {
+    final message = error.message.toLowerCase();
+    return message.contains('no_invoice') &&
+        (message.contains('does not exist') ||
+            message.contains('could not find') ||
+            message.contains('schema cache'));
+  }
+
+  String _invoiceSelectColumnsForCurrentSchema(String columns) {
+    return _invoiceNumberColumnAvailable == false
+        ? _removeSelectColumn(columns, 'no_invoice')
+        : columns;
+  }
+
+  Future<T> _runInvoiceSelectWithFallback<T>(
+    String columns,
+    Future<T> Function(String columns) request,
+  ) async {
+    final preferredColumns = _invoiceSelectColumnsForCurrentSchema(columns);
+    try {
+      final result = await request(preferredColumns);
+      if (_selectColumnsInclude(preferredColumns, 'no_invoice')) {
+        _invoiceNumberColumnAvailable = true;
+      }
+      return result;
+    } on PostgrestException catch (error) {
+      if (!_isMissingInvoiceNumberColumnError(error) ||
+          !_selectColumnsInclude(columns, 'no_invoice')) {
+        rethrow;
+      }
+
+      final fallbackColumns = _removeSelectColumn(columns, 'no_invoice');
+      if (fallbackColumns == preferredColumns) rethrow;
+      _invoiceNumberColumnAvailable = false;
+      return await request(fallbackColumns);
+    }
+  }
+
+  Future<Map<String, dynamic>?> _insertInvoiceWithFallback(
+    Map<String, dynamic> payload, {
+    String selectColumns = 'id,no_invoice',
+  }) async {
+    final preferredPayload = Map<String, dynamic>.from(payload);
+    if (_invoiceNumberColumnAvailable == false) {
+      preferredPayload.remove('no_invoice');
+    }
+    final preferredColumns = _invoiceSelectColumnsForCurrentSchema(
+      selectColumns,
+    );
+
+    try {
+      final result = await _supabase
+          .from('invoices')
+          .insert(preferredPayload)
+          .select(preferredColumns)
+          .maybeSingle();
+      if (_selectColumnsInclude(preferredColumns, 'no_invoice')) {
+        _invoiceNumberColumnAvailable = true;
+      }
+      return result == null ? null : Map<String, dynamic>.from(result);
+    } on PostgrestException catch (error) {
+      if (!_isMissingInvoiceNumberColumnError(error) ||
+          !payload.containsKey('no_invoice')) {
+        rethrow;
+      }
+
+      _invoiceNumberColumnAvailable = false;
+      final fallbackPayload = Map<String, dynamic>.from(payload)
+        ..remove('no_invoice');
+      final fallbackColumns = _removeSelectColumn(selectColumns, 'no_invoice');
+      final result = await _supabase
+          .from('invoices')
+          .insert(fallbackPayload)
+          .select(fallbackColumns)
+          .maybeSingle();
+      return result == null ? null : Map<String, dynamic>.from(result);
+    }
+  }
+
+  Future<void> _updateInvoiceWithFallback(
+    String id,
+    Map<String, dynamic> payload,
+  ) async {
+    final preferredPayload = Map<String, dynamic>.from(payload);
+    if (_invoiceNumberColumnAvailable == false) {
+      preferredPayload.remove('no_invoice');
+    }
+
+    try {
+      await _supabase.from('invoices').update(preferredPayload).eq('id', id);
+      if (preferredPayload.containsKey('no_invoice')) {
+        _invoiceNumberColumnAvailable = true;
+      }
+    } on PostgrestException catch (error) {
+      if (!_isMissingInvoiceNumberColumnError(error) ||
+          !payload.containsKey('no_invoice')) {
+        rethrow;
+      }
+
+      _invoiceNumberColumnAvailable = false;
+      final fallbackPayload = Map<String, dynamic>.from(payload)
+        ..remove('no_invoice');
+      await _supabase.from('invoices').update(fallbackPayload).eq('id', id);
+    }
+  }
+
   double _num(dynamic value) {
     if (value == null) return 0;
     if (value is num) return value.toDouble();
@@ -3061,6 +3184,40 @@ class DashboardRepository {
     return names.join(', ');
   }
 
+  String? _extractSingleDriverName(Map<String, dynamic>? detail) {
+    if (detail == null || detail.isEmpty) return null;
+    final candidateValues = <String>[];
+    final primaryRaw =
+        '${detail['nama_supir'] ?? detail['namaSupir'] ?? detail['supir'] ?? detail['driver_name'] ?? detail['driver'] ?? detail['nama supir'] ?? ''}'
+            .trim();
+    if (primaryRaw.isNotEmpty) {
+      candidateValues.add(primaryRaw);
+    }
+
+    for (final entry in detail.entries) {
+      final key = entry.key.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+      if (!key.contains('supir') && !key.contains('driver')) continue;
+      final raw = '${entry.value ?? ''}'.trim();
+      if (raw.isNotEmpty) {
+        candidateValues.add(raw);
+      }
+    }
+
+    for (final raw in candidateValues) {
+      for (final part in raw.split(RegExp(r'[,;/]'))) {
+        final name = part.trim();
+        final lowered = name.toLowerCase();
+        if (name.isNotEmpty &&
+            lowered != 'null' &&
+            lowered != 'undefined' &&
+            lowered != '-') {
+          return name;
+        }
+      }
+    }
+    return null;
+  }
+
   List<Map<String, dynamic>> _buildEffectiveIncomeDetails({
     List<Map<String, dynamic>>? details,
     String? pickup,
@@ -3271,9 +3428,11 @@ class DashboardRepository {
           // Hindari memasukkan nominal yang tidak valid agar total tidak meleset.
           continue;
         }
+        final singleDriverName = _extractSingleDriverName(detail);
 
         expenseDetails.add(<String, dynamic>{
           'nama': detailName,
+          'nama_supir': singleDriverName,
           'jumlah': effectiveNominal,
         });
       }
@@ -3359,9 +3518,10 @@ class DashboardRepository {
     var failedInvoices = 0;
     try {
       final invoices = _toMapList(
-        await _supabase.from('invoices').select(
-              'id,no_invoice,tanggal,tanggal_kop,lokasi_muat,lokasi_bongkar,armada_id,armada_start_date,rincian,nama_pelanggan',
-            ),
+        await _runInvoiceSelectWithFallback(
+          'id,no_invoice,tanggal,tanggal_kop,lokasi_muat,lokasi_bongkar,armada_id,armada_start_date,rincian,nama_pelanggan',
+          (columns) => _supabase.from('invoices').select(columns),
+        ),
       );
 
       String normalizeMarker(String value) {

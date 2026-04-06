@@ -31,6 +31,69 @@ extension _AdminInvoiceListViewPrinting on _AdminInvoiceListViewState {
     return Uri.tryParse(normalized);
   }
 
+  bool _isRowMeaningfullyFilled(Map<String, String> row) {
+    const keys = <String>[
+      'tanggal',
+      'plat',
+      'muatan',
+      'muat',
+      'bongkar',
+      'tonase',
+      'harga',
+      'total',
+    ];
+
+    for (final key in keys) {
+      if ((row[key] ?? '').trim().isNotEmpty) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Sort by bongkar ASC (A-Z), empty bongkar at bottom.
+  /// After sorting, re-number `no` only for rows that actually contain data.
+  /// Blank/filler rows keep `no` empty.
+  List<Map<String, String>> _sortRowsByBongkarAsc(
+    List<Map<String, String>> rows,
+  ) {
+    final copied = rows
+        .map((row) => Map<String, String>.from(row))
+        .toList(growable: false);
+
+    final filledRows = copied.where(_isRowMeaningfullyFilled).toList();
+    final emptyRows = copied.where((row) => !_isRowMeaningfullyFilled(row)).toList();
+
+    filledRows.sort((a, b) {
+      final bongkarA = (a['bongkar'] ?? '').trim().toLowerCase();
+      final bongkarB = (b['bongkar'] ?? '').trim().toLowerCase();
+
+      if (bongkarA.isEmpty && bongkarB.isEmpty) return 0;
+      if (bongkarA.isEmpty) return 1;
+      if (bongkarB.isEmpty) return -1;
+
+      return bongkarA.compareTo(bongkarB);
+    });
+
+    final renumberedFilledRows = <Map<String, String>>[];
+    for (var i = 0; i < filledRows.length; i++) {
+      final row = Map<String, String>.from(filledRows[i]);
+      row['no'] = '${i + 1}';
+      renumberedFilledRows.add(row);
+    }
+
+    final normalizedEmptyRows = emptyRows.map((row) {
+      final copy = Map<String, String>.from(row);
+      copy['no'] = '';
+      return copy;
+    }).toList();
+
+    return <Map<String, String>>[
+      ...renumberedFilledRows,
+      ...normalizedEmptyRows,
+    ];
+  }
+
   Future<Uint8List?> _rasterizeInvoiceTablePdfBytes(
     Uint8List pdfBytes, {
     required String renderMode,
@@ -54,6 +117,9 @@ extension _AdminInvoiceListViewPrinting on _AdminInvoiceListViewState {
     Map<String, String>? summaryValues,
   }) async {
     if (!_canRenderInvoiceTableWithExcel) return null;
+
+    final sortedRows = _sortRowsByBongkarAsc(rows);
+
     try {
       final tempDir = await Directory.systemTemp.createTemp(
         'cvant_invoice_excel_',
@@ -79,7 +145,7 @@ extension _AdminInvoiceListViewPrinting on _AdminInvoiceListViewState {
       await File(payloadPath).writeAsString(
         jsonEncode({
           'rowCount': rowCount,
-          'rows': rows,
+          'rows': sortedRows,
           if (summaryValues != null) 'summaryValues': summaryValues,
         }),
         flush: true,
@@ -133,6 +199,8 @@ extension _AdminInvoiceListViewPrinting on _AdminInvoiceListViewState {
     final uri = _invoiceRenderServiceUri();
     if (uri == null) return null;
 
+    final sortedRows = _sortRowsByBongkarAsc(rows);
+
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
     try {
       final request = await client.postUrl(uri);
@@ -141,7 +209,7 @@ extension _AdminInvoiceListViewPrinting on _AdminInvoiceListViewState {
       request.write(
         jsonEncode({
           'rowCount': rowCount,
-          'rows': rows,
+          'rows': sortedRows,
           'renderMode': renderMode,
           if (summaryValues != null) 'summaryValues': summaryValues,
         }),
@@ -200,8 +268,10 @@ extension _AdminInvoiceListViewPrinting on _AdminInvoiceListViewState {
     String renderMode = 'table',
     Map<String, String>? summaryValues,
   }) async {
+    final sortedRows = _sortRowsByBongkarAsc(rows);
+
     try {
-      const tableWidth = 632.0;
+      const tableWidth = 608.0;
       const headerHeight = 21.0;
       const bodyHeight = 16.0;
       const summaryHeight = 16.0;
@@ -361,10 +431,11 @@ extension _AdminInvoiceListViewPrinting on _AdminInvoiceListViewState {
                   ],
                 ),
                 ...List<pw.TableRow>.generate(rowCount, (index) {
-                  final row = index < rows.length
-                      ? rows[index]
+                  final row = index < sortedRows.length
+                      ? sortedRows[index]
                       : const <String, String>{};
                   const blankCell = '\u00A0';
+
                   String value(String key) {
                     final text = (row[key] ?? '').trim();
                     return text.isEmpty ? blankCell : text;
