@@ -1,93 +1,142 @@
 # AS Nusa Trans Mobile
 
-AS Nusa Trans Mobile is a modern operations dashboard built for transport businesses that need speed, visibility, and control from anywhere.
+**AS Nusa Trans Mobile** is a mobile-first logistics operations app built for transport businesses that need finance, fleet, and operational visibility in one place.
 
-Designed with a mobile-first mindset, this app turns daily logistics workflows into a clear, structured, and secure experience for admins, owners, and customers.
+This project is designed for real daily execution, not just reporting. From invoice creation and auto-generated driver allowance expenses to fleet scheduling and printable documents, the app helps transport teams move faster with fewer manual steps.
 
-## What This Product Solves
+## Why This Product Matters
 
-Transport operations often run across spreadsheets, chats, and manual approvals.  
-AS Nusa Trans Mobile centralizes the full flow in one place:
+Most transport businesses still split work across chat, spreadsheets, and manual approvals. That creates delays, duplicated input, and weak visibility.
 
-- Fleet and availability tracking
-- Invoice and expense management
-- Order handling and acceptance
-- Customer registration and profile data
-- Real-time operational monitoring through role-based dashboards
+AS Nusa Trans Mobile solves that by turning the daily workflow into one connected operational system:
 
-## Core Product Strengths
+- create and manage invoices with multi-trip detail rows
+- record and track expenses with printable outputs
+- monitor fleet usage and availability
+- group operational data by role: admin, owner, and customer
+- keep finance and field activity connected in one timeline
 
-- Role-based experience: each user sees only what matters to their job
-- End-to-end workflow coverage: from order intake to financial records
-- Mobile-ready UI: optimized for quick actions and daily field usage
-- Consistent design language: clean, focused, and readable in both themes
-- Secure authentication model: profile and access control integrated by role
+## What Makes It Strong
 
-## Business Value
+- **Operationally grounded**
+  Built around actual transport workflows, including route, tonnage, armada, driver, and payment status.
 
-- Faster decision-making with centralized operational data
-- Better financial visibility through structured income/expense flows
-- Reduced manual errors via standardized forms and validations
-- Higher accountability with clear ownership per activity and status
-- Scalable foundation for long-term digital operations
+- **Finance-ready**
+  Supports invoice printing, expense printing, PDF reports, fixed invoice history, and company vs personal invoice behavior.
 
-## Feature Highlights
+- **Faster daily execution**
+  Repetitive tasks such as invoice detail entry, auto expense generation, and print preparation are streamlined for speed.
 
-- **Authentication & Access**
-  - Sign in, sign up, session handling, biometric option, and role-aware navigation
-- **Dashboard Intelligence**
-  - Key metrics, charts, recent activities, and live operational summaries
-- **Invoice Module**
-  - Create, edit, preview, list, distribute, and print invoice records
-  - Personal vs Company invoice modes with distinct business rules
-  - Dynamic invoice numbering aligned to issue date logic (including Roman-month format)
-  - Multi-detail transport entries (fleet, route, tonnage, pricing, and driver data)
-- **Expense Module**
-  - Structured expense capture, status tracking, and printable expense documentation
-- **Fleet Module**
-  - Fleet list, status management, and operational availability tracking
-  - Usage tracking synchronized from invoice transport activity
-- **Order Module**
-  - Customer orders, acceptance flow, and payment status tracking
-- **Profile & Settings**
-  - User profile updates, password management, language preference, and account security controls
-- **Reporting Module**
-  - Filterable PDF reporting (monthly/yearly), manual record selection, and finance-ready summaries
-  - Mixed income-expense reports and focused single-category reports with printable table output
+- **Role-aware by design**
+  Different users see different actions, data, and summaries based on what they actually need to do.
 
-## User Experience Philosophy
+- **Mobile-first with desktop support**
+  Optimized for fast field usage, but still practical for larger-screen operations on Windows desktop.
 
-AS Nusa Trans Mobile is built to be practical under real operational pressure:
+## Core Features
 
-- Minimal friction for frequent tasks
-- Clear visual hierarchy for fast reading
-- Strong feedback patterns for user confidence
-- Reliable behavior across admin, owner, and customer journeys
+### Authentication and Access
 
-## Why Teams Choose It
+- Sign in and sign up flow
+- Session persistence
+- Biometric authentication option
+- Role-based access control
 
-- Built around real transport workflows, not generic templates
-- Financial and operational data stay connected in one timeline
-- Multi-role access keeps each screen focused and controlled
-- Report and invoice outputs are structured for day-to-day execution
-- Mobile-first interaction supports field speed and office oversight
+### Dashboard
 
-## Operational Reliability
+- Revenue and operational summaries
+- Latest and biggest transaction insights
+- Armada usage overview
+- Role-specific dashboard content
 
-- Role-aware data boundaries for safer daily operations
-- Consistent status-driven flows across invoices, expenses, and fleets
-- Structured validation to reduce manual entry mistakes
-- Performance-oriented UI for frequent high-volume actions
-- Regression-tested invoice formatting and numbering behavior for safer production updates
+### Income and Invoice Workflow
 
-## Tech Foundation (Product Perspective)
+- Add and edit income with multi-detail departure rows
+- Support for armada dropdown and manual armada input
+- Driver sync based on selected armada
+- Company and personal invoice rules
+- Invoice preview, KOP editing, PDF print, and fixed invoice history
+- Dynamic invoice numbering using business-friendly formats
 
-- Flutter-based mobile application
-- Supabase-powered authentication and data layer
-- Structured schema with role-aware data access
-- Built for production-style operational consistency
+### Expense Workflow
 
----
+- Manual expense entry and management
+- Printable expense documents
+- Auto-generated driver allowance expenses from income records
+- Better expense visibility inside calendar and invoice-related flows
 
-AS Nusa Trans Mobile is not just a dashboard.  
-It is an operational command center for logistics teams that need to move faster with confidence.
+### Armada Workflow
+
+- Armada list and status overview
+- Armada usage timeline from invoice schedule data
+- Ready / Full / Inactive visibility for operational planning
+
+### Reporting and Monitoring
+
+- Monthly and yearly PDF reports
+- Income-only, expense-only, or mixed report output
+- Calendar timeline for income, expense, and armada movement
+- Filterable views for faster operational review
+
+## Business Impact
+
+- reduces manual coordination across finance and operations
+- improves invoice and expense consistency
+- gives owners faster visibility into cash flow and fleet activity
+- keeps printable outputs ready for real business use
+- creates a stronger digital foundation for logistics growth
+
+## Product Positioning
+
+AS Nusa Trans Mobile is not just an admin panel.
+
+It is an **operational command center** for transport teams that need:
+
+- clean invoice workflows
+- reliable expense control
+- readable fleet monitoring
+- role-based access
+- production-friendly print outputs
+
+If your operation depends on speed, accountability, and clear financial movement, this app is built for that environment.
+
+## Tech Stack
+
+- **Flutter** for cross-platform application development
+- **Supabase** for authentication and data layer
+- **PDF / Printing** for business document output
+- **Shared Preferences + Secure Storage** for session and local operational state
+
+## Quick Start
+
+### Requirements
+
+- Flutter SDK 3.4+
+- A Supabase project
+- Windows desktop environment if you want to run the desktop build
+
+### Run Locally
+
+```bash
+flutter pub get
+flutter run -d windows --dart-define=SUPABASE_URL=YOUR_SUPABASE_URL --dart-define=SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
+```
+
+You can also target other Flutter-supported platforms as needed.
+
+## Current Strength of the Repo
+
+This codebase already includes strong operational behavior such as:
+
+- invoice print preview and fixed-invoice reprint flow
+- grouped invoice print generation with editable KOP data
+- auto driver allowance expense synchronization
+- calendar ordering for income, expense, and armada events
+- armada usage monitoring on the dashboard
+- mobile-oriented form handling for high-frequency admin work
+
+## Closing
+
+AS Nusa Trans Mobile is built for teams that do real transport work every day and need software that can keep up.
+
+It brings together invoicing, expenses, fleet movement, and reporting into one focused system so operations stay faster, clearer, and easier to control.
