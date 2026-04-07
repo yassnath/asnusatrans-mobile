@@ -330,6 +330,82 @@ class DashboardRepository {
     }
   }
 
+  Future<List<Map<String, dynamic>>> fetchFixedInvoiceBatches() async {
+    try {
+      final res = await _supabase
+          .from('fixed_invoice_batches')
+          .select(
+            'batch_id,invoice_ids,invoice_number,customer_name,kop_date,'
+            'kop_location,created_at,updated_at',
+          )
+          .order('created_at', ascending: false);
+      return _toMapList(res).map(_normalizeFixedInvoiceBatchRow).toList();
+    } on PostgrestException catch (e) {
+      if (_isMissingFixedInvoiceBatchTableError(e)) {
+        return const <Map<String, dynamic>>[];
+      }
+      throw Exception('Gagal memuat fix invoice: ${e.message}');
+    }
+  }
+
+  Future<void> upsertFixedInvoiceBatch({
+    required String batchId,
+    required List<String> invoiceIds,
+    required String invoiceNumber,
+    required String customerName,
+    String? kopDate,
+    String? kopLocation,
+    String? createdAt,
+  }) async {
+    final cleanedBatchId = batchId.trim();
+    final cleanedInvoiceIds = invoiceIds
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toList(growable: false);
+    if (cleanedBatchId.isEmpty || cleanedInvoiceIds.isEmpty) return;
+
+    final payload = <String, dynamic>{
+      'batch_id': cleanedBatchId,
+      'invoice_ids': cleanedInvoiceIds,
+      'invoice_number': invoiceNumber.trim(),
+      'customer_name': customerName.trim(),
+      'kop_date': (kopDate ?? '').trim().isEmpty ? null : kopDate!.trim(),
+      'kop_location':
+          (kopLocation ?? '').trim().isEmpty ? null : kopLocation!.trim(),
+      'created_at': (createdAt ?? '').trim().isEmpty
+          ? DateTime.now().toIso8601String()
+          : createdAt!.trim(),
+      'updated_at': DateTime.now().toIso8601String(),
+    };
+
+    try {
+      await _supabase
+          .from('fixed_invoice_batches')
+          .upsert(payload, onConflict: 'batch_id');
+    } on PostgrestException catch (e) {
+      if (_isMissingFixedInvoiceBatchTableError(e)) {
+        return;
+      }
+      throw Exception('Gagal menyimpan fix invoice: ${e.message}');
+    }
+  }
+
+  Future<void> deleteFixedInvoiceBatch(String batchId) async {
+    final cleanedBatchId = batchId.trim();
+    if (cleanedBatchId.isEmpty) return;
+    try {
+      await _supabase
+          .from('fixed_invoice_batches')
+          .delete()
+          .eq('batch_id', cleanedBatchId);
+    } on PostgrestException catch (e) {
+      if (_isMissingFixedInvoiceBatchTableError(e)) {
+        return;
+      }
+      throw Exception('Gagal menghapus fix invoice: ${e.message}');
+    }
+  }
+
   Future<List<Map<String, dynamic>>> fetchArmadas() async {
     const variants = <String>[
       'id,nama_truk,plat_nomor,kapasitas,status,is_active,created_at,updated_at',
@@ -2669,6 +2745,25 @@ class DashboardRepository {
     return [];
   }
 
+  Map<String, dynamic> _normalizeFixedInvoiceBatchRow(
+    Map<String, dynamic> row,
+  ) {
+    final invoiceIds = (row['invoice_ids'] as List<dynamic>? ?? const [])
+        .map((id) => '$id'.trim())
+        .where((id) => id.isNotEmpty)
+        .toList(growable: false);
+    return <String, dynamic>{
+      'batch_id': '${row['batch_id'] ?? ''}'.trim(),
+      'invoice_ids': invoiceIds,
+      'invoice_number': '${row['invoice_number'] ?? ''}'.trim(),
+      'customer_name': '${row['customer_name'] ?? ''}'.trim(),
+      'kop_date': '${row['kop_date'] ?? ''}'.trim(),
+      'kop_location': '${row['kop_location'] ?? ''}'.trim(),
+      'created_at': '${row['created_at'] ?? ''}'.trim(),
+      'updated_at': '${row['updated_at'] ?? ''}'.trim(),
+    };
+  }
+
   bool _selectColumnsInclude(String columns, String target) {
     final normalizedTarget = target.trim().toLowerCase();
     return columns
@@ -2695,6 +2790,15 @@ class DashboardRepository {
         (message.contains('does not exist') ||
             message.contains('could not find') ||
             message.contains('schema cache'));
+  }
+
+  bool _isMissingFixedInvoiceBatchTableError(PostgrestException error) {
+    final message = error.message.toLowerCase();
+    return message.contains('fixed_invoice_batches') &&
+        (message.contains('does not exist') ||
+            message.contains('could not find') ||
+            message.contains('schema cache') ||
+            message.contains('relation'));
   }
 
   String _invoiceSelectColumnsForCurrentSchema(String columns) {

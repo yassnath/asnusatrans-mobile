@@ -161,6 +161,38 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
         .toSet();
   }
 
+  Future<List<_FixedInvoiceBatch>> _loadRemoteFixedBatches() async {
+    final rows = await widget.repository.fetchFixedInvoiceBatches();
+    return rows
+        .map(_FixedInvoiceBatch.fromJson)
+        .whereType<_FixedInvoiceBatch>()
+        .toList(growable: false);
+  }
+
+  Future<void> _upsertRemoteFixedBatch(_FixedInvoiceBatch batch) {
+    return widget.repository.upsertFixedInvoiceBatch(
+      batchId: batch.batchId,
+      invoiceIds: batch.invoiceIds,
+      invoiceNumber: batch.invoiceNumber,
+      customerName: batch.customerName,
+      kopDate: batch.kopDate,
+      kopLocation: batch.kopLocation,
+      createdAt: batch.createdAt,
+    );
+  }
+
+  Future<void> _syncLocalCacheFromBatches(
+    List<_FixedInvoiceBatch> batches,
+  ) async {
+    final ids = batches
+        .expand((batch) => batch.invoiceIds)
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    await _saveFixedIds(ids);
+    await _saveFixedBatches(batches);
+  }
+
   Future<void> _saveFixedIds(Set<String> ids) async {
     final prefs = await SharedPreferences.getInstance();
     final values = ids.toList()..sort();
@@ -282,6 +314,12 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
     final invoiceNumber = _resolveDisplayNumber(item);
     final customerName = '${item['nama_pelanggan'] ?? '-'}';
     final total = _toNum(item['total_bayar'] ?? item['total_biaya']);
+    final isCompanyInvoice = _resolveIsCompanyInvoiceShared(
+      invoiceNumber: item['no_invoice'],
+      customerName: item['nama_pelanggan'],
+    );
+    final invoiceNumberColor =
+        isCompanyInvoice ? AppColors.success : AppColors.blue;
     final wantsPrint = await showDialog<bool>(
       context: context,
       barrierColor: AppColors.popupOverlay,
@@ -296,7 +334,10 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                 children: [
                   Text(
                     invoiceNumber,
-                    style: const TextStyle(fontWeight: FontWeight.w700),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: invoiceNumberColor,
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Text('${_t('Nama', 'Name')}: $customerName'),
@@ -439,6 +480,9 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
       idsToReturn.add(directId);
     }
     try {
+      if (batchId.isNotEmpty) {
+        await widget.repository.deleteFixedInvoiceBatch(batchId);
+      }
       final ids = await _loadFixedIds();
       if (idsToReturn.every((id) => !ids.contains(id))) return;
       ids.removeAll(idsToReturn);
@@ -473,34 +517,49 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
   }
 
   Future<List<Map<String, dynamic>>> _load() async {
-    final ids = await _loadFixedIds();
-    if (ids.isEmpty) return <Map<String, dynamic>>[];
-
     final invoices = await widget.repository.fetchInvoices();
+    final localIds = await _loadFixedIds();
     final invoiceById = <String, Map<String, dynamic>>{
       for (final item in invoices)
         '${item['id'] ?? ''}'.trim(): Map<String, dynamic>.from(item),
     };
-    final batches = await _loadFixedBatches();
+    var localBatches = await _loadFixedBatches();
     final rows = <Map<String, dynamic>>[];
-    final consumedIds = <String>{};
 
     final legacyItems = invoices
         .where((item) {
           final id = '${item['id'] ?? ''}'.trim();
           return id.isNotEmpty &&
-              ids.contains(id) &&
-              !batches.any((batch) => batch.invoiceIds.contains(id));
+              localIds.contains(id) &&
+              !localBatches.any((batch) => batch.invoiceIds.contains(id));
         })
         .map((item) => Map<String, dynamic>.from(item))
         .toList();
     if (legacyItems.isNotEmpty) {
       final legacyBatches = _buildLegacyBatches(legacyItems);
       if (legacyBatches.isNotEmpty) {
-        batches.addAll(legacyBatches);
-        await _saveFixedBatches(batches);
+        final existingBatchIds =
+            localBatches.map((batch) => batch.batchId).toSet();
+        localBatches = [
+          ...localBatches,
+          ...legacyBatches.where(
+            (batch) => !existingBatchIds.contains(batch.batchId),
+          ),
+        ];
+        await _saveFixedBatches(localBatches);
       }
     }
+
+    if (localBatches.isNotEmpty) {
+      for (final batch in localBatches) {
+        await _upsertRemoteFixedBatch(batch);
+      }
+    }
+
+    final remoteBatches = await _loadRemoteFixedBatches();
+    final batches = remoteBatches.isNotEmpty ? remoteBatches : localBatches;
+    if (batches.isEmpty) return <Map<String, dynamic>>[];
+    await _syncLocalCacheFromBatches(batches);
 
     for (final batch in batches) {
       final batchItems = batch.invoiceIds
@@ -509,7 +568,6 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
           .map((row) => Map<String, dynamic>.from(row))
           .toList();
       if (batchItems.isEmpty) continue;
-      consumedIds.addAll(batch.invoiceIds);
       final total = batchItems.fold<double>(
         0,
         (sum, row) => sum + _toNum(row['total_bayar'] ?? row['total_biaya']),
@@ -627,6 +685,17 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                         )
                                 ? _t('Perusahaan', 'Company')
                                 : _t('Pribadi', 'Personal');
+                        final isCompanyInvoice =
+                            _resolveIsCompanyInvoiceShared(
+                          invoiceNumber: item['no_invoice'],
+                          customerName: item['nama_pelanggan'],
+                        );
+                        final invoiceNumberColor = isCompanyInvoice
+                            ? AppColors.success
+                            : AppColors.blue;
+                        final customerTypeColor = isCompanyInvoice
+                            ? AppColors.success
+                            : AppColors.blue;
                         final batchItems =
                             (item['__batch_items'] as List<dynamic>? ??
                                     const <dynamic>[])
@@ -643,8 +712,9 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                                   Expanded(
                                     child: Text(
                                       number,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontWeight: FontWeight.w700,
+                                        color: invoiceNumberColor,
                                       ),
                                     ),
                                   ),
@@ -666,13 +736,6 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                                   color: AppColors.textMutedFor(context),
                                 ),
                               ),
-                              const SizedBox(height: 2),
-                              Text(
-                                customerTypeLabel,
-                                style: TextStyle(
-                                  color: AppColors.textMutedFor(context),
-                                ),
-                              ),
                               if (mergedCount > 1) ...[
                                 const SizedBox(height: 2),
                                 Text(
@@ -690,59 +753,84 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                                 ),
                               ),
                               const SizedBox(height: 8),
-                              Align(
-                                alignment: Alignment.centerRight,
-                                child: Wrap(
-                                  spacing: 8,
-                                  runSpacing: 8,
-                                  alignment: WrapAlignment.end,
-                                  children: [
-                                    OutlinedButton.icon(
-                                      onPressed: () => _openBatchPreview(item),
-                                      style: CvantButtonStyles.outlined(
-                                        context,
-                                        color: AppColors.neutralOutline,
-                                        borderColor: AppColors.neutralOutline,
-                                      ),
-                                      icon: const Icon(Icons.visibility,
-                                          size: 16),
-                                      label: Text(_t('Preview', 'Preview')),
-                                    ),
-                                    OutlinedButton.icon(
-                                      onPressed: () async {
-                                        final ok = await showCvantConfirmPopup(
-                                          context: context,
-                                          title: _t(
-                                            'Kembalikan Invoice',
-                                            'Return Invoice',
-                                          ),
-                                          message: _t(
-                                            'Kembalikan invoice ini ke daftar invoice?',
-                                            'Return this invoice to invoice list?',
-                                          ),
-                                          type: CvantPopupType.info,
-                                          cancelLabel: _t('Batal', 'Cancel'),
-                                          confirmLabel:
-                                              _t('Kembalikan', 'Return'),
-                                        );
-                                        if (!ok) return;
-                                        await _returnToInvoiceList(item);
-                                      },
-                                      style: CvantButtonStyles.outlined(
-                                        context,
-                                        color: AppColors.blue,
-                                        borderColor: AppColors.blue,
-                                      ),
-                                      icon: const Icon(Icons.undo, size: 16),
-                                      label: Text(
-                                        _t(
-                                          'Kembalikan ke List',
-                                          'Return to List',
-                                        ),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      customerTypeLabel,
+                                      style: TextStyle(
+                                        color: customerTypeColor,
+                                        fontWeight: FontWeight.w700,
                                       ),
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    flex: 2,
+                                    child: Align(
+                                      alignment: Alignment.centerRight,
+                                      child: Wrap(
+                                        spacing: 8,
+                                        runSpacing: 8,
+                                        alignment: WrapAlignment.end,
+                                        children: [
+                                          OutlinedButton.icon(
+                                            onPressed: () =>
+                                                _openBatchPreview(item),
+                                            style: CvantButtonStyles.outlined(
+                                              context,
+                                              color: AppColors.warning,
+                                              borderColor: AppColors.warning,
+                                            ),
+                                            icon: const Icon(Icons.visibility,
+                                                size: 16),
+                                            label: Text(_t('Preview', 'Preview')),
+                                          ),
+                                          OutlinedButton.icon(
+                                            onPressed: () async {
+                                              final ok =
+                                                  await showCvantConfirmPopup(
+                                                context: context,
+                                                title: _t(
+                                                  'Kembalikan Invoice',
+                                                  'Return Invoice',
+                                                ),
+                                                message: _t(
+                                                  'Kembalikan invoice ini ke daftar invoice?',
+                                                  'Return this invoice to invoice list?',
+                                                ),
+                                                type: CvantPopupType.info,
+                                                cancelLabel:
+                                                    _t('Batal', 'Cancel'),
+                                                confirmLabel: _t(
+                                                  'Kembalikan',
+                                                  'Return',
+                                                ),
+                                              );
+                                              if (!ok) return;
+                                              await _returnToInvoiceList(item);
+                                            },
+                                            style: CvantButtonStyles.outlined(
+                                              context,
+                                              color: AppColors.neutralOutline,
+                                              borderColor:
+                                                  AppColors.neutralOutline,
+                                            ),
+                                            icon:
+                                                const Icon(Icons.undo, size: 16),
+                                            label: Text(
+                                              _t(
+                                                'Kembalikan ke List',
+                                                'Return to List',
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),

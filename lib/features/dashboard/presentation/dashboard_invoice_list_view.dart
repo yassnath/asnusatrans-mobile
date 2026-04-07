@@ -368,14 +368,13 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     final response = await Future.wait<dynamic>([
       widget.repository.fetchInvoicesSince(since),
       widget.repository.fetchExpensesSince(since),
-      _loadFixedInvoiceIds(),
     ]);
 
     final rawIncomes =
         (response[0] as List).cast<Map<String, dynamic>>().toList();
     final rawExpenses =
         (response[1] as List).cast<Map<String, dynamic>>().toList();
-    final fixedIds = (response[2] as Set<String>)
+    final fixedIds = (await _loadFixedInvoiceIds())
         .map((id) => id.trim())
         .where((id) => id.isNotEmpty)
         .toSet();
@@ -571,7 +570,61 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     }
   }
 
+  Future<List<_FixedInvoiceBatch>> _loadRemoteFixedInvoiceBatches() async {
+    final rows = await widget.repository.fetchFixedInvoiceBatches();
+    return rows
+        .map(_FixedInvoiceBatch.fromJson)
+        .whereType<_FixedInvoiceBatch>()
+        .toList(growable: false);
+  }
+
+  Future<void> _upsertRemoteFixedInvoiceBatch(_FixedInvoiceBatch batch) {
+    return widget.repository.upsertFixedInvoiceBatch(
+      batchId: batch.batchId,
+      invoiceIds: batch.invoiceIds,
+      invoiceNumber: batch.invoiceNumber,
+      customerName: batch.customerName,
+      kopDate: batch.kopDate,
+      kopLocation: batch.kopLocation,
+      createdAt: batch.createdAt,
+    );
+  }
+
+  Future<void> _syncLocalFixedInvoiceCache(
+    List<_FixedInvoiceBatch> batches,
+  ) async {
+    final ids = batches
+        .expand((batch) => batch.invoiceIds)
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    await _saveFixedInvoiceIds(ids);
+    await _saveFixedInvoiceBatches(batches);
+  }
+
   Future<Set<String>> _loadFixedInvoiceIds() async {
+    final localIds = await _loadLocalFixedInvoiceIds();
+    final localBatches = await _loadLocalFixedInvoiceBatches();
+    if (localBatches.isNotEmpty) {
+      for (final batch in localBatches) {
+        await _upsertRemoteFixedInvoiceBatch(batch);
+      }
+    }
+
+    final remoteBatches = await _loadRemoteFixedInvoiceBatches();
+    if (remoteBatches.isNotEmpty) {
+      await _syncLocalFixedInvoiceCache(remoteBatches);
+      return remoteBatches
+          .expand((batch) => batch.invoiceIds)
+          .map((id) => id.trim())
+          .where((id) => id.isNotEmpty)
+          .toSet();
+    }
+
+    return localIds;
+  }
+
+  Future<Set<String>> _loadLocalFixedInvoiceIds() async {
     final prefs = await SharedPreferences.getInstance();
     final ids = prefs.getStringList(_fixedInvoicePrefsKey) ?? const <String>[];
     return ids.map((id) => id.trim()).where((id) => id.isNotEmpty).toSet();
@@ -584,6 +637,23 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
   }
 
   Future<List<_FixedInvoiceBatch>> _loadFixedInvoiceBatches() async {
+    final localBatches = await _loadLocalFixedInvoiceBatches();
+    if (localBatches.isNotEmpty) {
+      for (final batch in localBatches) {
+        await _upsertRemoteFixedInvoiceBatch(batch);
+      }
+    }
+
+    final remoteBatches = await _loadRemoteFixedInvoiceBatches();
+    if (remoteBatches.isNotEmpty) {
+      await _syncLocalFixedInvoiceCache(remoteBatches);
+      return remoteBatches;
+    }
+
+    return localBatches;
+  }
+
+  Future<List<_FixedInvoiceBatch>> _loadLocalFixedInvoiceBatches() async {
     final prefs = await SharedPreferences.getInstance();
     final rawValues =
         prefs.getStringList(_fixedInvoiceBatchPrefsKey) ?? const <String>[];
@@ -637,6 +707,15 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     await _saveFixedInvoiceIds(existing);
     if (batch == null) return;
     final batches = await _loadFixedInvoiceBatches();
+    final overlappingBatchIds = batches
+        .where(
+          (existingBatch) =>
+              existingBatch.batchId != batch.batchId &&
+              existingBatch.invoiceIds.any(cleaned.contains),
+        )
+        .map((existingBatch) => existingBatch.batchId)
+        .where((id) => id.trim().isNotEmpty)
+        .toSet();
     batches.removeWhere(
       (existingBatch) =>
           existingBatch.batchId == batch.batchId ||
@@ -651,6 +730,10 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       return bDate.compareTo(aDate);
     });
     await _saveFixedInvoiceBatches(batches);
+    for (final batchId in overlappingBatchIds) {
+      await widget.repository.deleteFixedInvoiceBatch(batchId);
+    }
+    await _upsertRemoteFixedInvoiceBatch(batch);
   }
 
   String _normalizeInvoicePrintCustomerKey(String value) {
@@ -7302,7 +7385,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
               ? (isEn ? 'Company' : 'Perusahaan')
               : (isEn ? 'Personal' : 'Pribadi');
           final invoiceTypeColor =
-              isCompanyInvoice ? AppColors.success : AppColors.warning;
+              isCompanyInvoice ? AppColors.success : AppColors.blue;
           final total = _toNum(item['__total']);
           return _PanelCard(
             child: Column(
