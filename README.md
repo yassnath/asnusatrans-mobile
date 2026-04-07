@@ -107,23 +107,6 @@ If your operation depends on speed, accountability, and clear financial movement
 - **PDF / Printing** for business document output
 - **Shared Preferences + Secure Storage** for session and local operational state
 
-## Quick Start
-
-### Requirements
-
-- Flutter SDK 3.4+
-- A Supabase project
-- Windows desktop environment if you want to run the desktop build
-
-### Run Locally
-
-```bash
-flutter pub get
-flutter run -d windows --dart-define=SUPABASE_URL=YOUR_SUPABASE_URL --dart-define=SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
-```
-
-You can also target other Flutter-supported platforms as needed.
-
 ## Current Strength of the Repo
 
 This codebase already includes strong operational behavior such as:
