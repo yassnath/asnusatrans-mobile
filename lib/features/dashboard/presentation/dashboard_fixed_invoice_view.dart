@@ -22,6 +22,23 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
   bool get _isEn => LanguageController.language.value == AppLanguage.en;
   String _t(String id, String en) => _isEn ? en : id;
 
+  ButtonStyle _mobileActionButtonStyle({
+    required BuildContext context,
+    required Color color,
+  }) {
+    return CvantButtonStyles.outlined(
+      context,
+      color: color,
+      borderColor: color,
+    ).copyWith(
+      minimumSize: const WidgetStatePropertyAll(Size(44, 38)),
+      maximumSize: const WidgetStatePropertyAll(Size(44, 38)),
+      padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: VisualDensity.compact,
+    );
+  }
+
   double _toNum(dynamic value) {
     if (value == null) return 0;
     if (value is num) return value.toDouble();
@@ -775,54 +792,59 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                                         runSpacing: 8,
                                         alignment: WrapAlignment.end,
                                         children: [
-                                          OutlinedButton.icon(
-                                            onPressed: () =>
-                                                _openBatchPreview(item),
-                                            style: CvantButtonStyles.outlined(
-                                              context,
-                                              color: AppColors.warning,
-                                              borderColor: AppColors.warning,
-                                            ),
-                                            icon: const Icon(Icons.visibility,
-                                                size: 16),
-                                            label: Text(_t('Preview', 'Preview')),
-                                          ),
-                                          OutlinedButton.icon(
-                                            onPressed: () async {
-                                              final ok =
-                                                  await showCvantConfirmPopup(
+                                          Tooltip(
+                                            message: _t('Preview', 'Preview'),
+                                            child: OutlinedButton(
+                                              onPressed: () =>
+                                                  _openBatchPreview(item),
+                                              style: _mobileActionButtonStyle(
                                                 context: context,
-                                                title: _t(
-                                                  'Kembalikan Invoice',
-                                                  'Return Invoice',
-                                                ),
-                                                message: _t(
-                                                  'Kembalikan invoice ini ke daftar invoice?',
-                                                  'Return this invoice to invoice list?',
-                                                ),
-                                                type: CvantPopupType.info,
-                                                cancelLabel:
-                                                    _t('Batal', 'Cancel'),
-                                                confirmLabel: _t(
-                                                  'Kembalikan',
-                                                  'Return',
-                                                ),
-                                              );
-                                              if (!ok) return;
-                                              await _returnToInvoiceList(item);
-                                            },
-                                            style: CvantButtonStyles.outlined(
-                                              context,
-                                              color: AppColors.neutralOutline,
-                                              borderColor:
-                                                  AppColors.neutralOutline,
+                                                color: AppColors.warning,
+                                              ),
+                                              child: const Icon(
+                                                Icons.visibility_outlined,
+                                                size: 18,
+                                              ),
                                             ),
-                                            icon:
-                                                const Icon(Icons.undo, size: 16),
-                                            label: Text(
-                                              _t(
-                                                'Kembalikan ke List',
-                                                'Return to List',
+                                          ),
+                                          Tooltip(
+                                            message: _t(
+                                              'Kembalikan ke List',
+                                              'Return to List',
+                                            ),
+                                            child: OutlinedButton(
+                                              onPressed: () async {
+                                                final ok =
+                                                    await showCvantConfirmPopup(
+                                                  context: context,
+                                                  title: _t(
+                                                    'Kembalikan Invoice',
+                                                    'Return Invoice',
+                                                  ),
+                                                  message: _t(
+                                                    'Kembalikan invoice ini ke daftar invoice?',
+                                                    'Return this invoice to invoice list?',
+                                                  ),
+                                                  type: CvantPopupType.info,
+                                                  cancelLabel:
+                                                      _t('Batal', 'Cancel'),
+                                                  confirmLabel: _t(
+                                                    'Kembalikan',
+                                                    'Return',
+                                                  ),
+                                                );
+                                                if (!ok) return;
+                                                await _returnToInvoiceList(
+                                                  item,
+                                                );
+                                              },
+                                              style: _mobileActionButtonStyle(
+                                                context: context,
+                                                color: AppColors.neutralOutline,
+                                              ),
+                                              child: const Icon(
+                                                Icons.undo_outlined,
+                                                size: 18,
                                               ),
                                             ),
                                           ),
