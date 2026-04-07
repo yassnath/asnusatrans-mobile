@@ -840,7 +840,7 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                                               },
                                               style: _mobileActionButtonStyle(
                                                 context: context,
-                                                color: AppColors.neutralOutline,
+                                                color: AppColors.blue,
                                               ),
                                               child: const Icon(
                                                 Icons.undo_outlined,
