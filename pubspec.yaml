@@ -25,6 +25,8 @@ dependencies:
   image: ^4.5.4
 
 dependency_overrides:
+  app_links:
+    path: third_party/app_links
   flutter_secure_storage_windows:
     path: third_party/flutter_secure_storage_windows
 

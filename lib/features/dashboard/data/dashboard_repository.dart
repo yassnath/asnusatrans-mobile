@@ -2103,6 +2103,8 @@ class DashboardRepository {
           customerName: invoice['nama_pelanggan'],
         ),
         customer: (invoice['nama_pelanggan'] ?? '-').toString(),
+        displayName: (invoice['nama_pelanggan'] ?? '-').toString(),
+        routeLabel: _invoiceRouteLabel(invoice),
         dateLabel: Formatters.dmy(_invoiceReferenceDateValue(invoice)),
         total: _invoiceTotal(invoice),
         status: (invoice['status'] ?? 'Waiting').toString(),
@@ -2131,6 +2133,8 @@ class DashboardRepository {
             customerName: invoice['nama_pelanggan'],
           ),
           customer: (invoice['nama_pelanggan'] ?? '-').toString(),
+          displayName: (invoice['nama_pelanggan'] ?? '-').toString(),
+          routeLabel: _invoiceRouteLabel(invoice),
           dateLabel: Formatters.dmy(_invoiceReferenceDateValue(invoice)),
           total: _invoiceTotal(invoice),
           status: (invoice['status'] ?? 'Waiting').toString(),
@@ -2145,6 +2149,8 @@ class DashboardRepository {
           number: Formatters.invoiceNumber(
               expense['no_expense'], expense['tanggal']),
           customer: '-',
+          displayName: _expenseDisplayName(expense),
+          routeLabel: _expenseRouteLabel(expense),
           dateLabel:
               Formatters.dmy(expense['tanggal'] ?? expense['created_at']),
           total: _expenseTotal(expense),
@@ -2428,6 +2434,85 @@ class DashboardRepository {
     final fromDescription = '${expense['keterangan'] ?? ''}'.trim();
     if (fromDescription.contains('-')) return fromDescription;
 
+    return '-';
+  }
+
+  String _invoiceRouteLabel(Map<String, dynamic> invoice) {
+    final details = _toMapList(invoice['rincian']);
+    final routes = <String>[];
+    final seen = <String>{};
+
+    String normalizeKey(String value) {
+      return value
+          .toLowerCase()
+          .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim();
+    }
+
+    String buildRoute(String muat, String bongkar) {
+      final left = muat.trim().isEmpty ? '-' : muat.trim();
+      final right = bongkar.trim().isEmpty ? '-' : bongkar.trim();
+      return '$left-$right';
+    }
+
+    void pushRoute(String muat, String bongkar) {
+      if (muat.trim().isEmpty && bongkar.trim().isEmpty) return;
+      final route = buildRoute(muat, bongkar);
+      final key = normalizeKey(route);
+      if (key.isEmpty) return;
+      if (seen.add(key)) routes.add(route);
+    }
+
+    if (details.isNotEmpty) {
+      for (final detail in details) {
+        pushRoute(
+          '${detail['lokasi_muat'] ?? invoice['lokasi_muat'] ?? ''}',
+          '${detail['lokasi_bongkar'] ?? invoice['lokasi_bongkar'] ?? ''}',
+        );
+      }
+    } else {
+      pushRoute(
+        '${invoice['lokasi_muat'] ?? ''}',
+        '${invoice['lokasi_bongkar'] ?? ''}',
+      );
+    }
+
+    if (routes.isEmpty) return '-';
+    return routes.join(' | ');
+  }
+
+  String _expenseDisplayName(Map<String, dynamic> expense) {
+    final details = _toMapList(expense['rincian']);
+    final names = <String>[];
+    final seen = <String>{};
+
+    void pushName(String value) {
+      final normalized = value.trim();
+      if (normalized.isEmpty || normalized == '-') return;
+      final key = normalized.toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+      if (seen.add(key)) names.add(normalized);
+    }
+
+    for (final detail in details) {
+      final explicitDriver = _extractSingleDriverName(detail);
+      if ((explicitDriver ?? '').trim().isNotEmpty) {
+        pushName(explicitDriver!);
+        continue;
+      }
+      final rawName = '${detail['nama'] ?? detail['name'] ?? ''}'.trim();
+      final label = rawName.split('(').first.trim();
+      if (label.isNotEmpty) {
+        pushName(label);
+      }
+    }
+
+    if (names.isNotEmpty) return names.join(' | ');
+
+    final category = '${expense['kategori'] ?? ''}'.trim();
+    if (category.isNotEmpty) return category;
+    final description = '${expense['keterangan'] ?? ''}'.trim();
+    if (description.isNotEmpty) return description;
     return '-';
   }
 

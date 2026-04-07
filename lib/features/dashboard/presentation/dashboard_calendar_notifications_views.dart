@@ -198,12 +198,14 @@ class _AdminCalendarViewState extends State<_AdminCalendarView> {
     List<Map<String, dynamic>> armadas,
   ) {
     final events = <_CalendarEvent>[];
+    final pendingArmadaEvents = <_CalendarEvent>[];
     final armadaById = <String, Map<String, dynamic>>{
       for (final armada in armadas)
         '${armada['id'] ?? ''}': Map<String, dynamic>.from(armada),
     };
     final today = DateTime.now();
     final todayOnly = DateTime(today.year, today.month, today.day);
+    final nextSortIndexByDay = <String, int>{};
 
     List<Map<String, dynamic>> detailRows(dynamic value) {
       if (value is List) {
@@ -213,6 +215,163 @@ class _AdminCalendarViewState extends State<_AdminCalendarView> {
             .toList();
       }
       return const <Map<String, dynamic>>[];
+    }
+
+    bool isAutoSanguExpense(Map<String, dynamic> expense) {
+      final note = '${expense['note'] ?? ''}'.trim().toUpperCase();
+      if (note.startsWith('AUTO_SANGU:')) return true;
+      final ket = '${expense['keterangan'] ?? ''}'.trim().toLowerCase();
+      return ket.startsWith('auto sangu sopir -');
+    }
+
+    String normalizeToken(String value) {
+      return value
+          .trim()
+          .toLowerCase()
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .replaceAll(' /', '/')
+          .replaceAll('/ ', '/');
+    }
+
+    DateTime? normalizeDay(DateTime? value) {
+      if (value == null) return null;
+      return DateTime(value.year, value.month, value.day);
+    }
+
+    DateTime? resolveEventDay({
+      dynamic dateValue,
+      dynamic createdAtValue,
+    }) {
+      return normalizeDay(
+        Formatters.parseDate(dateValue) ?? Formatters.parseDate(createdAtValue),
+      );
+    }
+
+    DateTime resolveCreatedMoment(Map<String, dynamic> item, {dynamic fallback}) {
+      return Formatters.parseDate(item['created_at']) ??
+          Formatters.parseDate(fallback) ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+    }
+
+    int compareByDayThenCreated(
+      Map<String, dynamic> a,
+      Map<String, dynamic> b, {
+      required dynamic Function(Map<String, dynamic> item) dateValueOf,
+    }) {
+      final aDay = resolveEventDay(
+            dateValue: dateValueOf(a),
+            createdAtValue: a['created_at'],
+          ) ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+      final bDay = resolveEventDay(
+            dateValue: dateValueOf(b),
+            createdAtValue: b['created_at'],
+          ) ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+      final byDay = bDay.compareTo(aDay);
+      if (byDay != 0) return byDay;
+
+      final byCreated = resolveCreatedMoment(b, fallback: dateValueOf(b))
+          .compareTo(resolveCreatedMoment(a, fallback: dateValueOf(a)));
+      if (byCreated != 0) return byCreated;
+
+      return '${b['id'] ?? ''}'.compareTo('${a['id'] ?? ''}');
+    }
+
+    int takeSortIndex(DateTime date) {
+      final key = _dateKey(date);
+      final next = nextSortIndexByDay[key] ?? 0;
+      nextSortIndexByDay[key] = next + 1;
+      return next;
+    }
+
+    bool isSameDay(DateTime? a, DateTime? b) {
+      if (a == null || b == null) return false;
+      return a.year == b.year && a.month == b.month && a.day == b.day;
+    }
+
+    String extractExpenseMarker(Map<String, dynamic> expense) {
+      final note = '${expense['note'] ?? ''}'.trim();
+      if (note.toUpperCase().startsWith('AUTO_SANGU:')) {
+        return note.substring('AUTO_SANGU:'.length).trim();
+      }
+
+      final ket = '${expense['keterangan'] ?? ''}'.trim();
+      final lowerKet = ket.toLowerCase();
+      const prefix = 'auto sangu sopir -';
+      if (lowerKet.startsWith(prefix)) {
+        return ket.substring(prefix.length).trim();
+      }
+
+      return '';
+    }
+
+    ({String driver, String route}) extractAutoSanguEntry(
+      Map<String, dynamic> row,
+    ) {
+      String driver = '${row['nama_supir'] ?? row['supir'] ?? ''}'.trim();
+      String muat = '${row['lokasi_muat'] ?? ''}'.trim();
+      String bongkar = '${row['lokasi_bongkar'] ?? ''}'.trim();
+      final rawName = '${row['nama'] ?? row['name'] ?? ''}'.trim();
+      if (driver.isEmpty && rawName.isNotEmpty) {
+        driver = rawName.split('(').first.trim();
+      }
+      if (muat.isEmpty || bongkar.isEmpty) {
+        final routeRaw = RegExp(r'\(([^()]*)\)').firstMatch(rawName)?.group(1);
+        if (routeRaw != null && routeRaw.trim().isNotEmpty) {
+          final parts = routeRaw.split('-');
+          if (parts.isNotEmpty && muat.isEmpty) {
+            muat = parts.first.trim();
+          }
+          if (parts.length >= 2 && bongkar.isEmpty) {
+            bongkar = parts.sublist(1).join('-').trim();
+          }
+        }
+      }
+      final route =
+          '${muat.isEmpty ? '-' : muat}-${bongkar.isEmpty ? '-' : bongkar}';
+      return (driver: driver, route: route);
+    }
+
+    String buildIncomeSubtitle(Map<String, dynamic> invoice) {
+      final number = Formatters.invoiceNumber(
+        invoice['no_invoice'],
+        invoice['tanggal_kop'] ?? invoice['tanggal'],
+        customerName: invoice['nama_pelanggan'],
+      );
+      final customer = '${invoice['nama_pelanggan'] ?? '-'}'.trim();
+      if (number == '-' || number.isEmpty) return customer.isEmpty ? '-' : customer;
+      if (customer.isEmpty || customer == '-') return number;
+      return '$number • $customer';
+    }
+
+    String buildExpenseSubtitle(Map<String, dynamic> expense) {
+      if (isAutoSanguExpense(expense)) {
+        final details = detailRows(expense['rincian']);
+        final labels = <String>[];
+        final seen = <String>{};
+        for (final row in details) {
+          final entry = extractAutoSanguEntry(row);
+          final label = entry.driver.isEmpty
+              ? entry.route
+              : '${entry.driver}: ${entry.route}';
+          final key = label.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
+          if (label.trim().isNotEmpty && seen.add(key)) {
+            labels.add(label);
+          }
+        }
+        if (labels.isNotEmpty) return labels.join(' | ');
+      }
+
+      final number =
+          Formatters.invoiceNumber(expense['no_expense'], expense['tanggal']);
+      final description =
+          '${expense['keterangan'] ?? expense['note'] ?? _t('Expense', 'Expense')}'.trim();
+      if (number == '-' || number.isEmpty) {
+        return description.isEmpty ? _t('Expense', 'Expense') : description;
+      }
+      if (description.isEmpty || description == '-') return number;
+      return '$number • $description';
     }
 
     String resolveArmadaLabel(
@@ -232,26 +391,107 @@ class _AdminCalendarViewState extends State<_AdminCalendarView> {
       return _t('Lainnya', 'Other');
     }
 
-    for (final invoice in invoices) {
+    final sortedInvoices = invoices
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList(growable: false)
+      ..sort(
+        (a, b) => compareByDayThenCreated(
+          a,
+          b,
+          dateValueOf: (item) => item['tanggal'],
+        ),
+      );
+    final sortedExpenses = expenses
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList(growable: false)
+      ..sort(
+        (a, b) => compareByDayThenCreated(
+          a,
+          b,
+          dateValueOf: (item) => item['tanggal'],
+        ),
+      );
+
+    final incomeIdByToken = <String, String>{};
+    for (final invoice in sortedInvoices) {
+      final invoiceId = '${invoice['id'] ?? ''}'.trim();
+      if (invoiceId.isEmpty) continue;
+      incomeIdByToken[normalizeToken(invoiceId)] = invoiceId;
+
+      final rawNumber = '${invoice['no_invoice'] ?? ''}'.trim();
+      if (rawNumber.isNotEmpty) {
+        incomeIdByToken[normalizeToken(rawNumber)] = invoiceId;
+      }
+
+      final formattedNumber = Formatters.invoiceNumber(
+        invoice['no_invoice'],
+        invoice['tanggal_kop'] ?? invoice['tanggal'],
+        customerName: invoice['nama_pelanggan'],
+      );
+      if (formattedNumber.trim().isNotEmpty && formattedNumber.trim() != '-') {
+        incomeIdByToken[normalizeToken(formattedNumber)] = invoiceId;
+      }
+    }
+
+    final linkedExpensesByIncomeId = <String, List<Map<String, dynamic>>>{};
+    for (final expense in sortedExpenses) {
+      final markerKey = normalizeToken(extractExpenseMarker(expense));
+      if (markerKey.isEmpty) continue;
+      final linkedIncomeId = incomeIdByToken[markerKey];
+      if (linkedIncomeId == null || linkedIncomeId.isEmpty) continue;
+      linkedExpensesByIncomeId
+          .putIfAbsent(linkedIncomeId, () => <Map<String, dynamic>>[])
+          .add(expense);
+    }
+
+    final renderedExpenseIds = <String>{};
+    for (final invoice in sortedInvoices) {
       final invoiceId = '${invoice['id'] ?? ''}';
-      final invoiceDate =
-          Formatters.parseDate(invoice['tanggal'] ?? invoice['created_at']);
+      final invoiceDate = resolveEventDay(
+        dateValue: invoice['tanggal'],
+        createdAtValue: invoice['created_at'],
+      );
+      if (invoiceDate == null) continue;
+
       events.add(
         _CalendarEvent(
           id: invoiceId,
           type: 'income',
-          title: Formatters.invoiceNumber(
-            invoice['no_invoice'],
-            invoice['tanggal_kop'] ?? invoice['tanggal'],
-            customerName: invoice['nama_pelanggan'],
-          ),
-          subtitle: '${invoice['nama_pelanggan'] ?? '-'}',
+          title: _t('Income', 'Income'),
+          subtitle: buildIncomeSubtitle(invoice),
           status: '${invoice['status'] ?? 'Waiting'}',
           total: _toNum(invoice['total_bayar'] ?? invoice['total_biaya']),
           date: invoiceDate,
+          sortIndex: takeSortIndex(invoiceDate),
           dotColor: AppColors.blue,
         ),
       );
+
+      final linkedExpenses = linkedExpensesByIncomeId[invoiceId] ?? const [];
+      for (final expense in linkedExpenses) {
+        final expenseDate = resolveEventDay(
+          dateValue: expense['tanggal'],
+          createdAtValue: expense['created_at'],
+        );
+        final expenseId = '${expense['id'] ?? ''}'.trim();
+        if (!isSameDay(invoiceDate, expenseDate) || expenseId.isEmpty) {
+          continue;
+        }
+        renderedExpenseIds.add(expenseId);
+        events.add(
+          _CalendarEvent(
+            id: expenseId,
+            type: 'expense',
+            title: _t('Expense', 'Expense'),
+            subtitle: buildExpenseSubtitle(expense),
+            status: '${expense['status'] ?? 'Recorded'}',
+            total: _toNum(expense['total_pengeluaran']),
+            date: expenseDate,
+            sortIndex: takeSortIndex(expenseDate!),
+            dotColor: AppColors.danger,
+          ),
+        );
+      }
 
       final details = detailRows(invoice['rincian']);
       final scheduleRows =
@@ -283,40 +523,96 @@ class _AdminCalendarViewState extends State<_AdminCalendarView> {
         for (var day = normalizedStart;
             !day.isAfter(normalizedEnd);
             day = day.add(const Duration(days: 1))) {
-          events.add(
-            _CalendarEvent(
-              id: '$invoiceId-$i-${_dateKey(day)}',
-              type: 'armada',
-              title: armadaLabel,
-              subtitle:
-                  '${Formatters.dmy(normalizedStart)} -> ${Formatters.dmy(normalizedEnd)}',
-              status: _t('Jadwal Armada', 'Fleet Schedule'),
-              total: 0,
-              date: day,
-              startDate: normalizedStart,
-              endDate: normalizedEnd,
-              dotColor: statusColor,
-            ),
+          final armadaEvent = _CalendarEvent(
+            id: '$invoiceId-$i-${_dateKey(day)}',
+            type: 'armada',
+            title: armadaLabel,
+            subtitle:
+                '${Formatters.dmy(normalizedStart)} -> ${Formatters.dmy(normalizedEnd)}',
+            status: _t('Jadwal Armada', 'Fleet Schedule'),
+            total: 0,
+            date: day,
+            startDate: normalizedStart,
+            endDate: normalizedEnd,
+            sortIndex: 0,
+            dotColor: statusColor,
           );
+          if (isSameDay(invoiceDate, day)) {
+            events.add(
+              _CalendarEvent(
+                id: armadaEvent.id,
+                type: armadaEvent.type,
+                title: armadaEvent.title,
+                subtitle: armadaEvent.subtitle,
+                status: armadaEvent.status,
+                total: armadaEvent.total,
+                date: day,
+                startDate: armadaEvent.startDate,
+                endDate: armadaEvent.endDate,
+                sortIndex: takeSortIndex(day),
+                dotColor: armadaEvent.dotColor,
+              ),
+            );
+          } else {
+            pendingArmadaEvents.add(armadaEvent);
+          }
         }
       }
     }
 
-    for (final expense in expenses) {
-      final expenseDate =
-          Formatters.parseDate(expense['tanggal'] ?? expense['created_at']);
+    for (final expense in sortedExpenses) {
+      final expenseId = '${expense['id'] ?? ''}'.trim();
+      if (expenseId.isNotEmpty && renderedExpenseIds.contains(expenseId)) {
+        continue;
+      }
+      final expenseDate = resolveEventDay(
+        dateValue: expense['tanggal'],
+        createdAtValue: expense['created_at'],
+      );
+      if (expenseDate == null) continue;
       events.add(
         _CalendarEvent(
-          id: '${expense['id'] ?? ''}',
+          id: expenseId,
           type: 'expense',
-          title: Formatters.invoiceNumber(
-              expense['no_expense'], expense['tanggal']),
-          subtitle:
-              '${expense['keterangan'] ?? expense['note'] ?? _t('Expense', 'Expense')}',
+          title: _t('Expense', 'Expense'),
+          subtitle: buildExpenseSubtitle(expense),
           status: '${expense['status'] ?? 'Recorded'}',
           total: _toNum(expense['total_pengeluaran']),
           date: expenseDate,
+          sortIndex: takeSortIndex(expenseDate),
           dotColor: AppColors.danger,
+        ),
+      );
+    }
+
+    pendingArmadaEvents.sort((a, b) {
+      final aDate = a.date ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final bDate = b.date ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final byDate = aDate.compareTo(bDate);
+      if (byDate != 0) return byDate;
+      final aStart = a.startDate ?? aDate;
+      final bStart = b.startDate ?? bDate;
+      final byStart = aStart.compareTo(bStart);
+      if (byStart != 0) return byStart;
+      return a.title.compareTo(b.title);
+    });
+
+    for (final armadaEvent in pendingArmadaEvents) {
+      final date = armadaEvent.date;
+      if (date == null) continue;
+      events.add(
+        _CalendarEvent(
+          id: armadaEvent.id,
+          type: armadaEvent.type,
+          title: armadaEvent.title,
+          subtitle: armadaEvent.subtitle,
+          status: armadaEvent.status,
+          total: armadaEvent.total,
+          date: date,
+          startDate: armadaEvent.startDate,
+          endDate: armadaEvent.endDate,
+          sortIndex: takeSortIndex(date),
+          dotColor: armadaEvent.dotColor,
         ),
       );
     }
@@ -324,7 +620,9 @@ class _AdminCalendarViewState extends State<_AdminCalendarView> {
     events.sort((a, b) {
       final ad = a.date ?? DateTime.fromMillisecondsSinceEpoch(0);
       final bd = b.date ?? DateTime.fromMillisecondsSinceEpoch(0);
-      return bd.compareTo(ad);
+      final byDate = bd.compareTo(ad);
+      if (byDate != 0) return byDate;
+      return a.sortIndex.compareTo(b.sortIndex);
     });
     return events;
   }
@@ -343,27 +641,24 @@ class _AdminCalendarViewState extends State<_AdminCalendarView> {
     }
 
     for (final entry in result.entries) {
-      entry.value.sort((a, b) {
-        int rank(String type) {
-          switch (type) {
-            case 'armada':
-              return 0;
-            case 'income':
-              return 1;
-            case 'expense':
-              return 2;
-            default:
-              return 9;
-          }
-        }
-
-        final diff = rank(a.type) - rank(b.type);
-        if (diff != 0) return diff;
-        return a.title.compareTo(b.title);
-      });
+      entry.value.sort(_compareCalendarEvents);
     }
 
     return result;
+  }
+
+  int _compareCalendarEvents(_CalendarEvent a, _CalendarEvent b) {
+    final bySortIndex = a.sortIndex.compareTo(b.sortIndex);
+    if (bySortIndex != 0) return bySortIndex;
+
+    final aStart =
+        a.startDate ?? a.date ?? DateTime.fromMillisecondsSinceEpoch(0);
+    final bStart =
+        b.startDate ?? b.date ?? DateTime.fromMillisecondsSinceEpoch(0);
+    final byStart = aStart.compareTo(bStart);
+    if (byStart != 0) return byStart;
+
+    return a.title.compareTo(b.title);
   }
 
   String _dateKey(DateTime date) {
@@ -576,7 +871,13 @@ class _AdminCalendarViewState extends State<_AdminCalendarView> {
                 final dayDate = DateTime(
                     _visibleMonth.year, _visibleMonth.month, index + 1);
                 final key = _dateKey(dayDate);
-                final items = eventsByDate[key] ?? const <_CalendarEvent>[];
+                final isSunday = dayDate.weekday == DateTime.sunday;
+                final dayHeaderColor = isSunday
+                    ? AppColors.danger
+                    : AppColors.textMutedFor(context);
+                final items =
+                    [...(eventsByDate[key] ?? const <_CalendarEvent>[])]
+                      ..sort(_compareCalendarEvents);
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: _PanelCard(
@@ -590,6 +891,7 @@ class _AdminCalendarViewState extends State<_AdminCalendarView> {
                               style: TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w700,
+                                color: isSunday ? AppColors.danger : null,
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -597,7 +899,7 @@ class _AdminCalendarViewState extends State<_AdminCalendarView> {
                               child: Text(
                                 _weekdayLabel(dayDate),
                                 style: TextStyle(
-                                  color: AppColors.textMutedFor(context),
+                                  color: dayHeaderColor,
                                   fontSize: 13,
                                 ),
                               ),
@@ -605,7 +907,7 @@ class _AdminCalendarViewState extends State<_AdminCalendarView> {
                             Text(
                               Formatters.dmy(dayDate),
                               style: TextStyle(
-                                color: AppColors.textMutedFor(context),
+                                color: dayHeaderColor,
                                 fontSize: 12,
                               ),
                             ),
@@ -982,6 +1284,7 @@ class _CalendarEvent {
     required this.status,
     required this.total,
     required this.date,
+    required this.sortIndex,
     this.startDate,
     this.endDate,
     this.dotColor = AppColors.blue,
@@ -994,6 +1297,7 @@ class _CalendarEvent {
   final String status;
   final double total;
   final DateTime? date;
+  final int sortIndex;
   final DateTime? startDate;
   final DateTime? endDate;
   final Color dotColor;

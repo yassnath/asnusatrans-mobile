@@ -277,6 +277,8 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
             .whereType<Map>()
             .map((row) => Map<String, dynamic>.from(row))
             .toList();
+    final effectiveSourceItems =
+        sourceItems.isNotEmpty ? sourceItems : <Map<String, dynamic>>[item];
     final invoiceNumber = _resolveDisplayNumber(item);
     final customerName = '${item['nama_pelanggan'] ?? '-'}';
     final total = _toNum(item['total_bayar'] ?? item['total_biaya']);
@@ -317,7 +319,7 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                     style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: 8),
-                  if (sourceItems.isEmpty)
+                  if (effectiveSourceItems.isEmpty)
                     Text(
                       _t(
                         'Belum ada invoice sumber yang tersimpan.',
@@ -326,7 +328,7 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                       style: TextStyle(color: AppColors.textMutedFor(context)),
                     )
                   else
-                    ...sourceItems.map((source) {
+                    ...effectiveSourceItems.map((source) {
                       final sourceNumber = Formatters.invoiceNumber(
                         source['no_invoice'],
                         source['tanggal_kop'] ?? source['tanggal'],
@@ -398,14 +400,30 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
         );
       },
     );
-    if (wantsPrint == true && mounted) {
-      _snack(
-        _t(
-          'Cetak dari Fix Invoice masih memakai alur Cetak Invoice utama. Tombol print sudah disiapkan di preview ini sebagai jalur berikutnya.',
-          'Printing from Fixed Invoice still follows the main Print Invoice flow. The print button is prepared here as the next step.',
-        ),
-      );
-    }
+    if (wantsPrint != true) return;
+    if (!mounted) return;
+
+    final merged = _mergeInvoiceItemsForPdf(
+      effectiveSourceItems,
+      invoiceNumberOverride: invoiceNumber,
+      kopDateOverride: '${item['tanggal_kop'] ?? ''}'.trim(),
+      kopLocationOverride: '${item['lokasi_kop'] ?? ''}'.trim(),
+    );
+    final printer = _DashboardInvoicePrintDelegate(
+      context: context,
+      repository: widget.repository,
+      translate: _t,
+      snack: _snack,
+      isMounted: () => mounted,
+    );
+    await _printDashboardInvoicePdf(
+      printer,
+      merged.item,
+      merged.details,
+      invoiceNumberOverride: invoiceNumber,
+      kopDateOverride: '${item['tanggal_kop'] ?? ''}'.trim(),
+      kopLocationOverride: '${item['lokasi_kop'] ?? ''}'.trim(),
+    );
   }
 
   Future<void> _returnToInvoiceList(Map<String, dynamic> item) async {
@@ -602,6 +620,13 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                         final total = _toNum(
                           item['total_bayar'] ?? item['total_biaya'],
                         );
+                        final customerTypeLabel =
+                            _resolveIsCompanyInvoiceShared(
+                          invoiceNumber: item['no_invoice'],
+                          customerName: item['nama_pelanggan'],
+                        )
+                                ? _t('Perusahaan', 'Company')
+                                : _t('Pribadi', 'Personal');
                         final batchItems =
                             (item['__batch_items'] as List<dynamic>? ??
                                     const <dynamic>[])
@@ -641,6 +666,13 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                                   color: AppColors.textMutedFor(context),
                                 ),
                               ),
+                              const SizedBox(height: 2),
+                              Text(
+                                customerTypeLabel,
+                                style: TextStyle(
+                                  color: AppColors.textMutedFor(context),
+                                ),
+                              ),
                               if (mergedCount > 1) ...[
                                 const SizedBox(height: 2),
                                 Text(
@@ -669,8 +701,8 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                                       onPressed: () => _openBatchPreview(item),
                                       style: CvantButtonStyles.outlined(
                                         context,
-                                        color: AppColors.warning,
-                                        borderColor: AppColors.warning,
+                                        color: AppColors.neutralOutline,
+                                        borderColor: AppColors.neutralOutline,
                                       ),
                                       icon: const Icon(Icons.visibility,
                                           size: 16),

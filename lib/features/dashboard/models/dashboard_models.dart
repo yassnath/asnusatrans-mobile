@@ -42,6 +42,8 @@ class TransactionItem {
     required this.total,
     required this.status,
     required this.link,
+    this.displayName,
+    this.routeLabel,
     this.isAutoSangu = false,
   });
 
@@ -53,6 +55,8 @@ class TransactionItem {
   final double total;
   final String status;
   final String link;
+  final String? displayName;
+  final String? routeLabel;
   final bool isAutoSangu;
 }
 

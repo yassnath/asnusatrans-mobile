@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -8,6 +9,7 @@ import 'core/theme/theme_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  _installFrameworkErrorFilters();
 
   Object? startupError;
 
@@ -18,9 +20,15 @@ Future<void> main() async {
       );
     }
 
+    final disableWindowsDeepLinkObserver =
+        !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+
     await Supabase.initialize(
       url: AppConfig.supabaseUrl,
       anonKey: AppConfig.supabaseAnonKey,
+      authOptions: FlutterAuthClientOptions(
+        detectSessionInUri: !disableWindowsDeepLinkObserver,
+      ),
     );
     await ThemeController.init();
     await LanguageController.init();
@@ -30,4 +38,68 @@ Future<void> main() async {
   }
 
   runApp(CvantApp(startupError: startupError));
+}
+
+void _installFrameworkErrorFilters() {
+  final previousFlutterError = FlutterError.onError;
+  FlutterError.onError = (details) {
+    if (_isIgnorableWindowsKeyboardAssertion(
+      details.exception,
+      details.stack,
+    )) {
+      debugPrint(
+        'Ignored Windows keyboard synchronization assertion: '
+        '${details.exceptionAsString()}',
+      );
+      return;
+    }
+
+    if (previousFlutterError != null) {
+      previousFlutterError(details);
+    } else {
+      FlutterError.presentError(details);
+    }
+  };
+
+  final previousPlatformError = PlatformDispatcher.instance.onError;
+  PlatformDispatcher.instance.onError = (error, stack) {
+    if (_isIgnorableWindowsKeyboardAssertion(error, stack)) {
+      debugPrint(
+        'Ignored Windows platform keyboard synchronization assertion: $error',
+      );
+      return true;
+    }
+
+    if (previousPlatformError != null) {
+      return previousPlatformError(error, stack);
+    }
+    return false;
+  };
+}
+
+bool _isIgnorableWindowsKeyboardAssertion(
+  Object error,
+  StackTrace? stackTrace,
+) {
+  if (kIsWeb || defaultTargetPlatform != TargetPlatform.windows) {
+    return false;
+  }
+
+  final message = error.toString();
+  final stack = stackTrace?.toString() ?? '';
+  const knownKeyboardSyncMarkers = <String>[
+    'Attempted to send a key down event when no keys are in keysPressed',
+    'A KeyUpEvent is dispatched, but the state shows that the physical key is not pressed',
+    'A KeyDownEvent is dispatched, but the state shows that the physical key is already pressed',
+  ];
+
+  final matchesKnownMessage = knownKeyboardSyncMarkers.any(
+    (marker) => message.contains(marker),
+  );
+  if (!matchesKnownMessage) return false;
+
+  return stack.contains('raw_keyboard.dart') ||
+      stack.contains('hardware_keyboard.dart') ||
+      message.contains('keysPressed') ||
+      message.contains('_pressedKeys');
 }

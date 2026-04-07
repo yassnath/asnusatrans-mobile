@@ -9,6 +9,17 @@ include(${EPHEMERAL_DIR}/generated_config.cmake)
 # TODO: Move the rest of this into files in ephemeral. See
 # https://github.com/flutter/flutter/issues/57146.
 set(WRAPPER_ROOT "${EPHEMERAL_DIR}/cpp_client_wrapper")
+set(WRAPPER_FALLBACK_ROOT
+  "${FLUTTER_ROOT}/bin/cache/artifacts/engine/${FLUTTER_TARGET_PLATFORM}/cpp_client_wrapper")
+
+# Some Windows environments end up with an incomplete ephemeral wrapper folder
+# where only the include directory exists. Repopulate the wrapper sources from
+# the Flutter SDK cache so MSBuild can still compile the Windows runner.
+if(NOT EXISTS "${WRAPPER_ROOT}/core_implementations.cc"
+   AND EXISTS "${WRAPPER_FALLBACK_ROOT}/core_implementations.cc")
+  file(MAKE_DIRECTORY "${WRAPPER_ROOT}")
+  file(COPY "${WRAPPER_FALLBACK_ROOT}/" DESTINATION "${WRAPPER_ROOT}")
+endif()
 
 # Set fallback configurations for older versions of the flutter tool.
 if (NOT DEFINED FLUTTER_TARGET_PLATFORM)

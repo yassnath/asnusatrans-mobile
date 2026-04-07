@@ -775,6 +775,19 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
       );
       return;
     }
+    final hasEmptyMuatan = _details.any(
+      (row) => '${row['muatan'] ?? ''}'.trim().isEmpty,
+    );
+    if (hasEmptyMuatan) {
+      _snack(
+        _t(
+          'Muatan wajib diisi di setiap rincian.',
+          'Cargo is required for every detail row.',
+        ),
+        error: true,
+      );
+      return;
+    }
     final first = _details.first;
     final firstArmadaId = '${first['armada_id']}'.trim();
     final firstArmadaManual = '${first['armada_manual'] ?? ''}'.trim();
@@ -1279,8 +1292,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                             ),
                             initialValue: '${row['muatan'] ?? ''}',
                             decoration: InputDecoration(
-                              hintText:
-                                  _t('Muatan (Opsional)', 'Cargo (Optional)'),
+                              hintText: _t('Muatan', 'Cargo'),
                             ),
                             onChanged: (value) => row['muatan'] = value,
                           ),

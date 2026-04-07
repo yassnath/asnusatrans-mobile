@@ -86,7 +86,7 @@ class _ArmadaOverviewCardState extends State<ArmadaOverviewCard> {
               )
             else
               SizedBox(
-                height: 220,
+                height: 270,
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     final chartSize = Size(
@@ -99,7 +99,7 @@ class _ArmadaOverviewCardState extends State<ArmadaOverviewCard> {
                         PieChart(
                           PieChartData(
                             sectionsSpace: 2,
-                            centerSpaceRadius: 52,
+                            centerSpaceRadius: 68,
                             borderData: FlBorderData(show: false),
                             pieTouchData: PieTouchData(
                               touchCallback: (event, response) {
@@ -133,7 +133,7 @@ class _ArmadaOverviewCardState extends State<ArmadaOverviewCard> {
                               return PieChartSectionData(
                                 value: value <= 0 ? 0.1 : value,
                                 title: '',
-                                radius: selected ? 47 : 42,
+                                radius: selected ? 64 : 58,
                                 color: _itemColor(item, colors, index),
                               );
                             }),
@@ -193,12 +193,16 @@ class _ArmadaOverviewCardState extends State<ArmadaOverviewCard> {
       children: [
         Text(
           isEn ? 'Fleet Usage' : 'Penggunaan Armada',
-          style: TextStyle(color: muted, fontSize: 12),
+          style: TextStyle(
+            color: muted,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
         ),
         Text(
           '${totalUsage}x',
           style: const TextStyle(
-            fontSize: 20,
+            fontSize: 24,
             fontWeight: FontWeight.w700,
           ),
         ),

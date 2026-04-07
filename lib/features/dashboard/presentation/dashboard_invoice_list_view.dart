@@ -91,7 +91,8 @@ class _FixedInvoiceBatch {
   }
 }
 
-class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
+class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
+    implements _DashboardInvoicePrintHost {
   static const _manualArmadaOptionId = '__other_manual_armada__';
   static const _manualDriverOptionId = '__other_manual_driver__';
   static const List<String> _defaultMuatOptions = [
@@ -151,6 +152,25 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
   bool get _isEn => LanguageController.language.value == AppLanguage.en;
 
   String _t(String id, String en) => _isEn ? en : id;
+
+  @override
+  DashboardRepository get invoicePrintRepository => widget.repository;
+
+  @override
+  String translatePrintText(String id, String en) => _t(id, en);
+
+  @override
+  void showPrintSnack(String msg, {bool error = false}) {
+    _snack(msg, error: error);
+  }
+
+  @override
+  Future<void> markInvoicesFixed(
+    Iterable<String> ids, {
+    _FixedInvoiceBatch? batch,
+  }) {
+    return _markInvoicesAsFixed(ids, batch: batch);
+  }
 
   bool _matchesKeywordInAnyColumn(
     Map<String, dynamic> row,
@@ -1079,10 +1099,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
         final item = group.baseItem;
         final id = group.id;
         final generated = generatedById[id] ?? '-';
-        final defaultKopDate =
-            toDisplayDate(item['tanggal_kop'] ?? item['tanggal']);
+        final defaultKopDate = toDisplayDate(now);
         final defaultKopLocation = '${item['lokasi_kop'] ?? ''}'.trim();
-        defaultKopDateById[id] = defaultKopDate;
+        defaultKopDateById[id] = toDbDate(now);
         defaultKopLocationById[id] = defaultKopLocation;
         noInvoiceControllers[id] = TextEditingController(text: generated);
         kopDateControllers[id] = TextEditingController(text: defaultKopDate);
@@ -5227,7 +5246,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
     final email = TextEditingController(text: '${item['email'] ?? ''}');
     final phone = TextEditingController(text: '${item['no_telp'] ?? ''}');
     final kopDate = TextEditingController(
-      text: _toInputDate(item['tanggal_kop'] ?? item['tanggal']),
+      text: _toInputDate(DateTime.now()),
     );
     final kopLocation =
         TextEditingController(text: '${item['lokasi_kop'] ?? ''}');
@@ -5629,8 +5648,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                   ),
                                   initialValue: '${row['muatan'] ?? ''}',
                                   decoration: InputDecoration(
-                                    hintText: _t('Muatan (Opsional)',
-                                        'Cargo (Optional)'),
+                                    hintText: _t('Muatan', 'Cargo'),
                                   ),
                                   onChanged: (value) => row['muatan'] = value,
                                 ),
@@ -6066,6 +6084,21 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView> {
                                             _t(
                                               'Nama customer dan total wajib diisi.',
                                               'Customer name and total are required.',
+                                            ),
+                                            error: true,
+                                          );
+                                          return;
+                                        }
+                                        final hasEmptyMuatan = details.any(
+                                          (row) => '${row['muatan'] ?? ''}'
+                                              .trim()
+                                              .isEmpty,
+                                        );
+                                        if (hasEmptyMuatan) {
+                                          _snack(
+                                            _t(
+                                              'Muatan wajib diisi di setiap rincian.',
+                                              'Cargo is required for every detail row.',
                                             ),
                                             error: true,
                                           );
