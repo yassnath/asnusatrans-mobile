@@ -6,25 +6,94 @@ set(EPHEMERAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ephemeral")
 # Configuration provided via flutter tool.
 include(${EPHEMERAL_DIR}/generated_config.cmake)
 
+# Set fallback configurations for older versions of the flutter tool before
+# resolving SDK artifact paths that depend on the target platform.
+if (NOT DEFINED FLUTTER_TARGET_PLATFORM)
+  set(FLUTTER_TARGET_PLATFORM "windows-x64")
+endif()
+
 # TODO: Move the rest of this into files in ephemeral. See
 # https://github.com/flutter/flutter/issues/57146.
 set(WRAPPER_ROOT "${EPHEMERAL_DIR}/cpp_client_wrapper")
+set(FLUTTER_ENGINE_FALLBACK_ROOT
+  "${FLUTTER_ROOT}/bin/cache/artifacts/engine/${FLUTTER_TARGET_PLATFORM}")
 set(WRAPPER_FALLBACK_ROOT
-  "${FLUTTER_ROOT}/bin/cache/artifacts/engine/${FLUTTER_TARGET_PLATFORM}/cpp_client_wrapper")
+  "${FLUTTER_ENGINE_FALLBACK_ROOT}/cpp_client_wrapper")
+set(WRAPPER_INCLUDE_ROOT "${WRAPPER_ROOT}/include")
+set(FLUTTER_DART_BINARY
+  "${FLUTTER_ROOT}/bin/cache/dart-sdk/bin/dart.exe")
+set(FLUTTER_ASSET_BUNDLE_DIR "${PROJECT_DIR}/build/flutter_assets")
+set(FLUTTER_ASSET_MANIFEST_SCRIPT
+  "${PROJECT_DIR}/tooling/windows/ensure_asset_manifests.dart")
 
 # Some Windows environments end up with an incomplete ephemeral wrapper folder
 # where only the include directory exists. Repopulate the wrapper sources from
 # the Flutter SDK cache so MSBuild can still compile the Windows runner.
-if(NOT EXISTS "${WRAPPER_ROOT}/core_implementations.cc"
+if((NOT EXISTS "${WRAPPER_ROOT}/core_implementations.cc"
+    OR NOT EXISTS "${WRAPPER_ROOT}/plugin_registrar.cc"
+    OR NOT EXISTS "${WRAPPER_ROOT}/standard_codec.cc"
+    OR NOT EXISTS "${WRAPPER_ROOT}/flutter_engine.cc"
+    OR NOT EXISTS "${WRAPPER_ROOT}/flutter_view_controller.cc")
    AND EXISTS "${WRAPPER_FALLBACK_ROOT}/core_implementations.cc")
   file(MAKE_DIRECTORY "${WRAPPER_ROOT}")
   file(COPY "${WRAPPER_FALLBACK_ROOT}/" DESTINATION "${WRAPPER_ROOT}")
 endif()
 
-# Set fallback configurations for older versions of the flutter tool.
-if (NOT DEFINED FLUTTER_TARGET_PLATFORM)
-  set(FLUTTER_TARGET_PLATFORM "windows-x64")
+if(EXISTS "${WRAPPER_FALLBACK_ROOT}/include/flutter")
+  set(WRAPPER_INCLUDE_ROOT "${WRAPPER_FALLBACK_ROOT}/include")
 endif()
+
+add_custom_target(flutter_sync_ephemeral_fallback
+  COMMAND ${CMAKE_COMMAND} -E make_directory "${EPHEMERAL_DIR}"
+  COMMAND ${CMAKE_COMMAND} -E make_directory "${WRAPPER_ROOT}"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${FLUTTER_ENGINE_FALLBACK_ROOT}/flutter_export.h"
+    "${EPHEMERAL_DIR}/flutter_export.h"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${FLUTTER_ENGINE_FALLBACK_ROOT}/flutter_windows.h"
+    "${EPHEMERAL_DIR}/flutter_windows.h"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${FLUTTER_ENGINE_FALLBACK_ROOT}/flutter_messenger.h"
+    "${EPHEMERAL_DIR}/flutter_messenger.h"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${FLUTTER_ENGINE_FALLBACK_ROOT}/flutter_plugin_registrar.h"
+    "${EPHEMERAL_DIR}/flutter_plugin_registrar.h"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${FLUTTER_ENGINE_FALLBACK_ROOT}/flutter_texture_registrar.h"
+    "${EPHEMERAL_DIR}/flutter_texture_registrar.h"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${FLUTTER_ENGINE_FALLBACK_ROOT}/flutter_windows.dll"
+    "${EPHEMERAL_DIR}/flutter_windows.dll"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${FLUTTER_ENGINE_FALLBACK_ROOT}/flutter_windows.dll.lib"
+    "${EPHEMERAL_DIR}/flutter_windows.dll.lib"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${FLUTTER_ENGINE_FALLBACK_ROOT}/icudtl.dat"
+    "${EPHEMERAL_DIR}/icudtl.dat"
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+    "${WRAPPER_FALLBACK_ROOT}"
+    "${WRAPPER_ROOT}"
+  VERBATIM
+)
+
+add_custom_target(flutter_generate_asset_manifests
+  COMMAND "${FLUTTER_DART_BINARY}"
+    "${FLUTTER_ASSET_MANIFEST_SCRIPT}"
+    "${FLUTTER_ASSET_BUNDLE_DIR}"
+    "${PROJECT_DIR}"
+    "${FLUTTER_ROOT}"
+  VERBATIM
+)
+
+function(resolve_wrapper_source out_var filename)
+  if(EXISTS "${WRAPPER_FALLBACK_ROOT}/${filename}")
+    set(${out_var} "${WRAPPER_FALLBACK_ROOT}/${filename}" PARENT_SCOPE)
+  elseif(EXISTS "${WRAPPER_ROOT}/${filename}")
+    set(${out_var} "${WRAPPER_ROOT}/${filename}" PARENT_SCOPE)
+  else()
+    set(${out_var} "${WRAPPER_FALLBACK_ROOT}/${filename}" PARENT_SCOPE)
+  endif()
+endfunction()
 
 # === Flutter Library ===
 set(FLUTTER_LIBRARY "${EPHEMERAL_DIR}/flutter_windows.dll")
@@ -51,20 +120,22 @@ target_link_libraries(flutter INTERFACE "${FLUTTER_LIBRARY}.lib")
 add_dependencies(flutter flutter_assemble)
 
 # === Wrapper ===
-list(APPEND CPP_WRAPPER_SOURCES_CORE
-  "core_implementations.cc"
-  "standard_codec.cc"
+resolve_wrapper_source(CPP_WRAPPER_SOURCE_CORE_IMPLEMENTATIONS "core_implementations.cc")
+resolve_wrapper_source(CPP_WRAPPER_SOURCE_STANDARD_CODEC "standard_codec.cc")
+set(CPP_WRAPPER_SOURCES_CORE
+  "${CPP_WRAPPER_SOURCE_CORE_IMPLEMENTATIONS}"
+  "${CPP_WRAPPER_SOURCE_STANDARD_CODEC}"
 )
-list(TRANSFORM CPP_WRAPPER_SOURCES_CORE PREPEND "${WRAPPER_ROOT}/")
-list(APPEND CPP_WRAPPER_SOURCES_PLUGIN
-  "plugin_registrar.cc"
+resolve_wrapper_source(CPP_WRAPPER_SOURCE_PLUGIN_REGISTRAR "plugin_registrar.cc")
+set(CPP_WRAPPER_SOURCES_PLUGIN
+  "${CPP_WRAPPER_SOURCE_PLUGIN_REGISTRAR}"
 )
-list(TRANSFORM CPP_WRAPPER_SOURCES_PLUGIN PREPEND "${WRAPPER_ROOT}/")
-list(APPEND CPP_WRAPPER_SOURCES_APP
-  "flutter_engine.cc"
-  "flutter_view_controller.cc"
+resolve_wrapper_source(CPP_WRAPPER_SOURCE_FLUTTER_ENGINE "flutter_engine.cc")
+resolve_wrapper_source(CPP_WRAPPER_SOURCE_FLUTTER_VIEW_CONTROLLER "flutter_view_controller.cc")
+set(CPP_WRAPPER_SOURCES_APP
+  "${CPP_WRAPPER_SOURCE_FLUTTER_ENGINE}"
+  "${CPP_WRAPPER_SOURCE_FLUTTER_VIEW_CONTROLLER}"
 )
-list(TRANSFORM CPP_WRAPPER_SOURCES_APP PREPEND "${WRAPPER_ROOT}/")
 
 # Wrapper sources needed for a plugin.
 add_library(flutter_wrapper_plugin STATIC
@@ -78,9 +149,11 @@ set_target_properties(flutter_wrapper_plugin PROPERTIES
   CXX_VISIBILITY_PRESET hidden)
 target_link_libraries(flutter_wrapper_plugin PUBLIC flutter)
 target_include_directories(flutter_wrapper_plugin PUBLIC
-  "${WRAPPER_ROOT}/include"
+  "${WRAPPER_INCLUDE_ROOT}"
 )
 add_dependencies(flutter_wrapper_plugin flutter_assemble)
+add_dependencies(flutter_wrapper_plugin flutter_sync_ephemeral_fallback)
+add_dependencies(flutter_wrapper_plugin flutter_generate_asset_manifests)
 
 # Wrapper sources needed for the runner.
 add_library(flutter_wrapper_app STATIC
@@ -90,9 +163,11 @@ add_library(flutter_wrapper_app STATIC
 apply_standard_settings(flutter_wrapper_app)
 target_link_libraries(flutter_wrapper_app PUBLIC flutter)
 target_include_directories(flutter_wrapper_app PUBLIC
-  "${WRAPPER_ROOT}/include"
+  "${WRAPPER_INCLUDE_ROOT}"
 )
 add_dependencies(flutter_wrapper_app flutter_assemble)
+add_dependencies(flutter_wrapper_app flutter_sync_ephemeral_fallback)
+add_dependencies(flutter_wrapper_app flutter_generate_asset_manifests)
 
 # === Flutter tool backend ===
 # _phony_ is a non-existent file to force this command to run every time,
@@ -118,3 +193,5 @@ add_custom_target(flutter_assemble DEPENDS
   ${CPP_WRAPPER_SOURCES_PLUGIN}
   ${CPP_WRAPPER_SOURCES_APP}
 )
+add_dependencies(flutter_sync_ephemeral_fallback flutter_assemble)
+add_dependencies(flutter_generate_asset_manifests flutter_assemble)

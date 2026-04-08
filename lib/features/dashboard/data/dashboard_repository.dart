@@ -3490,6 +3490,21 @@ class DashboardRepository {
     return max(0, tonase * harga);
   }
 
+  bool _detailUsesManualArmada(Map<String, dynamic> detail) {
+    final manual = '${detail['armada_manual'] ?? ''}'.trim();
+    if (manual.isNotEmpty) return true;
+    final isManual = detail['armada_is_manual'];
+    if (isManual is bool && isManual) return true;
+    return false;
+  }
+
+  bool _shouldSkipAutoSanguForManualArmada(
+    List<Map<String, dynamic>> details,
+  ) {
+    if (details.isEmpty) return false;
+    return details.any(_detailUsesManualArmada);
+  }
+
   Future<_AutoSanguSyncResult> _createSanguExpenseFromIncomeBestEffort({
     String? invoiceId,
     required String invoiceNumber,
@@ -3531,6 +3546,24 @@ class DashboardRepository {
         final marker = note.substring('AUTO_SANGU:'.length).trim();
         return markerCandidates.contains(marker);
       }).toList();
+
+      if (_shouldSkipAutoSanguForManualArmada(details)) {
+        var deletedCount = 0;
+        if (existingAutoRows.isNotEmpty) {
+          for (final row in existingAutoRows) {
+            final staleId = '${row['id'] ?? ''}'.trim();
+            if (staleId.isEmpty) continue;
+            try {
+              await deleteExpense(staleId);
+              deletedCount++;
+            } catch (_) {}
+          }
+        }
+        return _AutoSanguSyncResult(
+          deleted: deletedCount,
+          skipped: 1,
+        );
+      }
 
       String normalizeDetailKey(String value) {
         return value
