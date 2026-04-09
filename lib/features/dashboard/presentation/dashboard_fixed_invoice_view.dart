@@ -18,6 +18,7 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
   static const _fixedInvoiceBatchPrefsKey = 'fixed_invoice_batches_v1';
   late Future<List<Map<String, dynamic>>> _future;
   final _search = TextEditingController();
+  bool _backgroundInvoiceNumberNormalizationRunning = false;
 
   bool get _isEn => LanguageController.language.value == AppLanguage.en;
   String _t(String id, String en) => _isEn ? en : id;
@@ -76,6 +77,13 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
 
   int _extractInvoiceSequence(dynamic rawValue) {
     final raw = '${rawValue ?? ''}'.trim();
+    final compactMatch = RegExp(
+      r'^(?:CV\.ANT|BS)(\d{2})(\d{2})(\d{2,})$',
+      caseSensitive: false,
+    ).firstMatch(raw);
+    if (compactMatch != null) {
+      return int.tryParse(compactMatch.group(3) ?? '') ?? 0;
+    }
     final match = RegExp(r'(\d{1,4})').firstMatch(raw);
     return int.tryParse(match?.group(1) ?? '') ?? 0;
   }
@@ -153,6 +161,7 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
   void initState() {
     super.initState();
     _future = _load();
+    unawaited(_normalizeInvoiceNumbersInBackground());
   }
 
   @override
@@ -168,6 +177,25 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
       title: error ? _t('Error', 'Error') : _t('Success', 'Success'),
       message: msg,
     );
+  }
+
+  Future<void> _normalizeInvoiceNumbersInBackground() async {
+    if (_backgroundInvoiceNumberNormalizationRunning) return;
+    _backgroundInvoiceNumberNormalizationRunning = true;
+    try {
+      final report = await widget.repository.normalizeLegacyInvoiceNumbers();
+      if (report.updatedInvoices <= 0 && report.updatedFixedBatches <= 0) {
+        return;
+      }
+      if (!mounted) return;
+      setState(() {
+        _future = _load();
+      });
+    } catch (_) {
+      // Best effort: halaman fix invoice tetap bisa dibuka walau migrasi gagal.
+    } finally {
+      _backgroundInvoiceNumberNormalizationRunning = false;
+    }
   }
 
   Future<Set<String>> _loadFixedIds() async {
@@ -312,7 +340,14 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
 
   String _resolveDisplayNumber(Map<String, dynamic> item) {
     final batchNumber = '${item['__batch_invoice_number'] ?? ''}'.trim();
-    if (batchNumber.isNotEmpty) return batchNumber;
+    if (batchNumber.isNotEmpty) {
+      final normalized = Formatters.invoiceNumber(
+        batchNumber,
+        item['tanggal_kop'] ?? item['tanggal'],
+        customerName: item['nama_pelanggan'],
+      );
+      return normalized == '-' ? batchNumber : normalized;
+    }
     return Formatters.invoiceNumber(
       item['no_invoice'],
       item['tanggal_kop'] ?? item['tanggal'],

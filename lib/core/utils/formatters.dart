@@ -153,16 +153,13 @@ class Formatters {
   static bool _isCompanyByInvoicePattern(String value) {
     final compact = value.toUpperCase().replaceAll(RegExp(r'\s+'), '');
     if (compact.contains('/CV.ANT/') || compact.contains('CV.ANT')) return true;
-    if ((compact.contains('/BS/') || compact.contains('/ANT/')) &&
+    if ((compact.contains('/BS/') ||
+            compact.contains('/ANT/') ||
+            compact.startsWith('BS')) &&
         !compact.contains('CV.ANT')) {
       return false;
     }
     return true;
-  }
-
-  static String _romanMonth(int month) {
-    if (month < 1 || month > 12) return '-';
-    return _romanMonths[month];
   }
 
   static String invoiceNumber(
@@ -209,13 +206,39 @@ class Formatters {
       required int yearTwoDigits,
       required bool company,
     }) {
-      final seq = sequence.toString().padLeft(3, '0');
+      final seq = sequence.toString().padLeft(2, '0');
       final yy = yearTwoDigits.toString().padLeft(2, '0');
+      final mm = month.toString().padLeft(2, '0');
       final code = company ? 'CV.ANT' : 'BS';
-      return '$seq / $code / ${_romanMonth(month)} / $yy';
+      return '$code$yy$mm$seq';
     }
 
     // New preferred format:
+    // BS260401
+    // CV.ANT260401
+    final compactPattern = RegExp(
+      r'^(CV\.ANT|BS)(\d{2})(\d{2})(\d{2,})$',
+      caseSensitive: false,
+    );
+    final compactMatch = compactPattern.firstMatch(upper);
+    if (compactMatch != null) {
+      final prefix = (compactMatch.group(1) ?? '').toUpperCase().trim();
+      final companyFromPrefix = prefix == 'CV.ANT';
+      final yearTwoDigits = int.tryParse(compactMatch.group(2) ?? '') ??
+          (parseDate(tanggal)?.year ?? DateTime.now().year) % 100;
+      final month = int.tryParse(compactMatch.group(3) ?? '') ??
+          parseDate(tanggal)?.month ??
+          DateTime.now().month;
+      final seq = int.tryParse(compactMatch.group(4) ?? '') ?? 1;
+      return composeNumber(
+        sequence: seq,
+        month: month <= 0 ? DateTime.now().month : month,
+        yearTwoDigits: yearTwoDigits,
+        company: companyFromPrefix,
+      );
+    }
+
+    // Legacy preferred format:
     // 017 / BS / I / 26
     // 017 / CV.ANT / I / 26
     final newPattern = RegExp(

@@ -20,6 +20,7 @@ import '../../../core/theme/cvant_button_styles.dart';
 import '../../../core/theme/theme_controller.dart';
 import '../../../core/config/app_config.dart';
 import '../../../core/i18n/language_controller.dart';
+import '../../../core/security/app_security.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/cvant_dropdown_field.dart';
 import '../../../core/widgets/page_fade_in.dart';
@@ -126,26 +127,6 @@ Uint8List _trimWhiteMarginsFromPng(
     height: cropBottom - cropTop + 1,
   );
   return Uint8List.fromList(img.encodePng(cropped));
-}
-
-String _romanMonth(int month) {
-  const romanMonths = <String>[
-    '-',
-    'I',
-    'II',
-    'III',
-    'IV',
-    'V',
-    'VI',
-    'VII',
-    'VIII',
-    'IX',
-    'X',
-    'XI',
-    'XII'
-  ];
-  if (month < 1 || month > 12) return '-';
-  return romanMonths[month];
 }
 
 String _normalizeInvoicePrintLocationLabel(dynamic raw) {

@@ -364,10 +364,21 @@ class DashboardRepository {
         .toList(growable: false);
     if (cleanedBatchId.isEmpty || cleanedInvoiceIds.isEmpty) return;
 
+    final normalizedInvoiceNumber = invoiceNumber.trim().isEmpty
+        ? ''
+        : (() {
+            final normalized = Formatters.invoiceNumber(
+              invoiceNumber.trim(),
+              (kopDate ?? '').trim().isEmpty ? createdAt : kopDate,
+              customerName: customerName,
+            );
+            return normalized == '-' ? invoiceNumber.trim() : normalized;
+          })();
+
     final payload = <String, dynamic>{
       'batch_id': cleanedBatchId,
       'invoice_ids': cleanedInvoiceIds,
-      'invoice_number': invoiceNumber.trim(),
+      'invoice_number': normalizedInvoiceNumber,
       'customer_name': customerName.trim(),
       'kop_date': (kopDate ?? '').trim().isEmpty ? null : kopDate!.trim(),
       'kop_location':
@@ -404,6 +415,80 @@ class DashboardRepository {
       }
       throw Exception('Gagal menghapus fix invoice: ${e.message}');
     }
+  }
+
+  Future<({int updatedInvoices, int updatedFixedBatches})>
+      normalizeLegacyInvoiceNumbers() async {
+    var updatedInvoices = 0;
+    var updatedFixedBatches = 0;
+
+    if (_invoiceNumberColumnAvailable != false) {
+      try {
+        final invoiceRows = await _runInvoiceSelectWithFallback(
+          'id,no_invoice,nama_pelanggan,tanggal,tanggal_kop',
+          (columns) => _supabase.from('invoices').select(columns),
+        );
+        if (_invoiceNumberColumnAvailable != false) {
+          final rows = _toMapList(invoiceRows);
+          final nowIso = DateTime.now().toIso8601String();
+          for (final row in rows) {
+            final id = '${row['id'] ?? ''}'.trim();
+            final rawInvoiceNumber = '${row['no_invoice'] ?? ''}'.trim();
+            if (id.isEmpty || rawInvoiceNumber.isEmpty) continue;
+            final normalized = Formatters.invoiceNumber(
+              rawInvoiceNumber,
+              row['tanggal_kop'] ?? row['tanggal'],
+              customerName: row['nama_pelanggan'],
+            );
+            if (normalized == '-' || normalized == rawInvoiceNumber) continue;
+            await _updateInvoiceWithFallback(id, <String, dynamic>{
+              'no_invoice': normalized,
+              'updated_at': nowIso,
+            });
+            updatedInvoices++;
+          }
+        }
+      } on PostgrestException catch (e) {
+        if (!_isMissingInvoiceNumberColumnError(e)) {
+          rethrow;
+        }
+      }
+    }
+
+    try {
+      final res = await _supabase.from('fixed_invoice_batches').select(
+            'batch_id,invoice_number,customer_name,kop_date,created_at',
+          );
+      final nowIso = DateTime.now().toIso8601String();
+      for (final row in _toMapList(res)) {
+        final batchId = '${row['batch_id'] ?? ''}'.trim();
+        final rawInvoiceNumber = '${row['invoice_number'] ?? ''}'.trim();
+        if (batchId.isEmpty || rawInvoiceNumber.isEmpty) continue;
+        final normalized = Formatters.invoiceNumber(
+          rawInvoiceNumber,
+          row['kop_date'] ?? row['created_at'],
+          customerName: row['customer_name'],
+        );
+        if (normalized == '-' || normalized == rawInvoiceNumber) continue;
+        await _supabase
+            .from('fixed_invoice_batches')
+            .update(<String, dynamic>{
+              'invoice_number': normalized,
+              'updated_at': nowIso,
+            })
+            .eq('batch_id', batchId);
+        updatedFixedBatches++;
+      }
+    } on PostgrestException catch (e) {
+      if (!_isMissingFixedInvoiceBatchTableError(e)) {
+        rethrow;
+      }
+    }
+
+    return (
+      updatedInvoices: updatedInvoices,
+      updatedFixedBatches: updatedFixedBatches,
+    );
   }
 
   Future<List<Map<String, dynamic>>> fetchArmadas() async {
@@ -1135,13 +1220,13 @@ class DashboardRepository {
         if (seq > maxSeq) maxSeq = seq;
       }
 
-      final roman = _romanMonth(localIssuedDate.month);
-      final seq = (maxSeq + 1).toString().padLeft(3, '0');
+      final mm = localIssuedDate.month.toString().padLeft(2, '0');
+      final seq = (maxSeq + 1).toString().padLeft(2, '0');
       final yy = yearTwoDigits.toString().padLeft(2, '0');
       if (isCompany) {
-        return '$seq / CV.ANT / $roman / $yy';
+        return 'CV.ANT$yy$mm$seq';
       }
-      return '$seq / BS / $roman / $yy';
+      return 'BS$yy$mm$seq';
     } on PostgrestException catch (e) {
       throw Exception('Gagal menyiapkan nomor invoice: ${e.message}');
     }
@@ -2752,10 +2837,21 @@ class DashboardRepository {
         .map((id) => '$id'.trim())
         .where((id) => id.isNotEmpty)
         .toList(growable: false);
+    final rawInvoiceNumber = '${row['invoice_number'] ?? ''}'.trim();
+    final normalizedInvoiceNumber = rawInvoiceNumber.isEmpty
+        ? rawInvoiceNumber
+        : (() {
+            final normalized = Formatters.invoiceNumber(
+              rawInvoiceNumber,
+              row['kop_date'] ?? row['created_at'],
+              customerName: row['customer_name'],
+            );
+            return normalized == '-' ? rawInvoiceNumber : normalized;
+          })();
     return <String, dynamic>{
       'batch_id': '${row['batch_id'] ?? ''}'.trim(),
       'invoice_ids': invoiceIds,
-      'invoice_number': '${row['invoice_number'] ?? ''}'.trim(),
+      'invoice_number': normalizedInvoiceNumber,
       'customer_name': '${row['customer_name'] ?? ''}'.trim(),
       'kop_date': '${row['kop_date'] ?? ''}'.trim(),
       'kop_location': '${row['kop_location'] ?? ''}'.trim(),
@@ -3061,30 +3157,13 @@ class DashboardRepository {
     final raw = number.toUpperCase().trim();
     if (raw.isEmpty) return false;
     final compact = raw.replaceAll(RegExp(r'\s+'), '');
-    if ((compact.contains('/BS/') || compact.contains('/ANT/')) &&
+    if ((compact.contains('/BS/') ||
+            compact.contains('/ANT/') ||
+            compact.startsWith('BS')) &&
         !compact.contains('CV.ANT')) {
       return true;
     }
     return compact.startsWith('NO:268/') || compact.startsWith('NO:BS/');
-  }
-
-  String _romanMonth(int month) {
-    const romans = <String>[
-      'I',
-      'II',
-      'III',
-      'IV',
-      'V',
-      'VI',
-      'VII',
-      'VIII',
-      'IX',
-      'X',
-      'XI',
-      'XII',
-    ];
-    final safe = month.clamp(1, 12);
-    return romans[safe - 1];
   }
 
   int _romanToMonth(String roman) {
@@ -3117,7 +3196,24 @@ class DashboardRepository {
         .trim();
     if (cleaned.isEmpty) return 0;
 
-    // New pattern:
+    final compactPattern = RegExp(
+      r'^(CV\.ANT|BS)(\d{2})(\d{2})(\d{2,})$',
+      caseSensitive: false,
+    );
+    final compactMatch = compactPattern.firstMatch(cleaned);
+    if (compactMatch != null) {
+      final prefix = (compactMatch.group(1) ?? '').toUpperCase().trim();
+      final rowYear = int.tryParse(compactMatch.group(2) ?? '') ?? -1;
+      final rowMonth = int.tryParse(compactMatch.group(3) ?? '') ?? 0;
+      final seq = int.tryParse(compactMatch.group(4) ?? '') ?? 0;
+      final sameType = isCompany ? prefix == 'CV.ANT' : prefix == 'BS';
+      if (sameType && rowMonth == month && rowYear == yearTwoDigits) {
+        return seq;
+      }
+      return 0;
+    }
+
+    // Legacy pattern:
     // 017 / BS / I / 26
     // 017 / CV.ANT / I / 26
     final newPattern = RegExp(
@@ -4150,3 +4246,4 @@ class DashboardRepository {
     }
   }
 }
+

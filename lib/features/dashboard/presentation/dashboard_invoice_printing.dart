@@ -53,7 +53,9 @@ bool? _dashboardCompanyModeFromInvoiceNumber(String number) {
   if (compact.contains('CV.ANT') || compact.contains('/CV.ANT/')) {
     return true;
   }
-  if (compact.contains('/BS/') || compact.contains('/ANT/')) {
+  if (compact.contains('/BS/') ||
+      compact.contains('/ANT/') ||
+      compact.startsWith('BS')) {
     return false;
   }
   return null;
@@ -1892,11 +1894,11 @@ extension _AdminInvoiceListViewPrinting on _DashboardInvoicePrintHost {
 
   Uri? _invoiceRenderServiceUri() {
     if (!_canRenderInvoiceTableViaCloudService) return null;
-    final base = AppConfig.invoiceRenderServiceUrl.trim();
-    if (base.isEmpty) return null;
-    final normalized =
-        base.endsWith('/') ? '${base}render-table' : '$base/render-table';
-    return Uri.tryParse(normalized);
+    return AppSecurity.buildSecureRemoteUri(
+      AppConfig.invoiceRenderServiceUrl,
+      appendPathSegment: 'render-table',
+      allowLocalhost: kDebugMode,
+    );
   }
 
   bool _isRowMeaningfullyFilled(Map<String, String> row) {
@@ -2038,8 +2040,9 @@ extension _AdminInvoiceListViewPrinting on _DashboardInvoicePrintHost {
         ],
       );
       if (result.exitCode != 0) {
-        debugPrint(
-          'Excel table render failed: ${result.stderr}\n${result.stdout}',
+        AppSecurity.debugLog(
+          'Excel table render failed',
+          error: '${result.stderr}\n${result.stdout}',
         );
         return null;
       }
@@ -2053,7 +2056,11 @@ extension _AdminInvoiceListViewPrinting on _DashboardInvoicePrintHost {
       unawaited(tempDir.delete(recursive: true));
       return bytes;
     } catch (error, stackTrace) {
-      debugPrint('Excel table render error: $error\n$stackTrace');
+      AppSecurity.debugLog(
+        'Excel table render error',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return null;
     }
   }
@@ -2094,9 +2101,9 @@ extension _AdminInvoiceListViewPrinting on _DashboardInvoicePrintHost {
 
       if (response.statusCode != HttpStatus.ok) {
         final errorText = utf8.decode(responseBytes, allowMalformed: true);
-        debugPrint(
-          'Cloud invoice table render failed '
-          '(${response.statusCode}): $errorText',
+        AppSecurity.debugLog(
+          'Cloud invoice table render failed (${response.statusCode})',
+          error: errorText,
         );
         return null;
       }
@@ -2106,7 +2113,11 @@ extension _AdminInvoiceListViewPrinting on _DashboardInvoicePrintHost {
         renderMode: renderMode,
       );
     } catch (error, stackTrace) {
-      debugPrint('Cloud invoice table render error: $error\n$stackTrace');
+      AppSecurity.debugLog(
+        'Cloud invoice table render error',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return null;
     } finally {
       client.close(force: true);
@@ -2514,7 +2525,11 @@ extension _AdminInvoiceListViewPrinting on _DashboardInvoicePrintHost {
       );
       return bytes;
     } catch (error, stackTrace) {
-      debugPrint('Portable table render error: $error\n$stackTrace');
+      AppSecurity.debugLog(
+        'Portable table render error',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return null;
     }
   }

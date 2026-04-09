@@ -5,20 +5,23 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'app.dart';
 import 'core/config/app_config.dart';
 import 'core/i18n/language_controller.dart';
+import 'core/security/app_security.dart';
 import 'core/theme/theme_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   _installFrameworkErrorFilters();
+  ErrorWidget.builder = AppSecurity.buildReleaseErrorWidget;
 
   Object? startupError;
 
   try {
     if (!AppConfig.hasSupabase) {
       throw StateError(
-        'SUPABASE_URL dan SUPABASE_ANON_KEY wajib diisi via --dart-define.',
+          'SUPABASE_URL dan SUPABASE_ANON_KEY wajib diisi via --dart-define.',
       );
     }
+    AppSecurity.validateRuntimeConfigOrThrow();
 
     final disableWindowsDeepLinkObserver =
         !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
@@ -33,8 +36,15 @@ Future<void> main() async {
     await ThemeController.init();
     await LanguageController.init();
   } catch (error, stackTrace) {
-    startupError = error;
-    debugPrint('App startup failed: $error\n$stackTrace');
+    startupError = AppSecurity.sanitizeUserFacingError(
+      error.toString(),
+      fallback: 'Inisialisasi aplikasi gagal. Coba buka ulang aplikasi.',
+    );
+    AppSecurity.debugLog(
+      'App startup failed',
+      error: error,
+      stackTrace: stackTrace,
+    );
   }
 
   runApp(CvantApp(startupError: startupError));
@@ -47,9 +57,9 @@ void _installFrameworkErrorFilters() {
       details.exception,
       details.stack,
     )) {
-      debugPrint(
-        'Ignored Windows keyboard synchronization assertion: '
-        '${details.exceptionAsString()}',
+      AppSecurity.debugLog(
+        'Ignored Windows keyboard synchronization assertion',
+        error: details.exceptionAsString(),
       );
       return;
     }
@@ -64,8 +74,9 @@ void _installFrameworkErrorFilters() {
   final previousPlatformError = PlatformDispatcher.instance.onError;
   PlatformDispatcher.instance.onError = (error, stack) {
     if (_isIgnorableWindowsKeyboardAssertion(error, stack)) {
-      debugPrint(
-        'Ignored Windows platform keyboard synchronization assertion: $error',
+      AppSecurity.debugLog(
+        'Ignored Windows platform keyboard synchronization assertion',
+        error: error,
       );
       return true;
     }

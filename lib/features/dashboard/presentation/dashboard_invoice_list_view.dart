@@ -63,7 +63,14 @@ class _FixedInvoiceBatch {
   Map<String, dynamic> toJson() => <String, dynamic>{
         'batch_id': batchId,
         'invoice_ids': invoiceIds,
-        'invoice_number': invoiceNumber,
+        'invoice_number': (() {
+          final normalized = Formatters.invoiceNumber(
+            invoiceNumber,
+            kopDate ?? createdAt,
+            customerName: customerName,
+          );
+          return normalized == '-' ? invoiceNumber : normalized;
+        })(),
         'customer_name': customerName,
         'kop_date': kopDate,
         'kop_location': kopLocation,
@@ -72,8 +79,20 @@ class _FixedInvoiceBatch {
 
   static _FixedInvoiceBatch? fromJson(Map<String, dynamic> map) {
     final batchId = '${map['batch_id'] ?? ''}'.trim();
-    final invoiceNumber = '${map['invoice_number'] ?? ''}'.trim();
     final customerName = '${map['customer_name'] ?? ''}'.trim();
+    final kopDate = '${map['kop_date'] ?? ''}'.trim();
+    final createdAt = '${map['created_at'] ?? ''}'.trim();
+    final rawInvoiceNumber = '${map['invoice_number'] ?? ''}'.trim();
+    final normalizedInvoiceNumber = rawInvoiceNumber.isEmpty
+        ? rawInvoiceNumber
+        : (() {
+            final normalized = Formatters.invoiceNumber(
+              rawInvoiceNumber,
+              kopDate.isEmpty ? createdAt : kopDate,
+              customerName: customerName,
+            );
+            return normalized == '-' ? rawInvoiceNumber : normalized;
+          })();
     final invoiceIds = (map['invoice_ids'] as List<dynamic>? ?? const [])
         .map((id) => '$id'.trim())
         .where((id) => id.isNotEmpty)
@@ -82,11 +101,11 @@ class _FixedInvoiceBatch {
     return _FixedInvoiceBatch(
       batchId: batchId,
       invoiceIds: invoiceIds,
-      invoiceNumber: invoiceNumber,
+      invoiceNumber: normalizedInvoiceNumber,
       customerName: customerName,
-      kopDate: '${map['kop_date'] ?? ''}'.trim(),
+      kopDate: kopDate,
       kopLocation: '${map['kop_location'] ?? ''}'.trim(),
-      createdAt: '${map['created_at'] ?? ''}'.trim(),
+      createdAt: createdAt,
     );
   }
 }
@@ -150,6 +169,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
   bool _backfillRunning = false;
   bool _backgroundFixedInvoiceSyncRunning = false;
   bool _backgroundAutoSanguCleanupRunning = false;
+  bool _backgroundInvoiceNumberNormalizationRunning = false;
   bool _manualArmadaAutoSanguCleanupDone = false;
 
   bool get _isEn => LanguageController.language.value == AppLanguage.en;
@@ -400,7 +420,31 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     await Future.wait<void>([
       _syncFixedInvoiceCacheInBackground(),
       _cleanupManualArmadaAutoSanguInBackground(),
+      _normalizeInvoiceNumbersInBackground(),
     ]);
+  }
+
+  Future<void> _normalizeInvoiceNumbersInBackground() async {
+    if (_backgroundInvoiceNumberNormalizationRunning) return;
+    _backgroundInvoiceNumberNormalizationRunning = true;
+    try {
+      final report = await widget.repository.normalizeLegacyInvoiceNumbers();
+      if (report.updatedInvoices <= 0 && report.updatedFixedBatches <= 0) {
+        return;
+      }
+      final remoteBatches = await _loadRemoteFixedInvoiceBatches();
+      if (remoteBatches.isNotEmpty) {
+        await _syncLocalFixedInvoiceCache(remoteBatches);
+      }
+      if (!mounted) return;
+      setState(() {
+        _future = _load();
+      });
+    } catch (_) {
+      // Best effort: migrasi nomor invoice lama tidak boleh menghambat page.
+    } finally {
+      _backgroundInvoiceNumberNormalizationRunning = false;
+    }
   }
 
   Future<void> _syncFixedInvoiceCacheInBackground() async {
@@ -616,6 +660,14 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                 'Halo $customerName,\n\nInvoice $invoiceNumber sudah tersedia dari CV ANT.\nSilakan cek detail invoice dan lanjutkan proses pembayaran.\n\nTerima kasih.',
           },
         );
+        if (!AppSecurity.isAllowedExternalUri(uri)) {
+          throw Exception(
+            _t(
+              'Tautan email tidak valid atau tidak diizinkan.',
+              'The email link is invalid or not allowed.',
+            ),
+          );
+        }
         final launched = await launchUrl(
           uri,
           mode: LaunchMode.externalApplication,
@@ -644,10 +696,17 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
 
   Future<List<_FixedInvoiceBatch>> _loadRemoteFixedInvoiceBatches() async {
     final rows = await widget.repository.fetchFixedInvoiceBatches();
-    return rows
-        .map(_FixedInvoiceBatch.fromJson)
-        .whereType<_FixedInvoiceBatch>()
-        .toList(growable: false);
+    final batches = <_FixedInvoiceBatch>[];
+    for (final row in rows) {
+      final batch = _FixedInvoiceBatch.fromJson(row);
+      if (batch == null) continue;
+      batches.add(batch);
+      final rawInvoiceNumber = '${row['invoice_number'] ?? ''}'.trim();
+      if (rawInvoiceNumber.isNotEmpty && rawInvoiceNumber != batch.invoiceNumber) {
+        await _upsertRemoteFixedInvoiceBatch(batch);
+      }
+    }
+    return batches;
   }
 
   Future<void> _upsertRemoteFixedInvoiceBatch(_FixedInvoiceBatch batch) {
@@ -1079,10 +1138,11 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
 
     for (final group in sortedGroups) {
       final item = group.baseItem;
-      final issuedDate = Formatters.parseDate(
+      final existingIssuedDate = Formatters.parseDate(
             item['tanggal_kop'] ?? item['tanggal'] ?? item['created_at'],
           ) ??
           now;
+      final generatedIssuedDate = now;
       final companyMode = isCompany(item);
       final normalizedExisting = Formatters.invoiceNumber(
         item['no_invoice'],
@@ -1095,22 +1155,22 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         generatedById[group.id] = normalizedExisting;
         consumeExistingInvoiceNumber(
           invoiceNumber: normalizedExisting,
-          issuedDate: issuedDate,
+          issuedDate: existingIssuedDate,
           isCompany: companyMode,
-          referenceDate: issuedDate,
+          referenceDate: existingIssuedDate,
         );
         continue;
       }
 
       final key = bucketKey(
-        issuedDate: issuedDate,
+        issuedDate: generatedIssuedDate,
         isCompany: companyMode,
       );
       final nextSeq = (maxSeqByBucket[key] ?? 0) + 1;
       maxSeqByBucket[key] = nextSeq;
       generatedById[group.id] = _buildPrintInvoiceNumber(
         sequence: nextSeq,
-        issuedDate: issuedDate,
+        issuedDate: generatedIssuedDate,
         isCompany: companyMode,
       );
     }
@@ -3589,7 +3649,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     if (compact.contains('CV.ANT') || compact.contains('/CV.ANT/')) {
       return true;
     }
-    if (compact.contains('/BS/') || compact.contains('/ANT/')) {
+    if (compact.contains('/BS/') ||
+        compact.contains('/ANT/') ||
+        compact.startsWith('BS')) {
       return false;
     }
     return null;
@@ -3610,25 +3672,6 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
 
   String _displayInvoiceNumber(String number) {
     return number.trim().isEmpty ? '-' : number.trim();
-  }
-
-  String _printInvoiceRomanMonth(int month) {
-    const romans = <String>[
-      'I',
-      'II',
-      'III',
-      'IV',
-      'V',
-      'VI',
-      'VII',
-      'VIII',
-      'IX',
-      'X',
-      'XI',
-      'XII',
-    ];
-    final safeMonth = month.clamp(1, 12);
-    return romans[safeMonth - 1];
   }
 
   int _printInvoiceRomanToMonth(String roman) {
@@ -3654,10 +3697,11 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     required DateTime issuedDate,
     required bool isCompany,
   }) {
-    final seq = sequence.toString().padLeft(3, '0');
+    final seq = sequence.toString().padLeft(2, '0');
+    final mm = issuedDate.toLocal().month.toString().padLeft(2, '0');
     final yy = (issuedDate.toLocal().year % 100).toString().padLeft(2, '0');
     final code = isCompany ? 'CV.ANT' : 'BS';
-    return '$seq / $code / ${_printInvoiceRomanMonth(issuedDate.month)} / $yy';
+    return '$code$yy$mm$seq';
   }
 
   int _extractPrintInvoiceSequence({
@@ -3671,6 +3715,23 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         .replaceFirst(RegExp(r'^\s*NO\s*:\s*', caseSensitive: false), '')
         .trim();
     if (cleaned.isEmpty) return 0;
+
+    final compactPattern = RegExp(
+      r'^(CV\.ANT|BS)(\d{2})(\d{2})(\d{2,})$',
+      caseSensitive: false,
+    );
+    final compactMatch = compactPattern.firstMatch(cleaned);
+    if (compactMatch != null) {
+      final prefix = (compactMatch.group(1) ?? '').toUpperCase().trim();
+      final rowYear = int.tryParse(compactMatch.group(2) ?? '') ?? -1;
+      final rowMonth = int.tryParse(compactMatch.group(3) ?? '') ?? 0;
+      final seq = int.tryParse(compactMatch.group(4) ?? '') ?? 0;
+      final sameType = isCompany ? prefix == 'CV.ANT' : prefix == 'BS';
+      if (sameType && rowMonth == month && rowYear == yearTwoDigits) {
+        return seq;
+      }
+      return 0;
+    }
 
     final newPattern = RegExp(
       r'^(\d{1,4})\s*\/\s*(CV\.ANT|BS|ANT)\s*\/\s*([IVX]+)\s*\/\s*(\d{2})\s*$',
@@ -8077,3 +8138,4 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     );
   }
 }
+

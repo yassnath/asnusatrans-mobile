@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/security/app_security.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/cvant_button_styles.dart';
 import '../../../core/widgets/cvant_popup.dart';
@@ -39,6 +40,9 @@ class _SignInPageState extends State<SignInPage> {
   bool _showBiometricButton = false;
   bool _didAutoPromptBiometric = false;
   String _biometricLabel = 'Fingerprint';
+  int _failedAttempts = 0;
+  DateTime? _cooldownUntil;
+  Timer? _cooldownTimer;
 
   @override
   void initState() {
@@ -48,9 +52,63 @@ class _SignInPageState extends State<SignInPage> {
 
   @override
   void dispose() {
+    _cooldownTimer?.cancel();
     _loginController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  bool get _isCooldownActive {
+    final until = _cooldownUntil;
+    return until != null && DateTime.now().isBefore(until);
+  }
+
+  String get _cooldownLabel {
+    final until = _cooldownUntil;
+    if (until == null) return '';
+    final remaining = until.difference(DateTime.now());
+    if (remaining.inSeconds <= 0) return '';
+    return AppSecurity.formatRemainingCooldown(remaining);
+  }
+
+  void _resetSecurityThrottle() {
+    _failedAttempts = 0;
+    _cooldownUntil = null;
+    _cooldownTimer?.cancel();
+    _cooldownTimer = null;
+  }
+
+  void _registerFailedAttempt() {
+    _failedAttempts += 1;
+    final cooldownSeconds =
+        AppSecurity.recommendedLoginCooldownSeconds(_failedAttempts);
+    if (cooldownSeconds <= 0) return;
+    _cooldownUntil = DateTime.now().add(Duration(seconds: cooldownSeconds));
+    _cooldownTimer?.cancel();
+    _cooldownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted || !_isCooldownActive) {
+        timer.cancel();
+        if (mounted) {
+          setState(() {
+            if (!_isCooldownActive) _cooldownUntil = null;
+          });
+        }
+        return;
+      }
+      setState(() {});
+    });
+  }
+
+  Future<bool> _guardCooldown() async {
+    if (!_isCooldownActive) return true;
+    await showCvantPopup(
+      context: context,
+      type: CvantPopupType.warning,
+      title: 'Tunggu Sebentar',
+      message:
+          'Terlalu banyak percobaan login. Coba lagi dalam $_cooldownLabel.',
+    );
+    return false;
   }
 
   Future<void> _refreshBiometricState() async {
@@ -75,6 +133,8 @@ class _SignInPageState extends State<SignInPage> {
 
   Future<void> _submit() async {
     FocusScope.of(context).unfocus();
+    if (!await _guardCooldown()) return;
+    if (!mounted) return;
 
     final login = _loginController.text.trim();
     final password = _passwordController.text;
@@ -131,15 +191,20 @@ class _SignInPageState extends State<SignInPage> {
         barrierDismissible: false,
         autoCloseAfter: const Duration(seconds: 3),
       );
+      _resetSecurityThrottle();
       widget.onSignedIn(session);
     } catch (e) {
       if (!mounted) return;
+      _registerFailedAttempt();
       final rawMessage = e.toString().replaceFirst('Exception: ', '');
       await showCvantPopup(
         context: context,
         type: CvantPopupType.error,
         title: 'Login Failed',
-        message: _mapLoginErrorMessage(rawMessage),
+        message: AppSecurity.sanitizeUserFacingError(
+          _mapLoginErrorMessage(rawMessage),
+          fallback: 'Login gagal. Silakan coba lagi.',
+        ),
       );
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -165,6 +230,7 @@ class _SignInPageState extends State<SignInPage> {
   }
 
   Future<void> _submitBiometric({bool showCancelPopup = true}) async {
+    if (!await _guardCooldown()) return;
     setState(() => _biometricLoading = true);
     try {
       final credentials =
@@ -188,6 +254,7 @@ class _SignInPageState extends State<SignInPage> {
         autoCloseAfter: const Duration(seconds: 3),
       );
       if (!mounted) return;
+      _resetSecurityThrottle();
       widget.onSignedIn(session);
     } catch (e) {
       if (!mounted) return;
@@ -196,11 +263,17 @@ class _SignInPageState extends State<SignInPage> {
       if (isCanceled && !showCancelPopup) {
         return;
       }
+      if (!isCanceled) {
+        _registerFailedAttempt();
+      }
       await showCvantPopup(
         context: context,
         type: CvantPopupType.warning,
         title: 'Biometric Sign In',
-        message: message,
+        message: AppSecurity.sanitizeUserFacingError(
+          message,
+          fallback: 'Verifikasi biometrik gagal. Silakan coba lagi.',
+        ),
       );
       await _refreshBiometricState();
     } finally {
@@ -210,6 +283,16 @@ class _SignInPageState extends State<SignInPage> {
 
   Future<void> _openWhatsapp() async {
     final uri = Uri.parse('https://wa.me/+6285771753354');
+    if (!AppSecurity.isAllowedExternalUri(uri)) {
+      if (!mounted) return;
+      await showCvantPopup(
+        context: context,
+        type: CvantPopupType.error,
+        title: 'Link Tidak Diizinkan',
+        message: 'Tautan bantuan tidak valid.',
+      );
+      return;
+    }
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
@@ -260,7 +343,7 @@ class _SignInPageState extends State<SignInPage> {
                 ],
               ),
               child: FilledButton(
-                onPressed: _loading ? null : _submit,
+                onPressed: (_loading || _isCooldownActive) ? null : _submit,
                 style: CvantButtonStyles.filled(
                   context,
                   color: Colors.transparent,
@@ -276,7 +359,9 @@ class _SignInPageState extends State<SignInPage> {
               height: 50,
               child: OutlinedButton.icon(
                 onPressed:
-                    (_loading || _biometricLoading) ? null : _submitBiometric,
+                    (_loading || _biometricLoading || _isCooldownActive)
+                        ? null
+                        : _submitBiometric,
                 style: CvantButtonStyles.outlined(
                   context,
                   color: AppColors.blue,
@@ -292,6 +377,18 @@ class _SignInPageState extends State<SignInPage> {
                       ? 'Memverifikasi...'
                       : 'Sign in with $_biometricLabel',
                 ),
+              ),
+            ),
+          ],
+          if (_isCooldownActive) ...[
+            const SizedBox(height: 10),
+            Text(
+              'Percobaan login dibatasi sementara. Coba lagi dalam $_cooldownLabel.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: AppColors.warning,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ],

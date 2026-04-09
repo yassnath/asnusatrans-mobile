@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'core/i18n/language_controller.dart';
+import 'core/security/app_security.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/theme_controller.dart';
 import 'features/auth/presentation/auth_gate.dart';
@@ -53,6 +54,10 @@ class _StartupErrorScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final safeError = AppSecurity.sanitizeUserFacingError(
+      error.toString(),
+      fallback: 'Inisialisasi aplikasi gagal. Coba buka ulang aplikasi.',
+    );
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
       body: Center(
@@ -91,7 +96,7 @@ class _StartupErrorScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 14),
                     SelectableText(
-                      error.toString(),
+                      safeError,
                       style: const TextStyle(
                         color: Color(0xFFF8FAFC),
                         fontSize: 13,
