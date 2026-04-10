@@ -351,10 +351,24 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
     if (inputKey.isEmpty || ruleKey.isEmpty) return false;
     if (inputKey == ruleKey) return true;
 
+    final inputCompact = inputKey.replaceAll(' ', '');
+    final ruleCompact = ruleKey.replaceAll(' ', '');
+    if (inputCompact.isNotEmpty && inputCompact == ruleCompact) return true;
+
     final inputTokens = inputKey.split(' ').where((part) => part.isNotEmpty);
     final ruleTokens = ruleKey.split(' ').where((part) => part.isNotEmpty);
     final inputList = inputTokens.toList(growable: false);
     final ruleList = ruleTokens.toList(growable: false);
+
+    if (inputList.contains(ruleKey) || ruleList.contains(inputKey)) {
+      return true;
+    }
+    if (ruleList.length == 1 && ruleList.first.length >= 2) {
+      return inputList.contains(ruleList.first);
+    }
+    if (inputList.length == 1 && inputList.first.length >= 2) {
+      return ruleList.contains(inputList.first);
+    }
 
     if (inputList.length < 2 || ruleList.isEmpty) {
       return false;

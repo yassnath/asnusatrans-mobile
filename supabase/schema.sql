@@ -183,6 +183,97 @@ as $$
   select public.current_role() = 'pengurus';
 $$;
 
+create or replace function public.sync_armada_statuses()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_today date := (timezone('Asia/Jakarta', now()))::date;
+begin
+  if not (public.is_staff() or public.is_pengurus()) then
+    return;
+  end if;
+
+  with invoice_usage as (
+    select
+      i.armada_id,
+      i.armada_end_date::date as armada_end_date,
+      coalesce(i.status, '') as status
+    from public.invoices i
+    where i.armada_id is not null
+
+    union all
+
+    select
+      (detail.value->>'armada_id')::uuid as armada_id,
+      case
+        when coalesce(detail.value->>'armada_end_date', '') ~ '^\d{4}-\d{2}-\d{2}'
+          then (detail.value->>'armada_end_date')::date
+        else null
+      end as armada_end_date,
+      coalesce(i.status, '') as status
+    from public.invoices i
+    cross join lateral jsonb_array_elements(
+      case
+        when jsonb_typeof(coalesce(i.rincian, '[]'::jsonb)) = 'array'
+          then coalesce(i.rincian, '[]'::jsonb)
+        else '[]'::jsonb
+      end
+    ) as detail(value)
+    where coalesce(detail.value->>'armada_id', '') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+  ),
+  blocked_armadas as (
+    select distinct iu.armada_id
+    from invoice_usage iu
+    where iu.armada_id is not null
+      and lower(iu.status) not like '%cancel%'
+      and lower(iu.status) not like '%reject%'
+      and (
+        (
+          iu.armada_end_date is null
+          and (
+            lower(iu.status) like '%full%'
+            or lower(iu.status) like '%on the way%'
+            or lower(iu.status) like '%waiting%'
+            or lower(iu.status) like '%unpaid%'
+            or lower(iu.status) like '%paid%'
+            or lower(iu.status) like '%progress%'
+          )
+        )
+        or (
+          iu.armada_end_date is not null
+          and v_today < iu.armada_end_date
+        )
+      )
+  ),
+  target_status as (
+    select
+      a.id,
+      case
+        when b.armada_id is null then 'Ready'
+        else 'Full'
+      end as next_status
+    from public.armadas a
+    left join blocked_armadas b on b.armada_id = a.id
+    where coalesce(a.is_active, true)
+      and lower(coalesce(a.status, '')) not in (
+        'inactive',
+        'non active',
+        'non-active'
+      )
+  )
+  update public.armadas a
+  set
+    status = target_status.next_status,
+    updated_at = timezone('utc', now())
+  from target_status
+  where a.id = target_status.id
+    and lower(coalesce(a.status, '')) <> lower(target_status.next_status);
+end;
+$$;
+
 create or replace function public.get_email_for_login(login_input text)
 returns text
 language sql
@@ -1026,6 +1117,7 @@ grant usage on schema public to anon, authenticated;
 grant execute on function public.current_role() to anon, authenticated;
 grant execute on function public.is_staff() to anon, authenticated;
 grant execute on function public.is_pengurus() to anon, authenticated;
+grant execute on function public.sync_armada_statuses() to authenticated;
 grant execute on function public.get_email_for_login(text) to anon, authenticated;
 
 grant select, insert, update on public.profiles to authenticated;

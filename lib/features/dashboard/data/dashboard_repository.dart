@@ -618,6 +618,7 @@ class DashboardRepository {
   }
 
   Future<List<Map<String, dynamic>>> fetchArmadas() async {
+    final rpcSynced = await _syncArmadaStatusesRpcBestEffort();
     const variants = <String>[
       'id,nama_truk,plat_nomor,kapasitas,status,is_active,created_at,updated_at',
       'id,nama_truk,plat_nomor,kapasitas,status,is_active,created_at',
@@ -633,7 +634,9 @@ class DashboardRepository {
             .select(columns)
             .order('created_at', ascending: false);
         final armadas = _toMapList(res).map(_normalizeArmadaRow).toList();
-        await _syncArmadaStatusByEndDate(armadas);
+        if (!rpcSynced) {
+          await _syncArmadaStatusByEndDate(armadas);
+        }
         return armadas;
       } on PostgrestException catch (e) {
         lastError = e;
@@ -646,6 +649,16 @@ class DashboardRepository {
     }
 
     throw Exception('Gagal memuat armada: ${lastError?.message ?? 'unknown'}');
+  }
+
+  Future<bool> _syncArmadaStatusesRpcBestEffort() async {
+    try {
+      await _supabase.rpc('sync_armada_statuses');
+      return true;
+    } catch (_) {
+      // Schema lama belum punya RPC ini. Fallback lama tetap dipakai untuk staff.
+      return false;
+    }
   }
 
   Future<List<Map<String, dynamic>>> fetchInvoiceArmadaUsage() async {
@@ -3979,6 +3992,11 @@ class DashboardRepository {
     if (armadas.isEmpty) return;
 
     try {
+      final role = await _loadCurrentRole();
+      if (role != 'admin' && role != 'owner') {
+        return;
+      }
+
       final rows = await _supabase
           .from('invoices')
           .select('armada_id,armada_end_date,status,rincian');
