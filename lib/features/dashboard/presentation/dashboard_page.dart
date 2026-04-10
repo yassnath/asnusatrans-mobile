@@ -249,6 +249,14 @@ class _DashboardPageState extends State<DashboardPage> {
     'Settings',
   ];
 
+  static const _pengurusMenus = <String>[
+    'Dashboard',
+    'Invoice List',
+    'Invoice Add Income',
+    'Invoice Add Expense',
+    'Settings',
+  ];
+
   static const _customerMenus = <String>[
     'Dashboard',
     'Order',
@@ -267,6 +275,8 @@ class _DashboardPageState extends State<DashboardPage> {
   int _adminIndex = 0;
   int _customerIndex = 0;
   _InvoicePrefillData? _invoicePrefill;
+  int _staffApprovalBadgeCount = 0;
+  List<Map<String, dynamic>> _staffNotifications = const [];
 
   @override
   void initState() {
@@ -287,6 +297,7 @@ class _DashboardPageState extends State<DashboardPage> {
     final adminFuture = widget.repository.loadAdminDashboard();
     _adminFuture = adminFuture;
     _customerFuture = widget.repository.loadCustomerDashboard();
+    unawaited(_refreshStaffAlerts());
     adminFuture.then((bundle) {
       if (!mounted) return;
       _armadaUsageNotifier.value = List<ArmadaUsage>.from(
@@ -316,6 +327,126 @@ class _DashboardPageState extends State<DashboardPage> {
       const Duration(seconds: 12),
       (_) {
         _refreshDashboardLiveSections();
+        _refreshStaffAlerts();
+      },
+    );
+  }
+
+  Future<void> _refreshStaffAlerts() async {
+    if (!widget.session.isAdminOrOwner) return;
+    try {
+      final response = await Future.wait<dynamic>([
+        widget.repository.countPendingPengurusApprovals(),
+        widget.repository.fetchCustomerNotifications(currentUserOnly: true),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _staffApprovalBadgeCount = response[0] as int? ?? 0;
+        _staffNotifications =
+            (response[1] as List).cast<Map<String, dynamic>>().toList();
+      });
+    } catch (_) {
+      // Keep existing badge values when refresh fails.
+    }
+  }
+
+  Future<void> _openStaffNotificationsDialog() async {
+    if (!widget.session.isAdminOrOwner) return;
+    await _refreshStaffAlerts();
+    if (!mounted) return;
+    final notifications = List<Map<String, dynamic>>.from(_staffNotifications)
+      ..sort((a, b) {
+        final aDate = Formatters.parseDate(a['created_at']) ??
+            DateTime.fromMillisecondsSinceEpoch(0);
+        final bDate = Formatters.parseDate(b['created_at']) ??
+            DateTime.fromMillisecondsSinceEpoch(0);
+        return bDate.compareTo(aDate);
+      });
+    await showDialog<void>(
+      context: context,
+      barrierColor: AppColors.popupOverlay,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Notifications Alert'),
+          content: SizedBox(
+            width: 520,
+            child: notifications.isEmpty
+                ? Text(
+                    'Belum ada notifikasi approval.',
+                    style: TextStyle(color: AppColors.textMutedFor(context)),
+                  )
+                : ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: notifications.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemBuilder: (context, index) {
+                      final item = notifications[index];
+                      final kind = '${item['kind'] ?? 'info'}'.toLowerCase();
+                      final color = kind.contains('success')
+                          ? AppColors.success
+                          : kind.contains('warning')
+                              ? AppColors.warning
+                              : kind.contains('error')
+                                  ? AppColors.danger
+                                  : AppColors.blue;
+                      return Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          border:
+                              Border.all(color: AppColors.cardBorder(context)),
+                          color: AppColors.surfaceSoft(context),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.notifications_active_outlined,
+                                  size: 18,
+                                  color: color,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    '${item['title'] ?? 'Notifikasi'}',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                                Text(
+                                  Formatters.dmy(
+                                    item['created_at'] ?? DateTime.now(),
+                                  ),
+                                  style: TextStyle(
+                                    color: AppColors.textMutedFor(context),
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              '${item['message'] ?? '-'}',
+                              style: TextStyle(
+                                color: AppColors.textMutedFor(context),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Tutup'),
+            ),
+          ],
+        );
       },
     );
   }
@@ -326,13 +457,18 @@ class _DashboardPageState extends State<DashboardPage> {
       valueListenable: LanguageController.language,
       builder: (context, language, _) {
         final isCustomer = widget.session.isCustomer;
-        final menuKeys = isCustomer ? _customerMenus : _adminMenus;
+        final isPengurus = widget.session.isPengurus;
+        final menuKeys = isCustomer
+            ? _customerMenus
+            : (isPengurus ? _pengurusMenus : _adminMenus);
         final selected = isCustomer ? _customerIndex : _adminIndex;
         final isLightMode = AppColors.isLight(context);
         final bodyKey = ValueKey<String>(
           '${language.code}-${isCustomer ? 'customer-page-$_customerIndex' : 'admin-page-$_adminIndex'}',
         );
-        final pageBody = isCustomer ? _buildCustomerBody() : _buildAdminBody();
+        final pageBody = isCustomer
+            ? _buildCustomerBody()
+            : (isPengurus ? _buildPengurusBody() : _buildAdminBody());
 
         return Scaffold(
           backgroundColor: AppColors.pageBackground(context),
@@ -340,6 +476,11 @@ class _DashboardPageState extends State<DashboardPage> {
             items: menuKeys,
             language: language,
             selectedIndex: selected,
+            badgeCountsByKey: widget.session.isAdminOrOwner
+                ? <String, int>{
+                    'Order Acceptance': _staffApprovalBadgeCount,
+                  }
+                : const <String, int>{},
             onSelect: (index) {
               setState(() {
                 final shouldReloadDashboard =
@@ -364,6 +505,19 @@ class _DashboardPageState extends State<DashboardPage> {
               style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
             ),
             actions: [
+              if (widget.session.isAdminOrOwner)
+                Padding(
+                  padding: const EdgeInsets.only(right: 2),
+                  child: Badge(
+                    isLabelVisible: _staffNotifications.isNotEmpty,
+                    label: Text('${_staffNotifications.length}'),
+                    child: IconButton(
+                      tooltip: 'Notifications Alert',
+                      onPressed: _openStaffNotificationsDialog,
+                      icon: const Icon(Icons.notifications_active_outlined),
+                    ),
+                  ),
+                ),
               IconButton(
                 tooltip: isLightMode ? 'Dark Mode' : 'Light Mode',
                 onPressed: ThemeController.toggle,
@@ -378,13 +532,24 @@ class _DashboardPageState extends State<DashboardPage> {
                 child: CircleAvatar(
                   radius: 18,
                   backgroundColor: AppColors.surfaceSoft(context),
-                  backgroundImage: isCustomer
-                      ? const AssetImage('assets/images/logo-icon.webp')
-                      : AssetImage(
-                          widget.session.role.toLowerCase() == 'owner'
-                              ? 'assets/images/pp-owner.webp'
-                              : 'assets/images/pp-admin.webp',
-                        ),
+                  backgroundImage: widget.session.isPengurus
+                      ? null
+                      : (isCustomer
+                          ? const AssetImage('assets/images/logo-icon.webp')
+                          : AssetImage(
+                              widget.session.isOwner
+                                  ? 'assets/images/pp-owner.webp'
+                                  : 'assets/images/pp-admin.webp',
+                            )),
+                  child: widget.session.isPengurus
+                      ? Text(
+                          'P',
+                          style: TextStyle(
+                            color: AppColors.blue,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        )
+                      : null,
                 ),
               ),
             ],
@@ -426,7 +591,8 @@ class _DashboardPageState extends State<DashboardPage> {
       case 1:
         return _AdminInvoiceListView(
           repository: widget.repository,
-          isOwner: widget.session.role.toLowerCase() == 'owner',
+          session: widget.session,
+          isOwner: widget.session.isOwner,
           onDataChanged: () => setState(_reload),
           onQuickMenuSelect: (index) {
             setState(() => _adminIndex = index);
@@ -440,6 +606,7 @@ class _DashboardPageState extends State<DashboardPage> {
       case 3:
         return _AdminCreateIncomeView(
           repository: widget.repository,
+          session: widget.session,
           onCreated: () => setState(() {
             _reload();
             _adminIndex = 1;
@@ -453,6 +620,7 @@ class _DashboardPageState extends State<DashboardPage> {
       case 4:
         return _AdminCreateExpenseView(
           repository: widget.repository,
+          session: widget.session,
           onCreated: () => setState(() {
             _reload();
             _adminIndex = 1;
@@ -475,6 +643,7 @@ class _DashboardPageState extends State<DashboardPage> {
       case 8:
         return _AdminOrderAcceptanceView(
           repository: widget.repository,
+          session: widget.session,
           onCreateInvoice: (prefill) {
             setState(() {
               _invoicePrefill = prefill;
@@ -487,6 +656,60 @@ class _DashboardPageState extends State<DashboardPage> {
       case 10:
         return const _AdminAddUserView();
       case 11:
+        return _CustomerSettingsView(
+          repository: widget.repository,
+          session: widget.session,
+          biometricService: widget.biometricService,
+        );
+      default:
+        return const _SimplePlaceholderView(
+          title: 'Halaman tidak ditemukan',
+          message: 'Menu belum tersedia.',
+        );
+    }
+  }
+
+  Widget _buildPengurusBody() {
+    switch (_adminIndex) {
+      case 0:
+        return RefreshIndicator(
+          onRefresh: () async => setState(_reload),
+          child: _buildAdminDashboard(),
+        );
+      case 1:
+        return _AdminInvoiceListView(
+          repository: widget.repository,
+          session: widget.session,
+          isOwner: false,
+          onDataChanged: () => setState(_reload),
+          onQuickMenuSelect: (index) {
+            setState(() => _adminIndex = index);
+          },
+        );
+      case 2:
+        return _AdminCreateIncomeView(
+          repository: widget.repository,
+          session: widget.session,
+          onCreated: () => setState(() {
+            _reload();
+            _adminIndex = 1;
+          }),
+          prefill: _invoicePrefill,
+          onPrefillConsumed: () {
+            if (!mounted || _invoicePrefill == null) return;
+            setState(() => _invoicePrefill = null);
+          },
+        );
+      case 3:
+        return _AdminCreateExpenseView(
+          repository: widget.repository,
+          session: widget.session,
+          onCreated: () => setState(() {
+            _reload();
+            _adminIndex = 1;
+          }),
+        );
+      case 4:
         return _CustomerSettingsView(
           repository: widget.repository,
           session: widget.session,
@@ -531,6 +754,9 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Widget _buildAdminDashboard() {
+    final invoiceListIndex = 1;
+    final armadaListIndex = widget.session.isPengurus ? invoiceListIndex : 6;
+    final activityIndex = widget.session.isPengurus ? invoiceListIndex : 5;
     return FutureBuilder<DashboardBundle>(
       future: _adminFuture,
       builder: (context, snapshot) {
@@ -591,7 +817,8 @@ class _DashboardPageState extends State<DashboardPage> {
               builder: (context, liveItems, _) {
                 return ArmadaOverviewCard(
                   items: liveItems ?? data.armadaUsages,
-                  onViewAll: () => setState(() => _adminIndex = 6),
+                  onViewAll: () =>
+                      setState(() => _adminIndex = armadaListIndex),
                 );
               },
             ),
@@ -599,7 +826,7 @@ class _DashboardPageState extends State<DashboardPage> {
             LatestCustomersCard(
               latestCustomers: data.latestCustomers,
               biggestTransactions: data.biggestTransactions,
-              onViewAll: () => setState(() => _adminIndex = 1),
+              onViewAll: () => setState(() => _adminIndex = invoiceListIndex),
             ),
             const SizedBox(height: 10),
             ValueListenableBuilder<List<ActivityItem>?>(
@@ -607,14 +834,14 @@ class _DashboardPageState extends State<DashboardPage> {
               builder: (context, liveItems, _) {
                 return RecentActivityCard(
                   items: liveItems ?? data.recentActivities,
-                  onViewAll: () => setState(() => _adminIndex = 5),
+                  onViewAll: () => setState(() => _adminIndex = activityIndex),
                 );
               },
             ),
             const SizedBox(height: 10),
             RecentTransactionsCard(
               items: data.recentTransactions,
-              onViewAll: () => setState(() => _adminIndex = 1),
+              onViewAll: () => setState(() => _adminIndex = invoiceListIndex),
             ),
             const SizedBox(height: 10),
             const _DashboardContentFooter(),
@@ -873,6 +1100,7 @@ class _DashboardDrawer extends StatelessWidget {
     required this.items,
     required this.language,
     required this.selectedIndex,
+    this.badgeCountsByKey = const <String, int>{},
     required this.onSelect,
     required this.onLogout,
   });
@@ -880,6 +1108,7 @@ class _DashboardDrawer extends StatelessWidget {
   final List<String> items;
   final AppLanguage language;
   final int selectedIndex;
+  final Map<String, int> badgeCountsByKey;
   final ValueChanged<int> onSelect;
   final Future<void> Function() onLogout;
 
@@ -961,6 +1190,7 @@ class _DashboardDrawer extends StatelessWidget {
                 padding: const EdgeInsets.all(14),
                 itemBuilder: (context, index) {
                   final active = index == selectedIndex;
+                  final badgeCount = badgeCountsByKey[items[index]] ?? 0;
                   return Container(
                     decoration: BoxDecoration(
                       gradient: active ? AppColors.sidebarActiveGradient : null,
@@ -986,6 +1216,28 @@ class _DashboardDrawer extends StatelessWidget {
                               active ? FontWeight.w600 : FontWeight.w500,
                         ),
                       ),
+                      trailing: badgeCount <= 0
+                          ? null
+                          : Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: active
+                                    ? Colors.white.withValues(alpha: 0.22)
+                                    : AppColors.danger,
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                '$badgeCount',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
                       onTap: () => onSelect(index),
                     ),
                   );

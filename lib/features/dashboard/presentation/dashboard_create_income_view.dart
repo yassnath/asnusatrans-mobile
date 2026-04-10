@@ -3,12 +3,14 @@ part of 'dashboard_page.dart';
 class _AdminCreateIncomeView extends StatefulWidget {
   const _AdminCreateIncomeView({
     required this.repository,
+    required this.session,
     required this.onCreated,
     this.prefill,
     this.onPrefillConsumed,
   });
 
   final DashboardRepository repository;
+  final AuthSession session;
   final VoidCallback onCreated;
   final _InvoicePrefillData? prefill;
   final VoidCallback? onPrefillConsumed;
@@ -112,6 +114,9 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
     super.initState();
     _formFuture = _loadFormData();
     _details.add(_newDetail());
+    _acceptedBy = widget.session.isOwner
+        ? 'Owner'
+        : (widget.session.isPengurus ? 'Pengurus' : 'Admin');
     _kopDate.text = _toInputDate(_date);
     _applyPrefill(widget.prefill);
   }
@@ -928,6 +933,9 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
         customerId: _linkedCustomerId,
         orderId: _linkedOrderId,
         details: detailsPayload,
+        submissionRole: widget.session.normalizedRole,
+        approvalStatus: widget.session.isPengurus ? 'pending' : 'approved',
+        generateAutoSangu: !widget.session.isPengurus,
       );
       if (!mounted) return;
       _customer.clear();
@@ -937,7 +945,9 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
       _kopLocation.clear();
       _dueDate.clear();
       _status = 'Unpaid';
-      _acceptedBy = 'Admin';
+      _acceptedBy = widget.session.isOwner
+          ? 'Owner'
+          : (widget.session.isPengurus ? 'Pengurus' : 'Admin');
       _linkedCustomerId = null;
       _linkedOrderId = null;
       _prefillApplied = false;
@@ -953,8 +963,12 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
         type: CvantPopupType.success,
         title: _t('Success', 'Success'),
         message: _t(
-          'Invoice income berhasil ditambahkan.',
-          'Income invoice was added successfully.',
+          widget.session.isPengurus
+              ? 'Income berhasil dikirim untuk ACC admin/owner.'
+              : 'Invoice income berhasil ditambahkan.',
+          widget.session.isPengurus
+              ? 'Income has been submitted for admin/owner approval.'
+              : 'Income invoice was added successfully.',
         ),
         okLabel: 'OK',
         showOkButton: true,
@@ -1671,7 +1685,9 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                     decoration: InputDecoration(
                       labelText: _t('Diterima Oleh', 'Accepted By'),
                     ),
-                    items: const ['Admin', 'Owner']
+                    items: (widget.session.isPengurus
+                            ? const ['Pengurus']
+                            : const ['Admin', 'Owner'])
                         .map(
                           (item) => DropdownMenuItem(
                             value: item,

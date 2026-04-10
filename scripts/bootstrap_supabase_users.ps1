@@ -238,6 +238,16 @@ $ownerUser = Ensure-AuthUser `
   -Key $ServiceRoleKey `
   -ResetPassword $ResetPasswords
 
+$pengurusUser = Ensure-AuthUser `
+  -Email 'pengurus@cvant.local' `
+  -Password 'pengurusant' `
+  -Name 'Pengurus' `
+  -Username 'pengurus' `
+  -Role 'pengurus' `
+  -BaseUrl $baseUrl `
+  -Key $ServiceRoleKey `
+  -ResetPassword $ResetPasswords
+
 Upsert-Profile `
   -Id $adminUser.id `
   -Email 'admin@cvant.local' `
@@ -256,7 +266,17 @@ Upsert-Profile `
   -BaseUrl $baseUrl `
   -Key $ServiceRoleKey
 
+Upsert-Profile `
+  -Id $pengurusUser.id `
+  -Email 'pengurus@cvant.local' `
+  -Name 'Pengurus' `
+  -Username 'pengurus' `
+  -Role 'pengurus' `
+  -BaseUrl $baseUrl `
+  -Key $ServiceRoleKey
+
 Write-Host ''
 Write-Host 'Done. Login credentials:'
 Write-Host '- admin / admincvant'
 Write-Host '- owner / ownercvant'
+Write-Host '- pengurus / pengurusant'

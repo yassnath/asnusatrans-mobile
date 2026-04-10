@@ -3,10 +3,12 @@ part of 'dashboard_page.dart';
 class _AdminCreateExpenseView extends StatefulWidget {
   const _AdminCreateExpenseView({
     required this.repository,
+    required this.session,
     required this.onCreated,
   });
 
   final DashboardRepository repository;
+  final AuthSession session;
   final VoidCallback onCreated;
 
   @override
@@ -28,6 +30,9 @@ class _AdminCreateExpenseViewState extends State<_AdminCreateExpenseView> {
   void initState() {
     super.initState();
     _details.add(_newDetail());
+    _recordedBy = widget.session.isOwner
+        ? 'Owner'
+        : (widget.session.isPengurus ? 'Pengurus' : 'Admin');
     _refreshNextExpenseNo();
   }
 
@@ -124,7 +129,9 @@ class _AdminCreateExpenseViewState extends State<_AdminCreateExpenseView> {
         ..clear()
         ..add(_newDetail());
       _status = 'Unpaid';
-      _recordedBy = 'Admin';
+      _recordedBy = widget.session.isOwner
+          ? 'Owner'
+          : (widget.session.isPengurus ? 'Pengurus' : 'Admin');
       await _refreshNextExpenseNo();
       if (!mounted) return;
       await showCvantPopup(
@@ -281,7 +288,9 @@ class _AdminCreateExpenseViewState extends State<_AdminCreateExpenseView> {
                 decoration: InputDecoration(
                   labelText: _t('Dicatat Oleh', 'Recorded By'),
                 ),
-                items: const ['Admin', 'Owner']
+                items: (widget.session.isPengurus
+                        ? const ['Pengurus']
+                        : const ['Admin', 'Owner'])
                     .map(
                       (item) => DropdownMenuItem<String>(
                         value: item,

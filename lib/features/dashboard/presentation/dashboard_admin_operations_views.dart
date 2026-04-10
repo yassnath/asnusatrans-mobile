@@ -546,10 +546,12 @@ class _AdminFleetListViewState extends State<_AdminFleetListView> {
 class _AdminOrderAcceptanceView extends StatefulWidget {
   const _AdminOrderAcceptanceView({
     required this.repository,
+    required this.session,
     required this.onCreateInvoice,
   });
 
   final DashboardRepository repository;
+  final AuthSession session;
   final ValueChanged<_InvoicePrefillData> onCreateInvoice;
 
   @override
@@ -559,7 +561,7 @@ class _AdminOrderAcceptanceView extends StatefulWidget {
 
 class _AdminOrderAcceptanceViewState extends State<_AdminOrderAcceptanceView> {
   late Future<List<dynamic>> _future;
-  String? _updatingOrderId;
+  String? _updatingItemId;
   bool get _isEn => LanguageController.language.value == AppLanguage.en;
   String _t(String id, String en) => _isEn ? en : id;
 
@@ -573,11 +575,12 @@ class _AdminOrderAcceptanceViewState extends State<_AdminOrderAcceptanceView> {
     return Future.wait([
       widget.repository.fetchOrders(),
       widget.repository.fetchCustomerProfiles(),
+      widget.repository.fetchPengurusApprovalQueue(),
     ]);
   }
 
   Future<void> _updateStatus(String orderId, String status) async {
-    setState(() => _updatingOrderId = orderId);
+    setState(() => _updatingItemId = 'order:$orderId');
     try {
       await widget.repository
           .updateOrderStatus(orderId: orderId, status: status);
@@ -601,7 +604,60 @@ class _AdminOrderAcceptanceViewState extends State<_AdminOrderAcceptanceView> {
         message: e.toString().replaceFirst('Exception: ', ''),
       );
     } finally {
-      if (mounted) setState(() => _updatingOrderId = null);
+      if (mounted) setState(() => _updatingItemId = null);
+    }
+  }
+
+  Future<void> _processPengurusApproval(
+    Map<String, dynamic> item, {
+    required bool approve,
+  }) async {
+    final invoiceId = '${item['id'] ?? ''}'.trim();
+    if (invoiceId.isEmpty) return;
+    final requestType =
+        '${item['__request_type'] ?? 'new_income'}'.trim().toLowerCase();
+    setState(() => _updatingItemId = 'pengurus:$invoiceId');
+    try {
+      if (requestType == 'edit_request') {
+        if (approve) {
+          await widget.repository.approvePengurusInvoiceEdit(invoiceId);
+        } else {
+          await widget.repository.rejectPengurusInvoiceEdit(invoiceId);
+        }
+      } else {
+        if (approve) {
+          await widget.repository.approvePengurusIncome(invoiceId);
+        } else {
+          await widget.repository.rejectPengurusIncome(invoiceId);
+        }
+      }
+      if (!mounted) return;
+      showCvantPopup(
+        context: context,
+        type: CvantPopupType.success,
+        title: _t('Success', 'Success'),
+        message: _t(
+          approve
+              ? 'Request pengurus berhasil disetujui.'
+              : 'Request pengurus berhasil ditolak.',
+          approve
+              ? 'Pengurus request has been approved successfully.'
+              : 'Pengurus request has been rejected successfully.',
+        ),
+      );
+      setState(() {
+        _future = _load();
+      });
+    } catch (e) {
+      if (!mounted) return;
+      showCvantPopup(
+        context: context,
+        type: CvantPopupType.error,
+        title: _t('Error', 'Error'),
+        message: e.toString().replaceFirst('Exception: ', ''),
+      );
+    } finally {
+      if (mounted) setState(() => _updatingItemId = null);
     }
   }
 
@@ -705,127 +761,296 @@ class _AdminOrderAcceptanceViewState extends State<_AdminOrderAcceptanceView> {
         final orders = (snapshot.data![0] as List).cast<Map<String, dynamic>>();
         final customers =
             (snapshot.data![1] as List).cast<Map<String, dynamic>>();
+        final pengurusQueue =
+            (snapshot.data![2] as List).cast<Map<String, dynamic>>();
         final customerMap = <String, Map<String, dynamic>>{
           for (final customer in customers) '${customer['id']}': customer,
         };
 
-        if (orders.isEmpty) {
+        if (orders.isEmpty && pengurusQueue.isEmpty) {
           return _SimplePlaceholderView(
-            title: _t('Order belum ada', 'No orders yet'),
+            title: _t('Belum ada data masuk', 'No incoming data yet'),
             message: _t(
-              'Belum ada order customer yang perlu diproses.',
-              'There are no customer orders to process yet.',
+              'Belum ada order customer atau income pengurus yang perlu diproses.',
+              'There are no customer orders or pengurus incomes to process yet.',
             ),
           );
         }
 
-        return ListView.separated(
+        return ListView(
           padding: const EdgeInsets.all(12),
-          itemCount: orders.length + 1,
-          separatorBuilder: (_, __) => const SizedBox(height: 10),
-          itemBuilder: (context, index) {
-            if (index == orders.length) {
-              return const _DashboardContentFooter();
-            }
-            final order = orders[index];
-            final status = '${order['status'] ?? 'Pending'}';
-            final statusLower = status.toLowerCase();
-            final isUpdating = _updatingOrderId == '${order['id']}';
-            final customer = customerMap['${order['customer_id']}'];
-            final isPaid =
-                statusLower.contains('paid') && !statusLower.contains('unpaid');
-            final canCreateInvoice = statusLower.contains('accepted');
-            final customerName =
-                customer?['name'] ?? customer?['username'] ?? '-';
-
-            return _PanelCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          '${order['order_code'] ?? order['id'] ?? '-'}',
-                          style: TextStyle(fontWeight: FontWeight.w700),
+          children: [
+            if (pengurusQueue.isNotEmpty) ...[
+              Text(
+                _t('Approval Income Pengurus', 'Pengurus Income Approval'),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 16,
+                ),
+              ),
+              const SizedBox(height: 8),
+              ...pengurusQueue.map((item) {
+                final invoiceId = '${item['id'] ?? ''}'.trim();
+                final isUpdating = _updatingItemId == 'pengurus:$invoiceId';
+                final requestType =
+                    '${item['__request_type'] ?? 'new_income'}'.trim();
+                final isEditRequest =
+                    requestType.toLowerCase() == 'edit_request';
+                final route =
+                    '${item['lokasi_muat'] ?? '-'} -> ${item['lokasi_bongkar'] ?? '-'}';
+                final detailCount = item['rincian'] is List
+                    ? (item['rincian'] as List).whereType<Map>().length
+                    : 0;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _PanelCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                isEditRequest
+                                    ? _t(
+                                        'Request Edit Income Pengurus',
+                                        'Pengurus Income Edit Request',
+                                      )
+                                    : _t(
+                                        'Income Baru dari Pengurus',
+                                        'New Income from Pengurus',
+                                      ),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            _StatusPill(
+                              label: isEditRequest
+                                  ? _t('Request Edit', 'Edit Request')
+                                  : _t('Pending ACC', 'Pending Approval'),
+                            ),
+                          ],
                         ),
-                      ),
-                      _StatusPill(label: status),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '${_t('Customer', 'Customer')}: $customerName',
-                    style: TextStyle(color: AppColors.textMutedFor(context)),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${_t('Rute', 'Route')}: ${order['pickup'] ?? '-'} -> ${order['destination'] ?? '-'}',
-                    style:
-                        TextStyle(color: AppColors.textSecondaryFor(context)),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${_t('Jadwal', 'Schedule')}: ${Formatters.dmy(order['pickup_date'] ?? order['created_at'])}',
-                    style: TextStyle(color: AppColors.textMutedFor(context)),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      SizedBox(
-                        width: 120,
-                        child: FilledButton(
-                          onPressed: (isUpdating || isPaid)
-                              ? null
-                              : () =>
-                                  _updateStatus('${order['id']}', 'Accepted'),
-                          style: CvantButtonStyles.filled(
-                            context,
-                            color: AppColors.success,
+                        const SizedBox(height: 8),
+                        Text(
+                          '${_t('Pengurus', 'Pengurus')}: ${item['__creator_name'] ?? '-'}',
+                          style:
+                              TextStyle(color: AppColors.textMutedFor(context)),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          '${_t('Customer', 'Customer')}: ${item['nama_pelanggan'] ?? '-'}',
+                          style:
+                              TextStyle(color: AppColors.textMutedFor(context)),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          '${_t('Rute', 'Route')}: $route',
+                          style: TextStyle(
+                            color: AppColors.textSecondaryFor(context),
                           ),
-                          child: Text(_t('Terima', 'Accept')),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      SizedBox(
-                        width: 120,
-                        child: FilledButton(
-                          onPressed: (isUpdating || isPaid)
-                              ? null
-                              : () =>
-                                  _updateStatus('${order['id']}', 'Rejected'),
-                          style: CvantButtonStyles.filled(
-                            context,
-                            color: AppColors.danger,
+                        const SizedBox(height: 3),
+                        Text(
+                          '${_t('Tanggal', 'Date')}: ${Formatters.dmy(item['armada_start_date'] ?? item['tanggal'] ?? item['created_at'])}',
+                          style:
+                              TextStyle(color: AppColors.textMutedFor(context)),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          '${_t('Rincian', 'Details')}: ${detailCount <= 0 ? 1 : detailCount} ${_t('keberangkatan', 'departures')}',
+                          style:
+                              TextStyle(color: AppColors.textMutedFor(context)),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          Formatters.rupiah(
+                            _toNum(item['total_bayar'] ?? item['total_biaya']),
                           ),
-                          child: Text(_t('Tolak', 'Reject')),
+                          style: const TextStyle(fontWeight: FontWeight.w800),
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: OutlinedButton(
-                      onPressed: (isUpdating || !canCreateInvoice)
-                          ? null
-                          : () => _openInvoiceCreateForm(order, customer),
-                      style: CvantButtonStyles.outlined(
-                        context,
-                        minimumSize: const Size(120, 44),
-                      ),
-                      child: Text(_t('Buat', 'Create')),
+                        const SizedBox(height: 10),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            SizedBox(
+                              width: 130,
+                              child: FilledButton(
+                                onPressed: isUpdating
+                                    ? null
+                                    : () => _processPengurusApproval(
+                                          item,
+                                          approve: true,
+                                        ),
+                                style: CvantButtonStyles.filled(
+                                  context,
+                                  color: AppColors.success,
+                                ),
+                                child: Text(
+                                  isEditRequest
+                                      ? _t('ACC Edit', 'Approve Edit')
+                                      : _t('ACC Income', 'Approve Income'),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            SizedBox(
+                              width: 130,
+                              child: FilledButton(
+                                onPressed: isUpdating
+                                    ? null
+                                    : () => _processPengurusApproval(
+                                          item,
+                                          approve: false,
+                                        ),
+                                style: CvantButtonStyles.filled(
+                                  context,
+                                  color: AppColors.danger,
+                                ),
+                                child: Text(
+                                  isEditRequest
+                                      ? _t('Tolak Edit', 'Reject Edit')
+                                      : _t('Tolak Income', 'Reject Income'),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (isUpdating) ...[
+                          const SizedBox(height: 8),
+                          const LinearProgressIndicator(minHeight: 2),
+                        ],
+                      ],
                     ),
                   ),
-                  if (isUpdating) ...[
-                    const SizedBox(height: 8),
-                    const LinearProgressIndicator(minHeight: 2),
-                  ],
-                ],
+                );
+              }),
+            ],
+            if (orders.isNotEmpty) ...[
+              if (pengurusQueue.isNotEmpty) const SizedBox(height: 4),
+              Text(
+                _t('Order Customer', 'Customer Orders'),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 16,
+                ),
               ),
-            );
-          },
+              const SizedBox(height: 8),
+              ...orders.map((order) {
+                final status = '${order['status'] ?? 'Pending'}';
+                final statusLower = status.toLowerCase();
+                final isUpdating = _updatingItemId == 'order:${order['id']}';
+                final customer = customerMap['${order['customer_id']}'];
+                final isPaid = statusLower.contains('paid') &&
+                    !statusLower.contains('unpaid');
+                final canCreateInvoice = statusLower.contains('accepted');
+                final customerName =
+                    customer?['name'] ?? customer?['username'] ?? '-';
+
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _PanelCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '${order['order_code'] ?? order['id'] ?? '-'}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            _StatusPill(label: status),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          '${_t('Customer', 'Customer')}: $customerName',
+                          style:
+                              TextStyle(color: AppColors.textMutedFor(context)),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${_t('Rute', 'Route')}: ${order['pickup'] ?? '-'} -> ${order['destination'] ?? '-'}',
+                          style: TextStyle(
+                            color: AppColors.textSecondaryFor(context),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${_t('Jadwal', 'Schedule')}: ${Formatters.dmy(order['pickup_date'] ?? order['created_at'])}',
+                          style:
+                              TextStyle(color: AppColors.textMutedFor(context)),
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            SizedBox(
+                              width: 120,
+                              child: FilledButton(
+                                onPressed: (isUpdating || isPaid)
+                                    ? null
+                                    : () => _updateStatus(
+                                          '${order['id']}',
+                                          'Accepted',
+                                        ),
+                                style: CvantButtonStyles.filled(
+                                  context,
+                                  color: AppColors.success,
+                                ),
+                                child: Text(_t('Terima', 'Accept')),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            SizedBox(
+                              width: 120,
+                              child: FilledButton(
+                                onPressed: (isUpdating || isPaid)
+                                    ? null
+                                    : () => _updateStatus(
+                                          '${order['id']}',
+                                          'Rejected',
+                                        ),
+                                style: CvantButtonStyles.filled(
+                                  context,
+                                  color: AppColors.danger,
+                                ),
+                                child: Text(_t('Tolak', 'Reject')),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: OutlinedButton(
+                            onPressed: (isUpdating || !canCreateInvoice)
+                                ? null
+                                : () => _openInvoiceCreateForm(order, customer),
+                            style: CvantButtonStyles.outlined(
+                              context,
+                              minimumSize: const Size(120, 44),
+                            ),
+                            child: Text(_t('Buat', 'Create')),
+                          ),
+                        ),
+                        if (isUpdating) ...[
+                          const SizedBox(height: 8),
+                          const LinearProgressIndicator(minHeight: 2),
+                        ],
+                      ],
+                    ),
+                  ),
+                );
+              }),
+            ],
+            const _DashboardContentFooter(),
+          ],
         );
       },
     );

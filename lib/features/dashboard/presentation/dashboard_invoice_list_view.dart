@@ -3,12 +3,14 @@ part of 'dashboard_page.dart';
 class _AdminInvoiceListView extends StatefulWidget {
   const _AdminInvoiceListView({
     required this.repository,
+    required this.session,
     required this.onQuickMenuSelect,
     this.isOwner = false,
     this.onDataChanged,
   });
 
   final DashboardRepository repository;
+  final AuthSession session;
   final ValueChanged<int> onQuickMenuSelect;
   final bool isOwner;
   final VoidCallback? onDataChanged;
@@ -149,6 +151,17 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
   };
   static const _fixedInvoicePrefsKey = 'fixed_invoice_ids_v1';
   static const _fixedInvoiceBatchPrefsKey = 'fixed_invoice_batches_v1';
+  static const _invoiceListColumns =
+      'id,no_invoice,tanggal,tanggal_kop,lokasi_kop,nama_pelanggan,email,no_telp,due_date,'
+      'lokasi_muat,lokasi_bongkar,armada_start_date,armada_end_date,'
+      'tonase,harga,muatan,nama_supir,status,total_bayar,total_biaya,pph,diterima_oleh,'
+      'customer_id,armada_id,order_id,rincian,created_at,updated_at,created_by,'
+      'submission_role,approval_status,approval_requested_at,approval_requested_by,'
+      'approved_at,approved_by,rejected_at,rejected_by,edit_request_status,'
+      'edit_requested_at,edit_requested_by,edit_resolved_at,edit_resolved_by';
+  static const _expenseListColumns =
+      'id,no_expense,tanggal,kategori,keterangan,total_pengeluaran,'
+      'status,dicatat_oleh,note,rincian,created_at,updated_at,created_by';
   static const _companyKeywords = <String>[
     r'\bcv\b',
     r'\bpt\b',
@@ -173,8 +186,32 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
   bool _manualArmadaAutoSanguCleanupDone = false;
 
   bool get _isEn => LanguageController.language.value == AppLanguage.en;
+  bool get _isPengurus => widget.session.isPengurus;
+  bool get _isAdminOrOwner => widget.session.isAdminOrOwner;
+  String get _currentUserId => widget.session.userId?.trim() ?? '';
+
+  int? get _invoiceListFetchLimit {
+    if (_limit == 'all') return null;
+    final visibleRows = int.tryParse(_limit) ?? 10;
+    return max(80, min(1500, visibleRows * 8));
+  }
 
   String _t(String id, String en) => _isEn ? en : id;
+
+  bool _isPengurusIncome(Map<String, dynamic> row) {
+    return '${row['submission_role'] ?? ''}'.trim().toLowerCase() == 'pengurus';
+  }
+
+  bool _isPengurusIncomeApproved(Map<String, dynamic> row) {
+    final approvalStatus =
+        '${row['approval_status'] ?? 'approved'}'.trim().toLowerCase();
+    return !_isPengurusIncome(row) || approvalStatus == 'approved';
+  }
+
+  bool _isOwnedByCurrentUser(Map<String, dynamic> row) {
+    if (_currentUserId.isEmpty) return false;
+    return '${row['created_by'] ?? ''}'.trim() == _currentUserId;
+  }
 
   @override
   DashboardRepository get invoicePrintRepository => widget.repository;
@@ -378,7 +415,14 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
   void initState() {
     super.initState();
     _future = _load();
-    unawaited(_runInvoiceListBackgroundMaintenance());
+    if (_isAdminOrOwner) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Future<void>.delayed(const Duration(seconds: 2), () {
+          if (!mounted || !_isAdminOrOwner) return;
+          unawaited(_runInvoiceListBackgroundMaintenance());
+        });
+      });
+    }
   }
 
   @override
@@ -388,32 +432,58 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
   }
 
   Future<List<dynamic>> _load() async {
+    if (_isPengurus && _currentUserId.isEmpty) {
+      return const [<Map<String, dynamic>>[], <Map<String, dynamic>>[]];
+    }
     final since = DateTime.now().subtract(const Duration(days: 30));
+    final scopedUserId = _isPengurus ? _currentUserId : null;
+    final fetchLimit = _invoiceListFetchLimit;
     final response = await Future.wait<dynamic>([
-      widget.repository.fetchInvoicesSince(since),
-      widget.repository.fetchExpensesSince(since),
-      _loadLocalFixedInvoiceIds(),
+      widget.repository.fetchInvoicesSinceWithScope(
+        since,
+        columns: _invoiceListColumns,
+        createdBy: scopedUserId,
+        limit: fetchLimit,
+      ),
+      widget.repository.fetchExpensesSinceWithScope(
+        since,
+        _expenseListColumns,
+        createdBy: scopedUserId,
+        limit: fetchLimit == null ? null : max(80, fetchLimit * 2),
+      ),
+      _isAdminOrOwner
+          ? _loadLocalFixedInvoiceIds()
+          : Future<Set<String>>.value(<String>{}),
     ]);
 
     final rawIncomes =
         (response[0] as List).cast<Map<String, dynamic>>().toList();
     final rawExpenses =
         (response[1] as List).cast<Map<String, dynamic>>().toList();
+    final scopedIncomes = rawIncomes.where((item) {
+      if (_isPengurus) return _isOwnedByCurrentUser(item);
+      if (_isAdminOrOwner) return _isPengurusIncomeApproved(item);
+      return true;
+    }).toList();
+    final scopedExpenses = rawExpenses.where((item) {
+      if (_isPengurus) return _isOwnedByCurrentUser(item);
+      return true;
+    }).toList();
     final fixedIds = (response[2] as Set<String>)
         .map((id) => id.trim())
         .where((id) => id.isNotEmpty)
         .toSet();
 
     if (fixedIds.isEmpty) {
-      return [rawIncomes, rawExpenses];
+      return [scopedIncomes, scopedExpenses];
     }
 
-    final filteredIncomes = rawIncomes.where((item) {
+    final filteredIncomes = scopedIncomes.where((item) {
       final id = '${item['id'] ?? ''}'.trim();
       return id.isEmpty || !fixedIds.contains(id);
     }).toList();
 
-    return [filteredIncomes, rawExpenses];
+    return [filteredIncomes, scopedExpenses];
   }
 
   Future<void> _runInvoiceListBackgroundMaintenance() async {
@@ -507,7 +577,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
   }
 
   Future<void> _refresh({bool runBackfill = false}) async {
-    if (runBackfill && !_backfillRunning) {
+    if (_isAdminOrOwner && runBackfill && !_backfillRunning) {
       _backfillRunning = true;
       try {
         final report = await widget.repository
@@ -531,7 +601,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       _future = _load();
     });
     await _future;
-    unawaited(_runInvoiceListBackgroundMaintenance());
+    if (_isAdminOrOwner) {
+      unawaited(_runInvoiceListBackgroundMaintenance());
+    }
   }
 
   void _notifyDataChanged() {
@@ -702,7 +774,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       if (batch == null) continue;
       batches.add(batch);
       final rawInvoiceNumber = '${row['invoice_number'] ?? ''}'.trim();
-      if (rawInvoiceNumber.isNotEmpty && rawInvoiceNumber != batch.invoiceNumber) {
+      if (rawInvoiceNumber.isNotEmpty &&
+          rawInvoiceNumber != batch.invoiceNumber) {
         await _upsertRemoteFixedInvoiceBatch(batch);
       }
     }
@@ -1082,9 +1155,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       final rawNumber = '${income['no_invoice'] ?? ''}'.trim();
       if (rawNumber.isEmpty) continue;
       final issuedDate = Formatters.parseDate(
-            income['tanggal_kop'] ??
-                income['tanggal'] ??
-                income['created_at'],
+            income['tanggal_kop'] ?? income['tanggal'] ?? income['created_at'],
           ) ??
           now;
       consumeExistingInvoiceNumber(
@@ -1478,6 +1549,56 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         e.toString().replaceFirst('Exception: ', ''),
         error: true,
       );
+    }
+  }
+
+  Future<void> _requestPengurusInvoiceEdit(Map<String, dynamic> item) async {
+    final invoiceId = '${item['id'] ?? ''}'.trim();
+    if (invoiceId.isEmpty) {
+      _snack(
+        _t('ID invoice tidak ditemukan.', 'Invoice ID not found.'),
+        error: true,
+      );
+      return;
+    }
+    final editStatus =
+        '${item['edit_request_status'] ?? 'none'}'.trim().toLowerCase();
+    if (editStatus == 'pending') {
+      _snack(
+        _t(
+          'Request edit sudah dikirim. Tunggu ACC admin/owner.',
+          'Edit request has already been sent. Please wait for admin/owner approval.',
+        ),
+        error: true,
+      );
+      return;
+    }
+    final ok = await showCvantConfirmPopup(
+      context: context,
+      title: _t('Request Edit Income', 'Request Income Edit'),
+      message: _t(
+        'Pengurus perlu ACC admin/owner sebelum merevisi income ini. Kirim request edit sekarang?',
+        'Pengurus needs admin/owner approval before revising this income. Send the edit request now?',
+      ),
+      type: CvantPopupType.warning,
+      cancelLabel: _t('Batal', 'Cancel'),
+      confirmLabel: _t('Kirim Request', 'Send Request'),
+    );
+    if (!ok) return;
+    try {
+      await widget.repository.requestPengurusInvoiceEdit(invoiceId);
+      if (!mounted) return;
+      _snack(
+        _t(
+          'Request edit berhasil dikirim ke admin/owner.',
+          'The edit request was sent to admin/owner successfully.',
+        ),
+      );
+      await _refresh();
+      _notifyDataChanged();
+    } catch (e) {
+      if (!mounted) return;
+      _snack(e.toString().replaceFirst('Exception: ', ''), error: true);
     }
   }
 
@@ -3594,20 +3715,21 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
             ),
           ),
           actions: [
-            OutlinedButton.icon(
-              onPressed: () async {
-                Navigator.pop(context);
-                await _printSingleInvoiceFromPreview(item);
-              },
-              style: CvantButtonStyles.outlined(
-                context,
-                color: AppColors.blue,
-                borderColor: AppColors.blue,
-                minimumSize: const Size(96, 40),
+            if (!_isPengurus)
+              OutlinedButton.icon(
+                onPressed: () async {
+                  Navigator.pop(context);
+                  await _printSingleInvoiceFromPreview(item);
+                },
+                style: CvantButtonStyles.outlined(
+                  context,
+                  color: AppColors.blue,
+                  borderColor: AppColors.blue,
+                  minimumSize: const Size(96, 40),
+                ),
+                icon: const Icon(Icons.print_outlined, size: 16),
+                label: Text(_t('Print', 'Print')),
               ),
-              icon: const Icon(Icons.print_outlined, size: 16),
-              label: Text(_t('Print', 'Print')),
-            ),
             FilledButton(
               style: CvantButtonStyles.filled(
                 context,
@@ -6589,7 +6711,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                           decoration: InputDecoration(
                             labelText: _t('Diterima Oleh', 'Accepted By'),
                           ),
-                          items: const ['Admin', 'Owner']
+                          items: (widget.session.isPengurus
+                                  ? const ['Pengurus']
+                                  : const ['Admin', 'Owner'])
                               .map(
                                 (value) => DropdownMenuItem<String>(
                                   value: value,
@@ -6859,6 +6983,10 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                                             noInvoice: null,
                                             details: detailsPayload,
                                             acceptedBy: acceptedBy,
+                                            generateAutoSangu:
+                                                !widget.session.isPengurus,
+                                            clearApprovedPengurusEditRequest:
+                                                widget.session.isPengurus,
                                           );
                                           if (!mounted || !context.mounted) {
                                             return;
@@ -7083,7 +7211,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                           decoration: InputDecoration(
                             labelText: _t('Dicatat Oleh', 'Recorded By'),
                           ),
-                          items: const ['Admin', 'Owner']
+                          items: (widget.session.isPengurus
+                                  ? const ['Pengurus']
+                                  : const ['Admin', 'Owner'])
                               .map(
                                 (item) => DropdownMenuItem<String>(
                                   value: item,
@@ -7500,7 +7630,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       if (income == null) return false;
       final details = _toDetailList(income['rincian']);
       if (details.isNotEmpty) {
-        return details.any((row) => '${row['armada_manual'] ?? ''}'.trim().isNotEmpty);
+        return details
+            .any((row) => '${row['armada_manual'] ?? ''}'.trim().isNotEmpty);
       }
       return false;
     }
@@ -7869,6 +8000,10 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
               : (isEn ? 'Personal' : 'Pribadi');
           final invoiceTypeColor =
               isCompanyInvoice ? AppColors.success : AppColors.blue;
+          final approvalStatus =
+              '${item['approval_status'] ?? 'approved'}'.trim().toLowerCase();
+          final editRequestStatus =
+              '${item['edit_request_status'] ?? 'none'}'.trim().toLowerCase();
           final total = _toNum(item['__total']);
           return _PanelCard(
             child: Column(
@@ -7907,6 +8042,50 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                   const SizedBox(height: 6),
                 ] else
                   const SizedBox(height: 6),
+                if (_isPengurus && isIncome) ...[
+                  Text(
+                    () {
+                      if (editRequestStatus == 'pending') {
+                        return _t(
+                          'Request edit: menunggu ACC admin/owner',
+                          'Edit request: waiting for admin/owner approval',
+                        );
+                      }
+                      if (editRequestStatus == 'approved') {
+                        return _t(
+                          'Request edit disetujui. Income bisa direvisi.',
+                          'Edit request approved. The income can now be revised.',
+                        );
+                      }
+                      if (approvalStatus == 'pending') {
+                        return _t(
+                          'Income menunggu ACC admin/owner.',
+                          'Income is waiting for admin/owner approval.',
+                        );
+                      }
+                      if (approvalStatus == 'rejected') {
+                        return _t(
+                          'Income ditolak admin/owner. Ajukan revisi bila diperlukan.',
+                          'Income was rejected by admin/owner. Request a revision if needed.',
+                        );
+                      }
+                      return _t(
+                        'Income sudah disetujui admin/owner.',
+                        'Income has been approved by admin/owner.',
+                      );
+                    }(),
+                    style: TextStyle(
+                      color: editRequestStatus == 'approved'
+                          ? AppColors.success
+                          : (approvalStatus == 'rejected'
+                              ? AppColors.danger
+                              : AppColors.textMutedFor(context)),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                ],
                 Text(
                   Formatters.rupiah(total),
                   style: TextStyle(fontWeight: FontWeight.w700),
@@ -7936,14 +8115,33 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                       runSpacing: 8,
                       children: [
                         OutlinedButton(
-                          onPressed: () => isIncome
-                              ? _openInvoiceEdit(item)
-                              : _openExpenseEdit(item),
+                          onPressed: () {
+                            if (isIncome && _isPengurus) {
+                              if (editRequestStatus == 'approved') {
+                                _openInvoiceEdit(item);
+                                return;
+                              }
+                              _requestPengurusInvoiceEdit(item);
+                              return;
+                            }
+                            if (isIncome) {
+                              _openInvoiceEdit(item);
+                              return;
+                            }
+                            _openExpenseEdit(item);
+                          },
                           style: _mobileActionButtonStyle(
                             context: context,
                             color: AppColors.blue,
                           ),
-                          child: const Icon(Icons.edit_outlined, size: 18),
+                          child: Icon(
+                            isIncome && _isPengurus
+                                ? (editRequestStatus == 'approved'
+                                    ? Icons.edit_outlined
+                                    : Icons.how_to_reg_outlined)
+                                : Icons.edit_outlined,
+                            size: 18,
+                          ),
                         ),
                         OutlinedButton(
                           onPressed: () => isIncome
@@ -7956,7 +8154,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                           child:
                               const Icon(Icons.visibility_outlined, size: 18),
                         ),
-                        if (isIncome)
+                        if (isIncome && !_isPengurus)
                           OutlinedButton(
                             onPressed: () => _sendInvoice(item),
                             style: _mobileActionButtonStyle(
@@ -7965,17 +8163,18 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                             ),
                             child: const Icon(Icons.send_outlined, size: 18),
                           ),
-                        OutlinedButton(
-                          onPressed: () => _confirmDelete(
-                            id: '${item['id']}',
-                            isIncome: isIncome,
+                        if (!(isIncome && _isPengurus))
+                          OutlinedButton(
+                            onPressed: () => _confirmDelete(
+                              id: '${item['id']}',
+                              isIncome: isIncome,
+                            ),
+                            style: _mobileActionButtonStyle(
+                              context: context,
+                              color: AppColors.danger,
+                            ),
+                            child: const Icon(Icons.delete_outline, size: 18),
                           ),
-                          style: _mobileActionButtonStyle(
-                            context: context,
-                            color: AppColors.danger,
-                          ),
-                          child: const Icon(Icons.delete_outline, size: 18),
-                        ),
                       ],
                     ),
                   ],
@@ -8051,7 +8250,10 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                           .toList(),
                       onChanged: (value) {
                         if (value == null) return;
-                        setState(() => _limit = value);
+                        setState(() {
+                          _limit = value;
+                          _future = _load();
+                        });
                       },
                     ),
                   ),
@@ -8072,65 +8274,66 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                 ],
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: SizedBox(
-                      height: 44,
-                      child: OutlinedButton(
-                        onPressed: () => _openReportSummary(
-                          incomes: incomes,
-                          expenses: expenses,
-                        ),
-                        style: CvantButtonStyles.outlined(
-                          context,
-                          color: AppColors.success,
-                          borderColor: AppColors.success,
-                        ).copyWith(
-                          alignment: const Alignment(0, 0),
-                        ),
-                        child: Center(
-                          child: Text(
-                            _t('Cetak Laporan', 'Print Report'),
-                            textAlign: TextAlign.center,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+            if (!_isPengurus)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: SizedBox(
+                        height: 44,
+                        child: OutlinedButton(
+                          onPressed: () => _openReportSummary(
+                            incomes: incomes,
+                            expenses: expenses,
+                          ),
+                          style: CvantButtonStyles.outlined(
+                            context,
+                            color: AppColors.success,
+                            borderColor: AppColors.success,
+                          ).copyWith(
+                            alignment: const Alignment(0, 0),
+                          ),
+                          child: Center(
+                            child: Text(
+                              _t('Cetak Laporan', 'Print Report'),
+                              textAlign: TextAlign.center,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: SizedBox(
-                      height: 44,
-                      child: OutlinedButton(
-                        onPressed: () => _openInvoicePrintSelector(
-                          incomes: incomes,
-                        ),
-                        style: CvantButtonStyles.outlined(
-                          context,
-                          color: AppColors.warning,
-                          borderColor: AppColors.warning,
-                        ).copyWith(
-                          alignment: const Alignment(0, 0),
-                        ),
-                        child: Center(
-                          child: Text(
-                            _t('Cetak Invoice', 'Print Invoice'),
-                            textAlign: TextAlign.center,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: SizedBox(
+                        height: 44,
+                        child: OutlinedButton(
+                          onPressed: () => _openInvoicePrintSelector(
+                            incomes: incomes,
+                          ),
+                          style: CvantButtonStyles.outlined(
+                            context,
+                            color: AppColors.warning,
+                            borderColor: AppColors.warning,
+                          ).copyWith(
+                            alignment: const Alignment(0, 0),
+                          ),
+                          child: Center(
+                            child: Text(
+                              _t('Cetak Invoice', 'Print Invoice'),
+                              textAlign: TextAlign.center,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
             Expanded(child: _buildCombinedList(rows)),
           ],
         );
@@ -8138,4 +8341,3 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     );
   }
 }
-

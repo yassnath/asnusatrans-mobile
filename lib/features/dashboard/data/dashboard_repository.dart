@@ -63,6 +63,32 @@ class DashboardRepository {
 
   final SupabaseClient _supabase;
   bool? _invoiceNumberColumnAvailable;
+  final Set<String> _unavailableInvoiceColumns = <String>{};
+  final Set<String> _unavailableExpenseColumns = <String>{};
+  String? _cachedRoleUserId;
+  String? _cachedCurrentRole;
+  static const _invoiceWorkflowColumns = <String>{
+    'submission_role',
+    'approval_status',
+    'approval_requested_at',
+    'approval_requested_by',
+    'approved_at',
+    'approved_by',
+    'rejected_at',
+    'rejected_by',
+    'edit_request_status',
+    'edit_requested_at',
+    'edit_requested_by',
+    'edit_resolved_at',
+    'edit_resolved_by',
+  };
+  static const _optionalInvoiceColumns = <String>{
+    'no_invoice',
+    ..._invoiceWorkflowColumns,
+  };
+  static const _optionalExpenseColumns = <String>{
+    'created_by',
+  };
   static const _companyKeywords = <String>[
     r'\bcv\b',
     r'\bpt\b',
@@ -78,11 +104,52 @@ class DashboardRepository {
     r'\bmaatschap\b',
   ];
 
+  Future<String> _loadCurrentRole() async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) return 'customer';
+    if (_cachedRoleUserId == user.id && _cachedCurrentRole != null) {
+      return _cachedCurrentRole!;
+    }
+    try {
+      final row = await _supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .maybeSingle();
+      final role = (row?['role'] ?? user.userMetadata?['role'] ?? 'customer')
+          .toString()
+          .trim()
+          .toLowerCase();
+      _cachedRoleUserId = user.id;
+      _cachedCurrentRole = role;
+      return role;
+    } catch (_) {
+      final fallback = (user.userMetadata?['role'] ?? 'customer')
+          .toString()
+          .trim()
+          .toLowerCase();
+      _cachedRoleUserId = user.id;
+      _cachedCurrentRole = fallback;
+      return fallback;
+    }
+  }
+
+  bool _isPengurusSubmission(Map<String, dynamic> row) {
+    return '${row['submission_role'] ?? ''}'.trim().toLowerCase() == 'pengurus';
+  }
+
+  bool _isApprovedForBackoffice(Map<String, dynamic> row) {
+    final approvalStatus =
+        '${row['approval_status'] ?? 'approved'}'.trim().toLowerCase();
+    return !_isPengurusSubmission(row) || approvalStatus == 'approved';
+  }
+
   Future<DashboardBundle> loadAdminDashboard() async {
     try {
       const invoiceColumns =
           'id,no_invoice,tanggal,tanggal_kop,nama_pelanggan,status,total_bayar,total_biaya,pph,'
-          'armada_id,armada_start_date,armada_end_date,muatan,created_at,rincian';
+          'armada_id,armada_start_date,armada_end_date,muatan,created_at,rincian,'
+          'created_by,submission_role,approval_status';
       final response = await Future.wait<dynamic>([
         _runInvoiceSelectWithFallback(
           invoiceColumns,
@@ -105,7 +172,13 @@ class DashboardRepository {
             .order('created_at', ascending: false),
       ]);
 
-      final invoices = _toMapList(response[0]);
+      final currentRole = await _loadCurrentRole();
+      final invoices = _toMapList(response[0]).where((row) {
+        if (currentRole == 'admin' || currentRole == 'owner') {
+          return _isApprovedForBackoffice(row);
+        }
+        return true;
+      }).toList();
       final expenses = _toMapList(response[1])
           .map(_normalizeExpenseRow)
           .where((row) => _expenseTotal(row) > 0)
@@ -141,7 +214,8 @@ class DashboardRepository {
   Future<DashboardLiveSections> loadAdminLiveSections() async {
     try {
       const invoiceColumns = 'id,no_invoice,tanggal,tanggal_kop,nama_pelanggan,'
-          'armada_id,armada_start_date,armada_end_date,created_at,rincian';
+          'armada_id,armada_start_date,armada_end_date,created_at,rincian,'
+          'created_by,submission_role,approval_status';
       final response = await Future.wait<dynamic>([
         _runInvoiceSelectWithFallback(
           invoiceColumns,
@@ -164,7 +238,13 @@ class DashboardRepository {
             .order('created_at', ascending: false),
       ]);
 
-      final invoices = _toMapList(response[0]);
+      final currentRole = await _loadCurrentRole();
+      final invoices = _toMapList(response[0]).where((row) {
+        if (currentRole == 'admin' || currentRole == 'owner') {
+          return _isApprovedForBackoffice(row);
+        }
+        return true;
+      }).toList();
       final expenses = _toMapList(response[1])
           .map(_normalizeExpenseRow)
           .where((row) => _expenseTotal(row) > 0)
@@ -250,7 +330,10 @@ class DashboardRepository {
           'id,no_invoice,tanggal,tanggal_kop,lokasi_kop,nama_pelanggan,email,no_telp,due_date,'
           'lokasi_muat,lokasi_bongkar,armada_start_date,armada_end_date,'
           'tonase,harga,muatan,nama_supir,status,total_bayar,total_biaya,pph,diterima_oleh,'
-          'customer_id,armada_id,order_id,rincian,created_at,updated_at';
+          'customer_id,armada_id,order_id,rincian,created_at,updated_at,created_by,'
+          'submission_role,approval_status,approval_requested_at,approval_requested_by,'
+          'approved_at,approved_by,rejected_at,rejected_by,edit_request_status,'
+          'edit_requested_at,edit_requested_by,edit_resolved_at,edit_resolved_by';
       final res = await _runInvoiceSelectWithFallback(
         invoiceColumns,
         (columns) => _supabase
@@ -265,24 +348,18 @@ class DashboardRepository {
   }
 
   Future<List<Map<String, dynamic>>> fetchInvoicesSince(DateTime since) async {
-    final mm = since.month.toString().padLeft(2, '0');
-    final dd = since.day.toString().padLeft(2, '0');
-    final iso = '${since.year}-$mm-$dd';
     try {
       const invoiceColumns =
           'id,no_invoice,tanggal,tanggal_kop,lokasi_kop,nama_pelanggan,email,no_telp,due_date,'
           'lokasi_muat,lokasi_bongkar,armada_start_date,armada_end_date,'
           'tonase,harga,muatan,nama_supir,status,total_bayar,total_biaya,pph,diterima_oleh,'
-          'customer_id,armada_id,order_id,rincian,created_at,updated_at';
-      final res = await _runInvoiceSelectWithFallback(
-        invoiceColumns,
-        (columns) => _supabase
-            .from('invoices')
-            .select(columns)
-            .or(
-              'tanggal.gte.$iso,tanggal_kop.gte.$iso,armada_start_date.gte.$iso',
-            )
-            .order('tanggal', ascending: false),
+          'customer_id,armada_id,order_id,rincian,created_at,updated_at,created_by,'
+          'submission_role,approval_status,approval_requested_at,approval_requested_by,'
+          'approved_at,approved_by,rejected_at,rejected_by,edit_request_status,'
+          'edit_requested_at,edit_requested_by,edit_resolved_at,edit_resolved_by';
+      final res = await fetchInvoicesSinceWithScope(
+        since,
+        columns: invoiceColumns,
       );
       return _toMapList(res);
     } on PostgrestException catch (e) {
@@ -290,15 +367,44 @@ class DashboardRepository {
     }
   }
 
+  Future<dynamic> fetchInvoicesSinceWithScope(
+    DateTime since, {
+    required String columns,
+    String? createdBy,
+    int? limit,
+  }) {
+    final mm = since.month.toString().padLeft(2, '0');
+    final dd = since.day.toString().padLeft(2, '0');
+    final iso = '${since.year}-$mm-$dd';
+    final cleanedCreatedBy = createdBy?.trim();
+    return _runInvoiceSelectWithFallback(
+      columns,
+      (resolvedColumns) {
+        dynamic query = _supabase.from('invoices').select(resolvedColumns).or(
+              'tanggal.gte.$iso,tanggal_kop.gte.$iso,armada_start_date.gte.$iso',
+            );
+        if (cleanedCreatedBy != null && cleanedCreatedBy.isNotEmpty) {
+          query = query.eq('created_by', cleanedCreatedBy);
+        }
+        query = query.order('tanggal', ascending: false);
+        if (limit != null && limit > 0) {
+          query = query.limit(limit);
+        }
+        return query;
+      },
+    );
+  }
+
   Future<List<Map<String, dynamic>>> fetchExpenses() async {
     try {
-      final res = await _supabase
-          .from('expenses')
-          .select(
-            'id,no_expense,tanggal,kategori,keterangan,total_pengeluaran,'
-            'status,dicatat_oleh,note,rincian,created_at,updated_at',
-          )
-          .order('tanggal', ascending: false);
+      final res = await _runExpenseSelectWithFallback(
+        'id,no_expense,tanggal,kategori,keterangan,total_pengeluaran,'
+        'status,dicatat_oleh,note,rincian,created_at,updated_at,created_by',
+        (columns) => _supabase
+            .from('expenses')
+            .select(columns)
+            .order('tanggal', ascending: false),
+      );
       return _toMapList(res)
           .map(_normalizeExpenseRow)
           .where((row) => _expenseTotal(row) > 0)
@@ -309,18 +415,12 @@ class DashboardRepository {
   }
 
   Future<List<Map<String, dynamic>>> fetchExpensesSince(DateTime since) async {
-    final mm = since.month.toString().padLeft(2, '0');
-    final dd = since.day.toString().padLeft(2, '0');
-    final iso = '${since.year}-$mm-$dd';
     try {
-      final res = await _supabase
-          .from('expenses')
-          .select(
-            'id,no_expense,tanggal,kategori,keterangan,total_pengeluaran,'
-            'status,dicatat_oleh,note,rincian,created_at,updated_at',
-          )
-          .gte('tanggal', iso)
-          .order('tanggal', ascending: false);
+      final res = await fetchExpensesSinceWithScope(
+        since,
+        'id,no_expense,tanggal,kategori,keterangan,total_pengeluaran,'
+        'status,dicatat_oleh,note,rincian,created_at,updated_at,created_by',
+      );
       return _toMapList(res)
           .map(_normalizeExpenseRow)
           .where((row) => _expenseTotal(row) > 0)
@@ -328,6 +428,35 @@ class DashboardRepository {
     } on PostgrestException catch (e) {
       throw Exception('Gagal memuat expense: ${e.message}');
     }
+  }
+
+  Future<dynamic> fetchExpensesSinceWithScope(
+    DateTime since,
+    String columns, {
+    String? createdBy,
+    int? limit,
+  }) {
+    final mm = since.month.toString().padLeft(2, '0');
+    final dd = since.day.toString().padLeft(2, '0');
+    final iso = '${since.year}-$mm-$dd';
+    final cleanedCreatedBy = createdBy?.trim();
+    return _runExpenseSelectWithFallback(
+      columns,
+      (resolvedColumns) {
+        dynamic query = _supabase
+            .from('expenses')
+            .select(resolvedColumns)
+            .gte('tanggal', iso);
+        if (cleanedCreatedBy != null && cleanedCreatedBy.isNotEmpty) {
+          query = query.eq('created_by', cleanedCreatedBy);
+        }
+        query = query.order('tanggal', ascending: false);
+        if (limit != null && limit > 0) {
+          query = query.limit(limit);
+        }
+        return query;
+      },
+    );
   }
 
   Future<List<Map<String, dynamic>>> fetchFixedInvoiceBatches() async {
@@ -470,13 +599,10 @@ class DashboardRepository {
           customerName: row['customer_name'],
         );
         if (normalized == '-' || normalized == rawInvoiceNumber) continue;
-        await _supabase
-            .from('fixed_invoice_batches')
-            .update(<String, dynamic>{
-              'invoice_number': normalized,
-              'updated_at': nowIso,
-            })
-            .eq('batch_id', batchId);
+        await _supabase.from('fixed_invoice_batches').update(<String, dynamic>{
+          'invoice_number': normalized,
+          'updated_at': nowIso,
+        }).eq('batch_id', batchId);
         updatedFixedBatches++;
       }
     } on PostgrestException catch (e) {
@@ -831,6 +957,253 @@ class DashboardRepository {
     }
   }
 
+  Future<List<Map<String, dynamic>>> fetchPengurusApprovalQueue() async {
+    try {
+      final rows = _toMapList(
+        await _runInvoiceSelectWithFallback(
+          'id,no_invoice,tanggal,tanggal_kop,nama_pelanggan,lokasi_muat,lokasi_bongkar,'
+          'armada_start_date,status,total_biaya,pph,total_bayar,created_by,created_at,updated_at,'
+          'submission_role,approval_status,approval_requested_at,approval_requested_by,'
+          'approved_at,approved_by,rejected_at,rejected_by,edit_request_status,'
+          'edit_requested_at,edit_requested_by,edit_resolved_at,edit_resolved_by,rincian',
+          (columns) => _supabase
+              .from('invoices')
+              .select(columns)
+              .eq('submission_role', 'pengurus')
+              .or('approval_status.eq.pending,edit_request_status.eq.pending')
+              .order('created_at', ascending: false),
+        ),
+      );
+      final creatorIds = rows
+          .map((row) => '${row['created_by'] ?? ''}'.trim())
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList();
+      final profileById = <String, Map<String, dynamic>>{};
+      if (creatorIds.isNotEmpty) {
+        final profiles = _toMapList(
+          await _supabase
+              .from('profiles')
+              .select('id,name,username,role')
+              .inFilter('id', creatorIds),
+        );
+        for (final row in profiles) {
+          final id = '${row['id'] ?? ''}'.trim();
+          if (id.isEmpty) continue;
+          profileById[id] = row;
+        }
+      }
+      return rows.map((row) {
+        final creatorId = '${row['created_by'] ?? ''}'.trim();
+        final creator = profileById[creatorId];
+        final requestType =
+            '${row['edit_request_status'] ?? ''}'.trim().toLowerCase() ==
+                    'pending'
+                ? 'edit_request'
+                : 'new_income';
+        return <String, dynamic>{
+          ...row,
+          '__request_type': requestType,
+          '__creator_name':
+              '${creator?['name'] ?? creator?['username'] ?? '-'}'.trim(),
+        };
+      }).toList();
+    } on PostgrestException catch (e) {
+      final workflowMissing = _optionalInvoiceColumns.any(
+        (column) => _isMissingColumnError(e, column),
+      );
+      if (workflowMissing) return const <Map<String, dynamic>>[];
+      throw Exception('Gagal memuat approval income pengurus: ${e.message}');
+    }
+  }
+
+  Future<int> countPendingPengurusApprovals() async {
+    final rows = await fetchPengurusApprovalQueue();
+    return rows.length;
+  }
+
+  Future<void> requestPengurusInvoiceEdit(String invoiceId) async {
+    final cleanedId = invoiceId.trim();
+    if (cleanedId.isEmpty) {
+      throw Exception('ID invoice tidak ditemukan.');
+    }
+    try {
+      await _supabase.rpc(
+        'request_pengurus_invoice_edit',
+        params: {'p_invoice_id': cleanedId},
+      );
+      final invoice = await fetchInvoiceById(cleanedId);
+      if (invoice != null) {
+        await _notifyStaffAboutPengurusEditRequest(invoice);
+      }
+    } on PostgrestException catch (e) {
+      throw Exception('Gagal mengirim request edit invoice: ${e.message}');
+    }
+  }
+
+  Future<void> approvePengurusIncome(String invoiceId) async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) {
+      throw Exception('Session tidak ditemukan. Silakan login ulang.');
+    }
+    final invoice = await fetchInvoiceById(invoiceId);
+    if (invoice == null) {
+      throw Exception('Income pengurus tidak ditemukan.');
+    }
+    final nowIso = DateTime.now().toIso8601String();
+    await _updateInvoiceWithFallback(invoiceId, <String, dynamic>{
+      'approval_status': 'approved',
+      'approved_at': nowIso,
+      'approved_by': user.id,
+      'rejected_at': null,
+      'rejected_by': null,
+      'updated_at': nowIso,
+    });
+    final details = _buildEffectiveIncomeDetails(
+      details: _toMapList(invoice['rincian']),
+      pickup: '${invoice['lokasi_muat'] ?? ''}',
+      destination: '${invoice['lokasi_bongkar'] ?? ''}',
+      armadaId: '${invoice['armada_id'] ?? ''}',
+      armadaStartDate: Formatters.parseDate(invoice['armada_start_date']),
+      armadaEndDate: Formatters.parseDate(invoice['armada_end_date']),
+      tonase: _num(invoice['tonase']),
+      harga: _num(invoice['harga']),
+      muatan: '${invoice['muatan'] ?? ''}',
+      namaSupir: '${invoice['nama_supir'] ?? ''}',
+    );
+    final expenseReferenceDate = _resolveExpenseReferenceDateFromDetails(
+      details,
+      fallbackDate: invoice['armada_start_date'] ?? invoice['tanggal'],
+    );
+    await _createSanguExpenseFromIncomeBestEffort(
+      invoiceId: invoiceId,
+      invoiceNumber: '${invoice['no_invoice'] ?? ''}',
+      expenseDate: expenseReferenceDate,
+      details: details,
+      fallbackPickup: '${invoice['lokasi_muat'] ?? ''}',
+      fallbackDestination: '${invoice['lokasi_bongkar'] ?? ''}',
+      fallbackArmadaId: '${invoice['armada_id'] ?? ''}',
+    );
+    final creatorId = '${invoice['created_by'] ?? ''}'.trim();
+    if (creatorId.isNotEmpty) {
+      await _insertCustomerNotification(
+        userId: creatorId,
+        title: 'Income Pengurus Disetujui',
+        message:
+            'Income untuk ${invoice['nama_pelanggan'] ?? '-'} sudah disetujui admin/owner.',
+        kind: 'success',
+        sourceType: 'invoice',
+        sourceId: invoiceId,
+        payload: <String, dynamic>{
+          'invoice_id': invoiceId,
+          'request_type': 'new_income',
+        },
+      );
+    }
+  }
+
+  Future<void> rejectPengurusIncome(String invoiceId) async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) {
+      throw Exception('Session tidak ditemukan. Silakan login ulang.');
+    }
+    final invoice = await fetchInvoiceById(invoiceId);
+    if (invoice == null) {
+      throw Exception('Income pengurus tidak ditemukan.');
+    }
+    final nowIso = DateTime.now().toIso8601String();
+    await _updateInvoiceWithFallback(invoiceId, <String, dynamic>{
+      'approval_status': 'rejected',
+      'rejected_at': nowIso,
+      'rejected_by': user.id,
+      'updated_at': nowIso,
+    });
+    final creatorId = '${invoice['created_by'] ?? ''}'.trim();
+    if (creatorId.isNotEmpty) {
+      await _insertCustomerNotification(
+        userId: creatorId,
+        title: 'Income Pengurus Ditolak',
+        message:
+            'Income untuk ${invoice['nama_pelanggan'] ?? '-'} ditolak admin/owner. Cek data lalu ajukan lagi.',
+        kind: 'error',
+        sourceType: 'invoice',
+        sourceId: invoiceId,
+        payload: <String, dynamic>{
+          'invoice_id': invoiceId,
+          'request_type': 'new_income',
+        },
+      );
+    }
+  }
+
+  Future<void> approvePengurusInvoiceEdit(String invoiceId) async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) {
+      throw Exception('Session tidak ditemukan. Silakan login ulang.');
+    }
+    final invoice = await fetchInvoiceById(invoiceId);
+    if (invoice == null) {
+      throw Exception('Invoice pengurus tidak ditemukan.');
+    }
+    final nowIso = DateTime.now().toIso8601String();
+    await _updateInvoiceWithFallback(invoiceId, <String, dynamic>{
+      'edit_request_status': 'approved',
+      'edit_resolved_at': nowIso,
+      'edit_resolved_by': user.id,
+      'updated_at': nowIso,
+    });
+    final creatorId = '${invoice['created_by'] ?? ''}'.trim();
+    if (creatorId.isNotEmpty) {
+      await _insertCustomerNotification(
+        userId: creatorId,
+        title: 'Request Edit Disetujui',
+        message:
+            'Request edit untuk income ${invoice['nama_pelanggan'] ?? '-'} sudah disetujui. Sekarang data bisa direvisi.',
+        kind: 'success',
+        sourceType: 'invoice',
+        sourceId: invoiceId,
+        payload: <String, dynamic>{
+          'invoice_id': invoiceId,
+          'request_type': 'edit_request',
+        },
+      );
+    }
+  }
+
+  Future<void> rejectPengurusInvoiceEdit(String invoiceId) async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) {
+      throw Exception('Session tidak ditemukan. Silakan login ulang.');
+    }
+    final invoice = await fetchInvoiceById(invoiceId);
+    if (invoice == null) {
+      throw Exception('Invoice pengurus tidak ditemukan.');
+    }
+    final nowIso = DateTime.now().toIso8601String();
+    await _updateInvoiceWithFallback(invoiceId, <String, dynamic>{
+      'edit_request_status': 'rejected',
+      'edit_resolved_at': nowIso,
+      'edit_resolved_by': user.id,
+      'updated_at': nowIso,
+    });
+    final creatorId = '${invoice['created_by'] ?? ''}'.trim();
+    if (creatorId.isNotEmpty) {
+      await _insertCustomerNotification(
+        userId: creatorId,
+        title: 'Request Edit Ditolak',
+        message:
+            'Request edit untuk income ${invoice['nama_pelanggan'] ?? '-'} ditolak admin/owner.',
+        kind: 'warning',
+        sourceType: 'invoice',
+        sourceId: invoiceId,
+        payload: <String, dynamic>{
+          'invoice_id': invoiceId,
+          'request_type': 'edit_request',
+        },
+      );
+    }
+  }
+
   Future<Map<String, dynamic>?> fetchMyProfile() async {
     final user = _supabase.auth.currentUser;
     if (user == null) return null;
@@ -887,6 +1260,9 @@ class DashboardRepository {
     String? customerId,
     String? orderId,
     List<Map<String, dynamic>>? details,
+    String? submissionRole,
+    String? approvalStatus,
+    bool generateAutoSangu = true,
   }) async {
     final user = _supabase.auth.currentUser;
     if (user == null) {
@@ -922,6 +1298,13 @@ class DashboardRepository {
         (noInvoice?.trim().isEmpty ?? true) ? null : noInvoice!.trim();
     final selectedArmadaIds =
         _collectArmadaIds(primaryArmadaId: armadaId, details: sanitizedDetails);
+
+    final effectiveSubmissionRole =
+        (submissionRole ?? await _loadCurrentRole()).trim().toLowerCase();
+    final effectiveApprovalStatus = (approvalStatus ??
+            (effectiveSubmissionRole == 'pengurus' ? 'pending' : 'approved'))
+        .trim()
+        .toLowerCase();
 
     if (sanitizedDetails.length > 1) {
       final invalidDetailIndexes = <int>[];
@@ -990,17 +1373,32 @@ class DashboardRepository {
           orderId: orderId,
           details: [detail],
           createdBy: user.id,
+          submissionRole: effectiveSubmissionRole,
+          approvalStatus: effectiveApprovalStatus,
         );
 
-        await _createSanguExpenseFromIncomeBestEffort(
-          invoiceId: inserted['id'],
-          invoiceNumber: inserted['no_invoice'] ?? '-',
-          expenseDate: detailIssueDate,
-          details: [detail],
-          fallbackPickup: detailPickup,
-          fallbackDestination: detailDestination,
-          fallbackArmadaId: detailArmadaId,
-        );
+        if (generateAutoSangu && effectiveApprovalStatus == 'approved') {
+          await _createSanguExpenseFromIncomeBestEffort(
+            invoiceId: inserted['id'],
+            invoiceNumber: inserted['no_invoice'] ?? '-',
+            expenseDate: detailIssueDate,
+            details: [detail],
+            fallbackPickup: detailPickup,
+            fallbackDestination: detailDestination,
+            fallbackArmadaId: detailArmadaId,
+          );
+        }
+        if (effectiveSubmissionRole == 'pengurus' &&
+            inserted['id'] != null &&
+            '${inserted['id']}'.trim().isNotEmpty) {
+          await _notifyStaffAboutPengurusIncome(
+            invoiceId: '${inserted['id']}',
+            customerName: customerName,
+            pickup: detailPickup,
+            destination: detailDestination,
+            invoiceDate: detailIssueDate,
+          );
+        }
       }
 
       await _setArmadaStatusBestEffort(
@@ -1039,17 +1437,32 @@ class DashboardRepository {
       orderId: orderId,
       details: singleDetailList,
       createdBy: user.id,
+      submissionRole: effectiveSubmissionRole,
+      approvalStatus: effectiveApprovalStatus,
     );
 
-    await _createSanguExpenseFromIncomeBestEffort(
-      invoiceId: singleInserted['id'],
-      invoiceNumber: singleInserted['no_invoice'] ?? '-',
-      expenseDate: parsedIssueDate,
-      details: singleDetailList,
-      fallbackPickup: pickup,
-      fallbackDestination: destination,
-      fallbackArmadaId: armadaId,
-    );
+    if (generateAutoSangu && effectiveApprovalStatus == 'approved') {
+      await _createSanguExpenseFromIncomeBestEffort(
+        invoiceId: singleInserted['id'],
+        invoiceNumber: singleInserted['no_invoice'] ?? '-',
+        expenseDate: parsedIssueDate,
+        details: singleDetailList,
+        fallbackPickup: pickup,
+        fallbackDestination: destination,
+        fallbackArmadaId: armadaId,
+      );
+    }
+    if (effectiveSubmissionRole == 'pengurus' &&
+        singleInserted['id'] != null &&
+        '${singleInserted['id']}'.trim().isNotEmpty) {
+      await _notifyStaffAboutPengurusIncome(
+        invoiceId: '${singleInserted['id']}',
+        customerName: customerName,
+        pickup: pickup,
+        destination: destination,
+        invoiceDate: parsedIssueDate,
+      );
+    }
 
     await _setArmadaStatusBestEffort(
       selectedArmadaIds,
@@ -1065,6 +1478,8 @@ class DashboardRepository {
     required String status,
     required DateTime issueDate,
     required String createdBy,
+    required String submissionRole,
+    required String approvalStatus,
     String? requestedNoInvoice,
     String? email,
     String? noTelp,
@@ -1134,6 +1549,16 @@ class DashboardRepository {
       'diterima_oleh':
           acceptedBy?.trim().isEmpty == true ? null : acceptedBy?.trim(),
       'created_by': createdBy,
+      'submission_role': submissionRole,
+      'approval_status': approvalStatus,
+      'approval_requested_at':
+          approvalStatus == 'pending' ? DateTime.now().toIso8601String() : null,
+      'approval_requested_by': approvalStatus == 'pending' ? createdBy : null,
+      'approved_at': approvalStatus == 'approved'
+          ? DateTime.now().toIso8601String()
+          : null,
+      'approved_by': approvalStatus == 'approved' ? createdBy : null,
+      'edit_request_status': 'none',
     };
 
     if (customerId != null && customerId.trim().isNotEmpty) {
@@ -1255,7 +1680,7 @@ class DashboardRepository {
     for (var attempt = 0; attempt < 5; attempt++) {
       final code = await generateExpenseNumberForDate(issuedDate);
       try {
-        await _supabase.from('expenses').insert({
+        await _insertExpenseWithFallback({
           'no_expense': code,
           'tanggal': date,
           'kategori':
@@ -1334,7 +1759,10 @@ class DashboardRepository {
           'id,no_invoice,tanggal,tanggal_kop,lokasi_kop,nama_pelanggan,email,no_telp,due_date,'
           'lokasi_muat,lokasi_bongkar,armada_start_date,armada_end_date,'
           'tonase,harga,muatan,nama_supir,status,total_biaya,pph,total_bayar,diterima_oleh,'
-          'customer_id,armada_id,order_id,rincian,created_at,updated_at';
+          'customer_id,armada_id,order_id,rincian,created_at,updated_at,created_by,'
+          'submission_role,approval_status,approval_requested_at,approval_requested_by,'
+          'approved_at,approved_by,rejected_at,rejected_by,edit_request_status,'
+          'edit_requested_at,edit_requested_by,edit_resolved_at,edit_resolved_by';
       final res = await _runInvoiceSelectWithFallback(
         invoiceColumns,
         (columns) => _supabase
@@ -1375,6 +1803,8 @@ class DashboardRepository {
     String? namaSupir,
     String? noInvoice,
     List<Map<String, dynamic>>? details,
+    bool generateAutoSangu = true,
+    bool clearApprovedPengurusEditRequest = false,
   }) async {
     final selectedArmadaIds =
         _collectArmadaIds(primaryArmadaId: armadaId, details: details);
@@ -1438,6 +1868,7 @@ class DashboardRepository {
         'nama_supir': driverNames,
         'rincian': effectiveDetails.isEmpty ? null : effectiveDetails,
         'updated_at': DateTime.now().toIso8601String(),
+        if (clearApprovedPengurusEditRequest) 'edit_request_status': 'none',
       };
 
       if (noInvoice != null && noInvoice.trim().isNotEmpty) {
@@ -1469,15 +1900,17 @@ class DashboardRepository {
         effectiveDetails,
         fallbackDate: resolvedIssueDate,
       );
-      await _createSanguExpenseFromIncomeBestEffort(
-        invoiceId: id,
-        invoiceNumber: effectiveInvoiceNumber,
-        expenseDate: expenseReferenceDate,
-        details: effectiveDetails,
-        fallbackPickup: pickup,
-        fallbackDestination: destination,
-        fallbackArmadaId: armadaId,
-      );
+      if (generateAutoSangu) {
+        await _createSanguExpenseFromIncomeBestEffort(
+          invoiceId: id,
+          invoiceNumber: effectiveInvoiceNumber,
+          expenseDate: expenseReferenceDate,
+          details: effectiveDetails,
+          fallbackPickup: pickup,
+          fallbackDestination: destination,
+          fallbackArmadaId: armadaId,
+        );
+      }
       await _syncArmadaStatusNowBestEffort();
     } on PostgrestException catch (e) {
       throw Exception('Gagal update invoice: ${e.message}');
@@ -2105,6 +2538,90 @@ class DashboardRepository {
       }
       throw Exception('Gagal kirim notifikasi customer: ${e.message}');
     }
+  }
+
+  Future<void> _broadcastRoleNotifications({
+    required List<String> targetRoles,
+    required String title,
+    required String message,
+    String kind = 'info',
+    String? sourceType,
+    String? sourceId,
+    Map<String, dynamic>? payload,
+  }) async {
+    final cleanedRoles = targetRoles
+        .map((role) => role.trim().toLowerCase())
+        .where((role) => role.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+    if (cleanedRoles.isEmpty) return;
+    try {
+      await _supabase.rpc(
+        'create_role_notifications',
+        params: <String, dynamic>{
+          'target_roles': cleanedRoles,
+          'p_title': title,
+          'p_message': message,
+          'p_kind': kind,
+          'p_source_type': sourceType,
+          'p_source_id':
+              (sourceId ?? '').trim().isEmpty ? null : sourceId!.trim(),
+          'p_payload': payload ?? <String, dynamic>{},
+        },
+      );
+    } on PostgrestException catch (e) {
+      throw Exception('Gagal mengirim notifikasi staff: ${e.message}');
+    }
+  }
+
+  Future<void> _notifyStaffAboutPengurusIncome({
+    required String invoiceId,
+    required String customerName,
+    required DateTime invoiceDate,
+    String? pickup,
+    String? destination,
+  }) async {
+    final route =
+        '${(pickup ?? '').trim().isEmpty ? '-' : pickup!.trim()} - ${(destination ?? '').trim().isEmpty ? '-' : destination!.trim()}';
+    await _broadcastRoleNotifications(
+      targetRoles: const ['admin', 'owner'],
+      title: 'Income Baru dari Pengurus',
+      message:
+          'Income $customerName masuk untuk approval. Rute $route pada ${Formatters.dmy(invoiceDate)}.',
+      kind: 'approval',
+      sourceType: 'invoice',
+      sourceId: invoiceId,
+      payload: <String, dynamic>{
+        'invoice_id': invoiceId,
+        'request_type': 'new_income',
+        'customer_name': customerName,
+        'route': route,
+      },
+    );
+  }
+
+  Future<void> _notifyStaffAboutPengurusEditRequest(
+    Map<String, dynamic> invoice,
+  ) async {
+    final invoiceId = '${invoice['id'] ?? ''}'.trim();
+    if (invoiceId.isEmpty) return;
+    final route =
+        '${invoice['lokasi_muat'] ?? '-'} - ${invoice['lokasi_bongkar'] ?? '-'}';
+    await _broadcastRoleNotifications(
+      targetRoles: const ['admin', 'owner'],
+      title: 'Request Edit Income Pengurus',
+      message:
+          'Pengurus meminta ACC edit untuk income ${invoice['nama_pelanggan'] ?? '-'} ($route).',
+      kind: 'approval',
+      sourceType: 'invoice',
+      sourceId: invoiceId,
+      payload: <String, dynamic>{
+        'invoice_id': invoiceId,
+        'request_type': 'edit_request',
+        'customer_name': '${invoice['nama_pelanggan'] ?? '-'}',
+        'route': route,
+      },
+    );
   }
 
   MetricSummary _buildMetrics(
@@ -2880,12 +3397,87 @@ class DashboardRepository {
         .join(',');
   }
 
+  String _removeSelectColumns(String columns, Iterable<String> targets) {
+    final normalizedTargets =
+        targets.map((target) => target.trim().toLowerCase()).toSet();
+    if (normalizedTargets.isEmpty) return columns;
+    return columns
+        .split(',')
+        .map((column) => column.trim())
+        .where(
+          (column) =>
+              column.isNotEmpty &&
+              !normalizedTargets.contains(column.toLowerCase()),
+        )
+        .join(',');
+  }
+
   bool _isMissingInvoiceNumberColumnError(PostgrestException error) {
     final message = error.message.toLowerCase();
     return message.contains('no_invoice') &&
         (message.contains('does not exist') ||
             message.contains('could not find') ||
             message.contains('schema cache'));
+  }
+
+  bool _isMissingColumnError(PostgrestException error, String column) {
+    final message = error.message.toLowerCase();
+    final normalizedColumn = column.trim().toLowerCase();
+    if (!message.contains(normalizedColumn)) return false;
+    return message.contains('does not exist') ||
+        message.contains('could not find') ||
+        message.contains('schema cache');
+  }
+
+  Set<String> _invoiceColumnsToDisableForMissing(String missingColumn) {
+    final normalized = missingColumn.trim().toLowerCase();
+    if (_invoiceWorkflowColumns.contains(normalized)) {
+      return Set<String>.from(_invoiceWorkflowColumns);
+    }
+    return <String>{normalized};
+  }
+
+  String? _missingOptionalInvoiceColumnFromError(
+    PostgrestException error,
+    String columns,
+  ) {
+    for (final column in _optionalInvoiceColumns) {
+      if (!_selectColumnsInclude(columns, column)) continue;
+      if (_isMissingColumnError(error, column)) {
+        return column;
+      }
+    }
+    return null;
+  }
+
+  String? _missingOptionalInvoicePayloadColumnFromError(
+    PostgrestException error,
+    Map<String, dynamic> payload,
+    String selectColumns,
+  ) {
+    for (final column in _optionalInvoiceColumns) {
+      if (!payload.containsKey(column) &&
+          !_selectColumnsInclude(selectColumns, column)) {
+        continue;
+      }
+      if (_isMissingColumnError(error, column)) {
+        return column;
+      }
+    }
+    return null;
+  }
+
+  String? _missingOptionalExpenseColumnFromError(
+    PostgrestException error,
+    String columns,
+  ) {
+    for (final column in _optionalExpenseColumns) {
+      if (!_selectColumnsInclude(columns, column)) continue;
+      if (_isMissingColumnError(error, column)) {
+        return column;
+      }
+    }
+    return null;
   }
 
   bool _isMissingFixedInvoiceBatchTableError(PostgrestException error) {
@@ -2898,32 +3490,74 @@ class DashboardRepository {
   }
 
   String _invoiceSelectColumnsForCurrentSchema(String columns) {
-    return _invoiceNumberColumnAvailable == false
-        ? _removeSelectColumn(columns, 'no_invoice')
-        : columns;
+    final unavailable = <String>{
+      ..._unavailableInvoiceColumns,
+      if (_invoiceNumberColumnAvailable == false) 'no_invoice',
+    };
+    return _removeSelectColumns(columns, unavailable);
   }
 
   Future<T> _runInvoiceSelectWithFallback<T>(
     String columns,
     Future<T> Function(String columns) request,
   ) async {
-    final preferredColumns = _invoiceSelectColumnsForCurrentSchema(columns);
-    try {
-      final result = await request(preferredColumns);
-      if (_selectColumnsInclude(preferredColumns, 'no_invoice')) {
-        _invoiceNumberColumnAvailable = true;
-      }
-      return result;
-    } on PostgrestException catch (error) {
-      if (!_isMissingInvoiceNumberColumnError(error) ||
-          !_selectColumnsInclude(columns, 'no_invoice')) {
-        rethrow;
-      }
+    var preferredColumns = _invoiceSelectColumnsForCurrentSchema(columns);
+    while (true) {
+      try {
+        final result = await request(preferredColumns);
+        if (_selectColumnsInclude(preferredColumns, 'no_invoice')) {
+          _invoiceNumberColumnAvailable = true;
+        }
+        return result;
+      } on PostgrestException catch (error) {
+        final missingColumn = _missingOptionalInvoiceColumnFromError(
+          error,
+          preferredColumns,
+        );
+        if (missingColumn == null) rethrow;
 
-      final fallbackColumns = _removeSelectColumn(columns, 'no_invoice');
-      if (fallbackColumns == preferredColumns) rethrow;
-      _invoiceNumberColumnAvailable = false;
-      return await request(fallbackColumns);
+        final disabledColumns = _invoiceColumnsToDisableForMissing(
+          missingColumn,
+        );
+        _unavailableInvoiceColumns.addAll(disabledColumns);
+        final fallbackColumns = _removeSelectColumns(
+          preferredColumns,
+          disabledColumns,
+        );
+        if (fallbackColumns == preferredColumns) rethrow;
+        if (missingColumn == 'no_invoice') {
+          _invoiceNumberColumnAvailable = false;
+        }
+        preferredColumns = fallbackColumns;
+      }
+    }
+  }
+
+  Future<T> _runExpenseSelectWithFallback<T>(
+    String columns,
+    Future<T> Function(String columns) request,
+  ) async {
+    var preferredColumns = _removeSelectColumns(
+      columns,
+      _unavailableExpenseColumns,
+    );
+    while (true) {
+      try {
+        return await request(preferredColumns);
+      } on PostgrestException catch (error) {
+        final missingColumn = _missingOptionalExpenseColumnFromError(
+          error,
+          preferredColumns,
+        );
+        if (missingColumn == null) rethrow;
+        _unavailableExpenseColumns.add(missingColumn);
+        final fallbackColumns = _removeSelectColumn(
+          preferredColumns,
+          missingColumn,
+        );
+        if (fallbackColumns == preferredColumns) rethrow;
+        preferredColumns = fallbackColumns;
+      }
     }
   }
 
@@ -2931,40 +3565,79 @@ class DashboardRepository {
     Map<String, dynamic> payload, {
     String selectColumns = 'id,no_invoice',
   }) async {
-    final preferredPayload = Map<String, dynamic>.from(payload);
+    var preferredPayload = Map<String, dynamic>.from(payload);
+    preferredPayload
+        .removeWhere((key, _) => _unavailableInvoiceColumns.contains(key));
     if (_invoiceNumberColumnAvailable == false) {
       preferredPayload.remove('no_invoice');
     }
-    final preferredColumns = _invoiceSelectColumnsForCurrentSchema(
+    var preferredColumns = _invoiceSelectColumnsForCurrentSchema(
       selectColumns,
     );
 
-    try {
-      final result = await _supabase
-          .from('invoices')
-          .insert(preferredPayload)
-          .select(preferredColumns)
-          .maybeSingle();
-      if (_selectColumnsInclude(preferredColumns, 'no_invoice')) {
-        _invoiceNumberColumnAvailable = true;
-      }
-      return result == null ? null : Map<String, dynamic>.from(result);
-    } on PostgrestException catch (error) {
-      if (!_isMissingInvoiceNumberColumnError(error) ||
-          !payload.containsKey('no_invoice')) {
-        rethrow;
-      }
+    while (true) {
+      try {
+        final result = await _supabase
+            .from('invoices')
+            .insert(preferredPayload)
+            .select(preferredColumns)
+            .maybeSingle();
+        if (_selectColumnsInclude(preferredColumns, 'no_invoice')) {
+          _invoiceNumberColumnAvailable = true;
+        }
+        return result == null ? null : Map<String, dynamic>.from(result);
+      } on PostgrestException catch (error) {
+        final missingColumn = _missingOptionalInvoicePayloadColumnFromError(
+          error,
+          preferredPayload,
+          preferredColumns,
+        );
+        if (missingColumn == null) rethrow;
 
-      _invoiceNumberColumnAvailable = false;
-      final fallbackPayload = Map<String, dynamic>.from(payload)
-        ..remove('no_invoice');
-      final fallbackColumns = _removeSelectColumn(selectColumns, 'no_invoice');
-      final result = await _supabase
-          .from('invoices')
-          .insert(fallbackPayload)
-          .select(fallbackColumns)
-          .maybeSingle();
-      return result == null ? null : Map<String, dynamic>.from(result);
+        final disabledColumns = _invoiceColumnsToDisableForMissing(
+          missingColumn,
+        );
+        _unavailableInvoiceColumns.addAll(disabledColumns);
+        final nextPayload = Map<String, dynamic>.from(preferredPayload)
+          ..removeWhere((key, _) => disabledColumns.contains(key));
+        final nextColumns = _removeSelectColumns(
+          preferredColumns,
+          disabledColumns,
+        );
+        if (nextPayload.length == preferredPayload.length &&
+            nextColumns == preferredColumns) {
+          rethrow;
+        }
+        if (missingColumn == 'no_invoice') {
+          _invoiceNumberColumnAvailable = false;
+        }
+        preferredPayload = nextPayload;
+        preferredColumns = nextColumns;
+      }
+    }
+  }
+
+  Future<void> _insertExpenseWithFallback(Map<String, dynamic> payload) async {
+    var preferredPayload = Map<String, dynamic>.from(payload)
+      ..removeWhere((key, _) => _unavailableExpenseColumns.contains(key));
+    while (preferredPayload.isNotEmpty) {
+      try {
+        await _supabase.from('expenses').insert(preferredPayload);
+        return;
+      } on PostgrestException catch (error) {
+        String? missingColumn;
+        for (final column in _optionalExpenseColumns) {
+          if (!preferredPayload.containsKey(column)) continue;
+          if (_isMissingColumnError(error, column)) {
+            missingColumn = column;
+            break;
+          }
+        }
+        if (missingColumn == null) rethrow;
+        _unavailableExpenseColumns.add(missingColumn);
+        preferredPayload = Map<String, dynamic>.from(preferredPayload)
+          ..remove(missingColumn);
+      }
     }
   }
 
@@ -2972,26 +3645,40 @@ class DashboardRepository {
     String id,
     Map<String, dynamic> payload,
   ) async {
-    final preferredPayload = Map<String, dynamic>.from(payload);
+    var preferredPayload = Map<String, dynamic>.from(payload);
+    preferredPayload
+        .removeWhere((key, _) => _unavailableInvoiceColumns.contains(key));
     if (_invoiceNumberColumnAvailable == false) {
       preferredPayload.remove('no_invoice');
     }
 
-    try {
-      await _supabase.from('invoices').update(preferredPayload).eq('id', id);
-      if (preferredPayload.containsKey('no_invoice')) {
-        _invoiceNumberColumnAvailable = true;
+    while (preferredPayload.isNotEmpty) {
+      try {
+        await _supabase.from('invoices').update(preferredPayload).eq('id', id);
+        if (preferredPayload.containsKey('no_invoice')) {
+          _invoiceNumberColumnAvailable = true;
+        }
+        return;
+      } on PostgrestException catch (error) {
+        String? missingColumn;
+        for (final column in _optionalInvoiceColumns) {
+          if (!preferredPayload.containsKey(column)) continue;
+          if (_isMissingColumnError(error, column)) {
+            missingColumn = column;
+            break;
+          }
+        }
+        if (missingColumn == null) rethrow;
+        final disabledColumns = _invoiceColumnsToDisableForMissing(
+          missingColumn,
+        );
+        _unavailableInvoiceColumns.addAll(disabledColumns);
+        if (missingColumn == 'no_invoice') {
+          _invoiceNumberColumnAvailable = false;
+        }
+        preferredPayload = Map<String, dynamic>.from(preferredPayload)
+          ..removeWhere((key, _) => disabledColumns.contains(key));
       }
-    } on PostgrestException catch (error) {
-      if (!_isMissingInvoiceNumberColumnError(error) ||
-          !payload.containsKey('no_invoice')) {
-        rethrow;
-      }
-
-      _invoiceNumberColumnAvailable = false;
-      final fallbackPayload = Map<String, dynamic>.from(payload)
-        ..remove('no_invoice');
-      await _supabase.from('invoices').update(fallbackPayload).eq('id', id);
     }
   }
 
@@ -3837,10 +4524,10 @@ class DashboardRepository {
     try {
       final invoices = _toMapList(
         await _runInvoiceSelectWithFallback(
-          'id,no_invoice,tanggal,tanggal_kop,lokasi_muat,lokasi_bongkar,armada_id,armada_start_date,rincian,nama_pelanggan',
+          'id,no_invoice,tanggal,tanggal_kop,lokasi_muat,lokasi_bongkar,armada_id,armada_start_date,rincian,nama_pelanggan,submission_role,approval_status',
           (columns) => _supabase.from('invoices').select(columns),
         ),
-      );
+      ).where(_isApprovedForBackoffice).toList();
 
       String normalizeMarker(String value) {
         return value
@@ -4246,4 +4933,3 @@ class DashboardRepository {
     }
   }
 }
-

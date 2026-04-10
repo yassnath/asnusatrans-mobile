@@ -423,7 +423,7 @@ class _CustomerSettingsViewState extends State<_CustomerSettingsView> {
         name: _name.text,
         username: _username.text,
         email: _email.text,
-        avatarUrl: _avatarUrl.text,
+        avatarUrl: widget.session.isPengurus ? '' : _avatarUrl.text,
         phone: _phone.text,
         address: _address.text,
         city: _city.text,
@@ -520,7 +520,8 @@ class _CustomerSettingsViewState extends State<_CustomerSettingsView> {
 
         final profile = snapshot.data;
         _hydrate(profile);
-        final avatar = _avatarUrl.text.trim();
+        final isPengurus = widget.session.isPengurus;
+        final avatar = isPengurus ? '' : _avatarUrl.text.trim();
         return ListView(
           padding: const EdgeInsets.all(12),
           children: [
@@ -537,23 +538,35 @@ class _CustomerSettingsViewState extends State<_CustomerSettingsView> {
                     child: CircleAvatar(
                       radius: 38,
                       backgroundColor: AppColors.surfaceSoft(context),
-                      backgroundImage:
-                          avatar.isEmpty ? null : NetworkImage(avatar),
-                      child: avatar.isEmpty
-                          ? const Icon(Icons.person_outline, size: 34)
-                          : null,
+                      backgroundImage: isPengurus || avatar.isEmpty
+                          ? null
+                          : NetworkImage(avatar),
+                      child: isPengurus
+                          ? Text(
+                              'P',
+                              style: TextStyle(
+                                color: AppColors.blue,
+                                fontSize: 30,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            )
+                          : avatar.isEmpty
+                              ? const Icon(Icons.person_outline, size: 34)
+                              : null,
                     ),
                   ),
                   const SizedBox(height: 10),
-                  TextField(
-                    controller: _avatarUrl,
-                    onChanged: (_) => setState(() {}),
-                    decoration: InputDecoration(
-                      labelText: _t('Foto (URL)', 'Photo (URL)'),
-                      hintText: 'https://.../foto.png',
+                  if (!isPengurus) ...[
+                    TextField(
+                      controller: _avatarUrl,
+                      onChanged: (_) => setState(() {}),
+                      decoration: InputDecoration(
+                        labelText: _t('Foto (URL)', 'Photo (URL)'),
+                        hintText: 'https://.../foto.png',
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
+                    const SizedBox(height: 8),
+                  ],
                   TextField(
                     controller: _name,
                     decoration: InputDecoration(labelText: _t('Nama', 'Name')),

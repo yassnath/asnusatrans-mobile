@@ -37,6 +37,7 @@ class AuthRepository {
         role: role,
         displayName: displayName,
         isCustomer: role == 'customer',
+        userId: user.id,
       );
     } catch (_) {
       return null;
@@ -101,6 +102,7 @@ class AuthRepository {
         role: role,
         displayName: displayName,
         isCustomer: role == 'customer',
+        userId: user.id,
       );
     } on AuthException catch (e) {
       throw Exception(
