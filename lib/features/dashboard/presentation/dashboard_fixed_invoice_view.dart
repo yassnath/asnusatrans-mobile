@@ -479,7 +479,6 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
               ),
               child: Text(_t('Tutup', 'Close')),
             ),
-            const SizedBox(width: 8),
             FilledButton.icon(
               onPressed: () => Navigator.pop(context, true),
               style: CvantButtonStyles.filled(
@@ -737,8 +736,7 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                         )
                                 ? _t('Perusahaan', 'Company')
                                 : _t('Pribadi', 'Personal');
-                        final isCompanyInvoice =
-                            _resolveIsCompanyInvoiceShared(
+                        final isCompanyInvoice = _resolveIsCompanyInvoiceShared(
                           invoiceNumber: item['no_invoice'],
                           customerName: item['nama_pelanggan'],
                         );
