@@ -336,6 +336,9 @@ alter table public.invoices
   add column if not exists edit_resolved_at timestamptz,
   add column if not exists edit_resolved_by uuid references public.profiles(id) on delete set null;
 
+alter table public.invoices
+  alter column no_invoice drop not null;
+
 update public.invoices
 set submission_role = 'admin'
 where coalesce(trim(submission_role), '') = '';

@@ -1434,7 +1434,7 @@ class DashboardRepository {
         if (effectiveSubmissionRole == 'pengurus' &&
             inserted['id'] != null &&
             '${inserted['id']}'.trim().isNotEmpty) {
-          await _notifyStaffAboutPengurusIncome(
+          await _notifyStaffAboutPengurusIncomeBestEffort(
             invoiceId: '${inserted['id']}',
             customerName: customerName,
             pickup: detailPickup,
@@ -1498,7 +1498,7 @@ class DashboardRepository {
     if (effectiveSubmissionRole == 'pengurus' &&
         singleInserted['id'] != null &&
         '${singleInserted['id']}'.trim().isNotEmpty) {
-      await _notifyStaffAboutPengurusIncome(
+      await _notifyStaffAboutPengurusIncomeBestEffort(
         invoiceId: '${singleInserted['id']}',
         customerName: customerName,
         pickup: pickup,
@@ -2641,6 +2641,26 @@ class DashboardRepository {
         'route': route,
       },
     );
+  }
+
+  Future<void> _notifyStaffAboutPengurusIncomeBestEffort({
+    required String invoiceId,
+    required String customerName,
+    required DateTime invoiceDate,
+    String? pickup,
+    String? destination,
+  }) async {
+    try {
+      await _notifyStaffAboutPengurusIncome(
+        invoiceId: invoiceId,
+        customerName: customerName,
+        invoiceDate: invoiceDate,
+        pickup: pickup,
+        destination: destination,
+      );
+    } catch (_) {
+      // Income pengurus tetap harus tersimpan walau notifikasi staff gagal.
+    }
   }
 
   Future<void> _notifyStaffAboutPengurusEditRequest(
