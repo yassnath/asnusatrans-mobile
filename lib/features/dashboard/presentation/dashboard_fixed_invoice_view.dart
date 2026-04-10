@@ -338,6 +338,76 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
     return lines.isEmpty ? '-' : lines.join(' | ');
   }
 
+  String _extractPreviewPlate(Map<String, dynamic> row) {
+    final direct =
+        '${row['plat_nomor'] ?? row['no_polisi'] ?? ''}'.toUpperCase().trim();
+    if (direct.isNotEmpty && direct != '-') return direct;
+
+    for (final key in const ['armada_manual', 'armada_label', 'armada']) {
+      final value = '${row[key] ?? ''}'.trim();
+      if (value.isEmpty) continue;
+      final parsed = _extractPlateFromText(value);
+      if (parsed != null) return parsed;
+      if (key == 'armada_manual') return value;
+    }
+
+    return '-';
+  }
+
+  Map<String, dynamic> _fallbackPreviewDetailRow(
+    Map<String, dynamic> item,
+  ) {
+    return <String, dynamic>{
+      'armada_start_date': item['armada_start_date'] ?? item['tanggal'],
+      'armada_end_date': item['armada_end_date'],
+      'tanggal': item['tanggal'],
+      'plat_nomor': item['plat_nomor'] ?? item['no_polisi'],
+      'no_polisi': item['no_polisi'] ?? item['plat_nomor'],
+      'armada_manual': item['armada_manual'],
+      'armada_label': item['armada_label'] ?? item['armada'],
+      'nama_supir': item['nama_supir'] ?? item['supir'],
+      'muatan': item['muatan'],
+      'lokasi_muat': item['lokasi_muat'],
+      'lokasi_bongkar': item['lokasi_bongkar'],
+      'tonase': item['tonase'],
+      'harga': item['harga'],
+      'subtotal': item['subtotal'] ?? item['total_biaya'],
+    };
+  }
+
+  List<Map<String, dynamic>> _buildPreviewDetailRows(
+    Map<String, dynamic> item,
+  ) {
+    final rows = _toDetailList(item['rincian']);
+    final detailRows = rows.isNotEmpty
+        ? rows.map((row) => Map<String, dynamic>.from(row)).toList()
+        : <Map<String, dynamic>>[_fallbackPreviewDetailRow(item)];
+
+    detailRows.sort((a, b) {
+      final aDate = Formatters.parseDate(
+            a['armada_start_date'] ?? a['tanggal'],
+          ) ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+      final bDate = Formatters.parseDate(
+            b['armada_start_date'] ?? b['tanggal'],
+          ) ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+      final byDate = aDate.compareTo(bDate);
+      if (byDate != 0) return byDate;
+      return _extractPreviewPlate(a).compareTo(_extractPreviewPlate(b));
+    });
+
+    return detailRows;
+  }
+
+  double _previewDetailSubtotal(Map<String, dynamic> row) {
+    for (final key in const ['subtotal', 'total', 'total_biaya', 'jumlah']) {
+      final value = _toNum(row[key]);
+      if (value > 0) return value;
+    }
+    return _toNum(row['tonase']) * _toNum(row['harga']);
+  }
+
   String _resolveDisplayNumber(Map<String, dynamic> item) {
     final batchNumber = '${item['__batch_invoice_number'] ?? ''}'.trim();
     if (batchNumber.isNotEmpty) {
@@ -427,6 +497,7 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                         source['tanggal_kop'] ?? source['tanggal'],
                         customerName: source['nama_pelanggan'],
                       );
+                      final detailRows = _buildPreviewDetailRows(source);
                       return Container(
                         width: double.infinity,
                         margin: const EdgeInsets.only(bottom: 8),
@@ -459,6 +530,109 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                               style:
                                   const TextStyle(fontWeight: FontWeight.w700),
                             ),
+                            const SizedBox(height: 10),
+                            Text(
+                              _t(
+                                'Detail keberangkatan armada',
+                                'Armada departure details',
+                              ),
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                            const SizedBox(height: 6),
+                            ...detailRows.asMap().entries.map((entry) {
+                              final index = entry.key;
+                              final detail = entry.value;
+                              final startDate = detail['armada_start_date'] ??
+                                  detail['tanggal'] ??
+                                  source['tanggal'];
+                              final endDate = detail['armada_end_date'];
+                              final startLabel = Formatters.dmy(startDate);
+                              final endLabel = '${endDate ?? ''}'.trim().isEmpty
+                                  ? ''
+                                  : Formatters.dmy(endDate);
+                              final dateLabel =
+                                  endLabel.isEmpty || endLabel == startLabel
+                                      ? startLabel
+                                      : '$startLabel - $endLabel';
+                              final driver =
+                                  '${detail['nama_supir'] ?? detail['supir'] ?? '-'}'
+                                      .trim();
+                              final muatan =
+                                  '${detail['muatan'] ?? '-'}'.trim();
+                              final muat = _normalizeInvoicePrintLocationLabel(
+                                detail['lokasi_muat'],
+                              );
+                              final bongkar =
+                                  _normalizeInvoicePrintLocationLabel(
+                                detail['lokasi_bongkar'],
+                              );
+                              final tonase = _toNum(detail['tonase']);
+                              final harga = _toNum(detail['harga']);
+                              final subtotal = _previewDetailSubtotal(detail);
+
+                              return Container(
+                                width: double.infinity,
+                                margin: EdgeInsets.only(
+                                  bottom:
+                                      index == detailRows.length - 1 ? 0 : 6,
+                                ),
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: AppColors.surfaceSoft(context),
+                                  border: Border.all(
+                                    color: AppColors.cardBorder(context),
+                                  ),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            '${index + 1}. $dateLabel • ${_extractPreviewPlate(detail)}',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          Formatters.rupiah(subtotal),
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      '${driver.isEmpty ? '-' : driver}: $muat-$bongkar',
+                                      style: TextStyle(
+                                        color: AppColors.textMutedFor(context),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      [
+                                        '${_t('Muatan', 'Load')}: ${muatan.isEmpty ? '-' : muatan}',
+                                        if (tonase > 0)
+                                          '${_t('Tonase', 'Tonnage')}: ${formatInvoiceTonase(tonase)}',
+                                        if (harga > 0)
+                                          '${_t('Harga/ton', 'Price/ton')}: ${formatInvoiceHargaPerTon(harga)}',
+                                      ].join(' • '),
+                                      style: TextStyle(
+                                        color: AppColors.textMutedFor(context),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }),
                           ],
                         ),
                       );
