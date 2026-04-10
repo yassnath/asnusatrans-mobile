@@ -619,6 +619,11 @@ class DashboardRepository {
 
   Future<List<Map<String, dynamic>>> fetchArmadas() async {
     final rpcSynced = await _syncArmadaStatusesRpcBestEffort();
+    final rpcArmadas = await _fetchIncomeFormArmadasRpcBestEffort();
+    if (rpcArmadas.isNotEmpty) {
+      return rpcArmadas.map(_normalizeArmadaRow).toList();
+    }
+
     const variants = <String>[
       'id,nama_truk,plat_nomor,kapasitas,status,is_active,created_at,updated_at',
       'id,nama_truk,plat_nomor,kapasitas,status,is_active,created_at',
@@ -649,6 +654,17 @@ class DashboardRepository {
     }
 
     throw Exception('Gagal memuat armada: ${lastError?.message ?? 'unknown'}');
+  }
+
+  Future<List<Map<String, dynamic>>>
+      _fetchIncomeFormArmadasRpcBestEffort() async {
+    try {
+      final res = await _supabase.rpc('get_income_form_armadas');
+      return _toMapList(res);
+    } catch (_) {
+      // Schema lama belum punya RPC referensi form income.
+      return <Map<String, dynamic>>[];
+    }
   }
 
   Future<bool> _syncArmadaStatusesRpcBestEffort() async {
@@ -883,6 +899,9 @@ class DashboardRepository {
   }
 
   Future<List<Map<String, dynamic>>> fetchHargaPerTonRules() async {
+    final rpcRules = await _fetchHargaPerTonRulesRpcBestEffort();
+    if (rpcRules.isNotEmpty) return rpcRules;
+
     try {
       final res = await _supabase
           .from('harga_per_ton_rules')
@@ -902,6 +921,17 @@ class DashboardRepository {
         return <Map<String, dynamic>>[];
       }
       throw Exception('Gagal memuat referensi harga / ton: ${e.message}');
+    }
+  }
+
+  Future<List<Map<String, dynamic>>>
+      _fetchHargaPerTonRulesRpcBestEffort() async {
+    try {
+      final res = await _supabase.rpc('get_income_form_harga_per_ton_rules');
+      return _toMapList(res);
+    } catch (_) {
+      // Schema lama belum punya RPC referensi harga / ton.
+      return <Map<String, dynamic>>[];
     }
   }
 

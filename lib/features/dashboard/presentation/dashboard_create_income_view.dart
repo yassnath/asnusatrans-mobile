@@ -943,7 +943,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
         tonase: _toNum(first['tonase']),
         harga: _toNum(first['harga']),
         namaSupir: driverNames.isEmpty ? null : driverNames,
-        acceptedBy: _acceptedBy,
+        acceptedBy: widget.session.isPengurus ? 'Pengurus' : _acceptedBy,
         customerId: _linkedCustomerId,
         orderId: _linkedOrderId,
         details: detailsPayload,
@@ -1661,57 +1661,68 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                         labelText: _t('Total Bayar', 'Grand Total')),
                     child: Text(Formatters.rupiah(_totalBayar)),
                   ),
-                  const SizedBox(height: 8),
-                  CvantDropdownField<String>(
-                    initialValue: _status,
-                    decoration: InputDecoration(
-                      labelText: _t('Status', 'Status'),
-                    ),
-                    items: const ['Unpaid', 'Paid', 'Waiting']
-                        .map(
-                          (s) => DropdownMenuItem<String>(
-                            value: s,
-                            child: Text(s),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (value) =>
-                        setState(() => _status = value ?? _status),
-                  ),
-                  const SizedBox(height: 8),
-                  InkWell(
-                    onTap: _pickDueDate,
-                    borderRadius: BorderRadius.circular(10),
-                    child: InputDecorator(
+                  if (!widget.session.isPengurus) ...[
+                    const SizedBox(height: 8),
+                    CvantDropdownField<String>(
+                      initialValue: _status,
                       decoration: InputDecoration(
-                        labelText: _t('Tanggal Pelunasan', 'Payment Date'),
+                        labelText: _t('Status', 'Status'),
                       ),
-                      child: Text(
-                        _dueDate.text.trim().isEmpty
-                            ? '-'
-                            : Formatters.dmy(_dueDate.text.trim()),
+                      items: const ['Unpaid', 'Paid', 'Waiting']
+                          .map(
+                            (s) => DropdownMenuItem<String>(
+                              value: s,
+                              child: Text(s),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) =>
+                          setState(() => _status = value ?? _status),
+                    ),
+                    const SizedBox(height: 8),
+                    InkWell(
+                      onTap: _pickDueDate,
+                      borderRadius: BorderRadius.circular(10),
+                      child: InputDecorator(
+                        decoration: InputDecoration(
+                          labelText: _t('Tanggal Pelunasan', 'Payment Date'),
+                        ),
+                        child: Text(
+                          _dueDate.text.trim().isEmpty
+                              ? '-'
+                              : Formatters.dmy(_dueDate.text.trim()),
+                        ),
                       ),
                     ),
-                  ),
+                  ],
                   const SizedBox(height: 8),
-                  CvantDropdownField<String>(
-                    initialValue: _acceptedBy,
-                    decoration: InputDecoration(
-                      labelText: _t('Diterima Oleh', 'Accepted By'),
+                  if (widget.session.isPengurus)
+                    InputDecorator(
+                      decoration: InputDecoration(
+                        labelText: _t('Diterima Oleh', 'Accepted By'),
+                      ),
+                      child: const Text(
+                        'Pengurus',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    )
+                  else
+                    CvantDropdownField<String>(
+                      initialValue: _acceptedBy,
+                      decoration: InputDecoration(
+                        labelText: _t('Diterima Oleh', 'Accepted By'),
+                      ),
+                      items: const ['Admin', 'Owner']
+                          .map(
+                            (item) => DropdownMenuItem(
+                              value: item,
+                              child: Text(item),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) =>
+                          setState(() => _acceptedBy = value ?? _acceptedBy),
                     ),
-                    items: (widget.session.isPengurus
-                            ? const ['Pengurus']
-                            : const ['Admin', 'Owner'])
-                        .map(
-                          (item) => DropdownMenuItem(
-                            value: item,
-                            child: Text(item),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (value) =>
-                        setState(() => _acceptedBy = value ?? _acceptedBy),
-                  ),
                   const SizedBox(height: 14),
                   SizedBox(
                     width: double.infinity,

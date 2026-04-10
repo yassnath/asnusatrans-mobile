@@ -50,7 +50,11 @@ begin
       v_email,
       crypt(v_password, gen_salt('bf')),
       timezone('utc', now()),
-      '{"provider":"email","providers":["email"]}'::jsonb,
+      jsonb_build_object(
+        'provider', 'email',
+        'providers', jsonb_build_array('email'),
+        'role', 'pengurus'
+      ),
       jsonb_build_object(
         'name', 'Pengurus',
         'username', 'pengurus',
@@ -68,7 +72,12 @@ begin
     set
       encrypted_password = crypt(v_password, gen_salt('bf')),
       email_confirmed_at = coalesce(email_confirmed_at, timezone('utc', now())),
-      raw_app_meta_data = '{"provider":"email","providers":["email"]}'::jsonb,
+      raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb) ||
+        jsonb_build_object(
+          'provider', 'email',
+          'providers', jsonb_build_array('email'),
+          'role', 'pengurus'
+        ),
       raw_user_meta_data = coalesce(raw_user_meta_data, '{}'::jsonb) ||
         jsonb_build_object(
           'name', 'Pengurus',
@@ -183,6 +192,30 @@ begin
 end;
 $$;
 
+create or replace function public.current_role()
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(
+    (select p.role from public.profiles p where p.id = auth.uid() limit 1),
+    nullif(auth.jwt()->'app_metadata'->>'role', ''),
+    'customer'
+  );
+$$;
+
+create or replace function public.is_staff()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.current_role() in ('admin', 'owner');
+$$;
+
 create or replace function public.is_pengurus()
 returns boolean
 language sql
@@ -283,6 +316,10 @@ begin
     and lower(coalesce(a.status, '')) <> lower(target_status.next_status);
 end;
 $$;
+
+alter table public.armadas
+  add column if not exists kapasitas numeric(12,2) not null default 0,
+  add column if not exists status text not null default 'Ready';
 
 alter table public.invoices
   add column if not exists submission_role text not null default 'admin',
@@ -395,6 +432,79 @@ begin
   if not found then
     raise exception 'Invoice pengurus tidak ditemukan.';
   end if;
+end;
+$$;
+
+create or replace function public.get_income_form_armadas()
+returns table (
+  id uuid,
+  nama_truk text,
+  plat_nomor text,
+  kapasitas numeric,
+  status text,
+  is_active boolean,
+  created_at timestamptz,
+  updated_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not (public.is_staff() or public.is_pengurus()) then
+    return;
+  end if;
+
+  perform public.sync_armada_statuses();
+
+  return query
+  select
+    a.id,
+    a.nama_truk,
+    a.plat_nomor,
+    a.kapasitas,
+    a.status,
+    a.is_active,
+    a.created_at,
+    a.updated_at
+  from public.armadas a
+  order by a.created_at desc;
+end;
+$$;
+
+create or replace function public.get_income_form_harga_per_ton_rules()
+returns table (
+  id uuid,
+  lokasi_muat text,
+  lokasi_bongkar text,
+  harga_per_ton numeric,
+  is_active boolean,
+  priority integer,
+  created_at timestamptz,
+  updated_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not (public.is_staff() or public.is_pengurus()) then
+    return;
+  end if;
+
+  return query
+  select
+    h.id,
+    h.lokasi_muat,
+    h.lokasi_bongkar,
+    h.harga_per_ton,
+    h.is_active,
+    h.priority,
+    h.created_at,
+    h.updated_at
+  from public.harga_per_ton_rules h
+  where h.is_active
+  order by h.priority desc, h.created_at desc;
 end;
 $$;
 
@@ -528,6 +638,8 @@ grant execute on function public.is_pengurus() to anon, authenticated;
 grant execute on function public.current_role() to anon, authenticated;
 grant execute on function public.is_staff() to anon, authenticated;
 grant execute on function public.sync_armada_statuses() to authenticated;
+grant execute on function public.get_income_form_armadas() to authenticated;
+grant execute on function public.get_income_form_harga_per_ton_rules() to authenticated;
 grant select on public.armadas to authenticated;
 grant select on public.harga_per_ton_rules to authenticated;
 revoke all on function public.create_role_notifications(text[], text, text, text, text, uuid, jsonb) from public;
