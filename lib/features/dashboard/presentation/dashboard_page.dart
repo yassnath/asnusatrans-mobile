@@ -754,7 +754,7 @@ class _DashboardPageState extends State<DashboardPage> {
                   backgroundImage: widget.session.isPengurus
                       ? null
                       : (isCustomer
-                          ? const AssetImage('assets/images/logo-icon.webp')
+                          ? const AssetImage('assets/images/iconapk.png')
                           : AssetImage(
                               widget.session.isOwner
                                   ? 'assets/images/pp-owner.webp'
@@ -1399,7 +1399,7 @@ class _DashboardDrawer extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(18, 10, 18, 16),
               child: Image.asset(
-                'assets/images/logo.webp',
+                'assets/images/logo.png',
                 height: 42,
                 fit: BoxFit.contain,
               ),

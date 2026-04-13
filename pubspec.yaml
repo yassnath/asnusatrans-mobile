@@ -51,6 +51,7 @@ flutter_launcher_icons:
 flutter:
   uses-material-design: true
   assets:
+    - assets/images/logo.png
     - assets/images/logo.webp
     - assets/images/logo-light.webp
     - assets/images/logo-icon.webp
@@ -62,6 +63,12 @@ flutter:
     - tooling/windows/render_invoice_table.ps1
     - assets/images/pp-admin.webp
     - assets/images/pp-owner.webp
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter[opsz,wght].ttf
+        - asset: assets/fonts/Inter-Italic[opsz,wght].ttf
+          style: italic
 
 
 

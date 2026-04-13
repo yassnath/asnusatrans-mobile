@@ -754,7 +754,7 @@ class _AdminAccessDeniedView extends StatelessWidget {
       children: [
         Row(
           children: [
-            Image.asset('assets/images/logo.webp', width: 96),
+            Image.asset('assets/images/logo.png', width: 96),
             const Spacer(),
             OutlinedButton(
               onPressed: onGoHome,

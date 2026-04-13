@@ -72,7 +72,7 @@ class AuthShell extends StatelessWidget {
                         children: [
                           Center(
                             child: Image.asset(
-                              'assets/images/logo.webp',
+                              'assets/images/logo.png',
                               height: 64,
                               fit: BoxFit.contain,
                             ),

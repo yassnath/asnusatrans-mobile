@@ -67,7 +67,7 @@ class _AdminComingSoonViewState extends State<_AdminComingSoonView> {
       children: [
         Row(
           children: [
-            Image.asset('assets/images/logo.webp', width: 96),
+            Image.asset('assets/images/logo.png', width: 96),
             const Spacer(),
             OutlinedButton(
               onPressed: widget.onGoHome,
@@ -247,7 +247,8 @@ class _AdminCalendarViewState extends State<_AdminCalendarView> {
       );
     }
 
-    DateTime resolveCreatedMoment(Map<String, dynamic> item, {dynamic fallback}) {
+    DateTime resolveCreatedMoment(Map<String, dynamic> item,
+        {dynamic fallback}) {
       return Formatters.parseDate(item['created_at']) ??
           Formatters.parseDate(fallback) ??
           DateTime.fromMillisecondsSinceEpoch(0);
@@ -340,7 +341,9 @@ class _AdminCalendarViewState extends State<_AdminCalendarView> {
         customerName: invoice['nama_pelanggan'],
       );
       final customer = '${invoice['nama_pelanggan'] ?? '-'}'.trim();
-      if (number == '-' || number.isEmpty) return customer.isEmpty ? '-' : customer;
+      if (number == '-' || number.isEmpty) {
+        return customer.isEmpty ? '-' : customer;
+      }
       if (customer.isEmpty || customer == '-') return number;
       return '$number • $customer';
     }
@@ -355,7 +358,8 @@ class _AdminCalendarViewState extends State<_AdminCalendarView> {
           final label = entry.driver.isEmpty
               ? entry.route
               : '${entry.driver}: ${entry.route}';
-          final key = label.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
+          final key =
+              label.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
           if (label.trim().isNotEmpty && seen.add(key)) {
             labels.add(label);
           }
@@ -366,7 +370,8 @@ class _AdminCalendarViewState extends State<_AdminCalendarView> {
       final number =
           Formatters.invoiceNumber(expense['no_expense'], expense['tanggal']);
       final description =
-          '${expense['keterangan'] ?? expense['note'] ?? _t('Expense', 'Expense')}'.trim();
+          '${expense['keterangan'] ?? expense['note'] ?? _t('Expense', 'Expense')}'
+              .trim();
       if (number == '-' || number.isEmpty) {
         return description.isEmpty ? _t('Expense', 'Expense') : description;
       }
@@ -875,9 +880,9 @@ class _AdminCalendarViewState extends State<_AdminCalendarView> {
                 final dayHeaderColor = isSunday
                     ? AppColors.danger
                     : AppColors.textMutedFor(context);
-                final items =
-                    [...(eventsByDate[key] ?? const <_CalendarEvent>[])]
-                      ..sort(_compareCalendarEvents);
+                final items = [
+                  ...(eventsByDate[key] ?? const <_CalendarEvent>[])
+                ]..sort(_compareCalendarEvents);
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: _PanelCard(

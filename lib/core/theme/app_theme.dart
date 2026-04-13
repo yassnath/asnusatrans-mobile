@@ -1,10 +1,29 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import 'app_colors.dart';
 
 class AppTheme {
   const AppTheme._();
+
+  static TextTheme _withFontFamily(TextTheme theme, String fontFamily) {
+    return theme.copyWith(
+      displayLarge: theme.displayLarge?.copyWith(fontFamily: fontFamily),
+      displayMedium: theme.displayMedium?.copyWith(fontFamily: fontFamily),
+      displaySmall: theme.displaySmall?.copyWith(fontFamily: fontFamily),
+      headlineLarge: theme.headlineLarge?.copyWith(fontFamily: fontFamily),
+      headlineMedium: theme.headlineMedium?.copyWith(fontFamily: fontFamily),
+      headlineSmall: theme.headlineSmall?.copyWith(fontFamily: fontFamily),
+      titleLarge: theme.titleLarge?.copyWith(fontFamily: fontFamily),
+      titleMedium: theme.titleMedium?.copyWith(fontFamily: fontFamily),
+      titleSmall: theme.titleSmall?.copyWith(fontFamily: fontFamily),
+      bodyLarge: theme.bodyLarge?.copyWith(fontFamily: fontFamily),
+      bodyMedium: theme.bodyMedium?.copyWith(fontFamily: fontFamily),
+      bodySmall: theme.bodySmall?.copyWith(fontFamily: fontFamily),
+      labelLarge: theme.labelLarge?.copyWith(fontFamily: fontFamily),
+      labelMedium: theme.labelMedium?.copyWith(fontFamily: fontFamily),
+      labelSmall: theme.labelSmall?.copyWith(fontFamily: fontFamily),
+    );
+  }
 
   static ThemeData dark() {
     final base = ThemeData(
@@ -71,7 +90,6 @@ class AppTheme {
     required Color popupBackground,
     required Color divider,
   }) {
-    final inter = GoogleFonts.interTextTheme(base.textTheme);
     final filledOverlay = WidgetStateProperty.resolveWith<Color?>((states) {
       if (states.contains(WidgetState.pressed)) {
         return Colors.white.withValues(alpha: 0.18);
@@ -113,7 +131,10 @@ class AppTheme {
       canvasColor: scaffold,
       splashColor: AppColors.blue.withValues(alpha: 0.15),
       splashFactory: InkRipple.splashFactory,
-      textTheme: inter.apply(bodyColor: textPrimary, displayColor: textPrimary),
+      textTheme: _withFontFamily(base.textTheme, 'Inter').apply(
+        bodyColor: textPrimary,
+        displayColor: textPrimary,
+      ),
       appBarTheme: AppBarTheme(
         backgroundColor: Colors.transparent,
         foregroundColor: textPrimary,
