@@ -8,6 +8,17 @@ class AuthRepository {
 
   final SupabaseClient _supabase;
 
+  String _resolveRole(User user, {Map<String, dynamic>? profile}) {
+    final appRole = '${user.appMetadata['role'] ?? ''}'.trim().toLowerCase();
+    if (appRole == 'admin' || appRole == 'owner' || appRole == 'pengurus') {
+      return appRole;
+    }
+    return (profile?['role'] ?? user.userMetadata?['role'] ?? 'customer')
+        .toString()
+        .trim()
+        .toLowerCase();
+  }
+
   Future<AuthSession?> restoreSession() async {
     final session = _supabase.auth.currentSession;
     final user = _supabase.auth.currentUser;
@@ -21,11 +32,7 @@ class AuthRepository {
         // Jangan gagalkan login jika tabel/policy profile belum siap.
         profile = null;
       }
-      final role =
-          (profile?['role'] ?? user.userMetadata?['role'] ?? 'customer')
-              .toString()
-              .trim()
-              .toLowerCase();
+      final role = _resolveRole(user, profile: profile);
       final displayName = (profile?['name'] ??
               user.userMetadata?['name'] ??
               user.email ??
@@ -86,11 +93,7 @@ class AuthRepository {
       }
 
       final profile = await _readProfile(user.id);
-      final role =
-          (profile?['role'] ?? user.userMetadata?['role'] ?? 'customer')
-              .toString()
-              .trim()
-              .toLowerCase();
+      final role = _resolveRole(user, profile: profile);
       final displayName = (profile?['name'] ??
               user.userMetadata?['name'] ??
               user.email ??

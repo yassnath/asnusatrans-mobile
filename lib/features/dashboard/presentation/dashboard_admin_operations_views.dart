@@ -548,11 +548,13 @@ class _AdminOrderAcceptanceView extends StatefulWidget {
     required this.repository,
     required this.session,
     required this.onCreateInvoice,
+    this.onDataChanged,
   });
 
   final DashboardRepository repository;
   final AuthSession session;
   final ValueChanged<_InvoicePrefillData> onCreateInvoice;
+  final VoidCallback? onDataChanged;
 
   @override
   State<_AdminOrderAcceptanceView> createState() =>
@@ -595,6 +597,7 @@ class _AdminOrderAcceptanceViewState extends State<_AdminOrderAcceptanceView> {
       setState(() {
         _future = _load();
       });
+      widget.onDataChanged?.call();
     } catch (e) {
       if (!mounted) return;
       showCvantPopup(
@@ -648,6 +651,7 @@ class _AdminOrderAcceptanceViewState extends State<_AdminOrderAcceptanceView> {
       setState(() {
         _future = _load();
       });
+      widget.onDataChanged?.call();
     } catch (e) {
       if (!mounted) return;
       showCvantPopup(
@@ -889,8 +893,8 @@ class _AdminOrderAcceptanceViewState extends State<_AdminOrderAcceptanceView> {
                                 ),
                                 child: Text(
                                   isEditRequest
-                                      ? _t('ACC Edit', 'Approve Edit')
-                                      : _t('ACC Income', 'Approve Income'),
+                                      ? _t('Terima Edit', 'Accept Edit')
+                                      : _t('Terima', 'Accept'),
                                 ),
                               ),
                             ),
@@ -911,7 +915,7 @@ class _AdminOrderAcceptanceViewState extends State<_AdminOrderAcceptanceView> {
                                 child: Text(
                                   isEditRequest
                                       ? _t('Tolak Edit', 'Reject Edit')
-                                      : _t('Tolak Income', 'Reject Income'),
+                                      : _t('Tolak', 'Reject'),
                                 ),
                               ),
                             ),

@@ -19,6 +19,9 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
   late Future<List<Map<String, dynamic>>> _future;
   final _search = TextEditingController();
   bool _backgroundInvoiceNumberNormalizationRunning = false;
+  late int _selectedMonth;
+  late int _selectedYear;
+  String _customerKind = 'all';
 
   bool get _isEn => LanguageController.language.value == AppLanguage.en;
   String _t(String id, String en) => _isEn ? en : id;
@@ -160,6 +163,9 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
   @override
   void initState() {
     super.initState();
+    final now = DateTime.now();
+    _selectedMonth = now.month;
+    _selectedYear = now.year;
     _future = _load();
     unawaited(_normalizeInvoiceNumbersInBackground());
   }
@@ -842,6 +848,32 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
     return rows;
   }
 
+  bool _matchesFixedInvoiceFilters(Map<String, dynamic> item) {
+    final q = _search.text.trim().toLowerCase();
+    if (q.isNotEmpty && !_flattenSearchText(item).toLowerCase().contains(q)) {
+      return false;
+    }
+
+    final date = Formatters.parseDate(
+      item['tanggal_kop'] ??
+          item['tanggal'] ??
+          item['__batch_created_at'] ??
+          item['created_at'],
+    );
+    if (date == null) return false;
+    if (date.month != _selectedMonth || date.year != _selectedYear) {
+      return false;
+    }
+
+    final isCompany = _resolveIsCompanyInvoiceShared(
+      invoiceNumber: item['no_invoice'],
+      customerName: item['nama_pelanggan'],
+    );
+    if (_customerKind == 'company' && !isCompany) return false;
+    if (_customerKind == 'personal' && isCompany) return false;
+    return true;
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<List<Map<String, dynamic>>>(
@@ -858,27 +890,159 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
             }),
           );
         }
-        final rows = (snapshot.data ?? const <Map<String, dynamic>>[]).where(
-          (item) {
-            final q = _search.text.trim().toLowerCase();
-            if (q.isEmpty) return true;
-            return _flattenSearchText(item).toLowerCase().contains(q);
-          },
-        ).toList();
+        final rows = (snapshot.data ?? const <Map<String, dynamic>>[])
+            .where(_matchesFixedInvoiceFilters)
+            .toList();
+        final now = DateTime.now();
         return Column(
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-              child: TextField(
-                controller: _search,
-                onChanged: (_) => setState(() {}),
-                decoration: InputDecoration(
-                  hintText: _t(
-                    'Cari invoice fix...',
-                    'Search fixed invoice...',
+              child: Column(
+                children: [
+                  TextField(
+                    controller: _search,
+                    onChanged: (_) => setState(() {}),
+                    decoration: InputDecoration(
+                      hintText: _t(
+                        'Cari invoice fix...',
+                        'Search fixed invoice...',
+                      ),
+                      prefixIcon: const Icon(Icons.search),
+                    ),
                   ),
-                  prefixIcon: const Icon(Icons.search),
-                ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () =>
+                              setState(() => _customerKind = 'all'),
+                          style: CvantButtonStyles.outlined(
+                            context,
+                            color: _customerKind == 'all'
+                                ? AppColors.blue
+                                : AppColors.textMutedFor(context),
+                            borderColor: _customerKind == 'all'
+                                ? AppColors.blue
+                                : AppColors.cardBorder(context),
+                          ),
+                          child: Text(_t('Semua', 'All')),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () =>
+                              setState(() => _customerKind = 'company'),
+                          style: CvantButtonStyles.outlined(
+                            context,
+                            color: _customerKind == 'company'
+                                ? AppColors.success
+                                : AppColors.textMutedFor(context),
+                            borderColor: _customerKind == 'company'
+                                ? AppColors.success
+                                : AppColors.cardBorder(context),
+                          ),
+                          child: Text(_t('Perusahaan', 'Company')),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () =>
+                              setState(() => _customerKind = 'personal'),
+                          style: CvantButtonStyles.outlined(
+                            context,
+                            color: _customerKind == 'personal'
+                                ? AppColors.warning
+                                : AppColors.textMutedFor(context),
+                            borderColor: _customerKind == 'personal'
+                                ? AppColors.warning
+                                : AppColors.cardBorder(context),
+                          ),
+                          child: Text(_t('Pribadi', 'Personal')),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: CvantDropdownField<int>(
+                          initialValue: _selectedMonth,
+                          decoration: InputDecoration(
+                            labelText: _t('Bulan', 'Month'),
+                          ),
+                          items: List.generate(
+                            12,
+                            (index) => DropdownMenuItem<int>(
+                              value: index + 1,
+                              child: Text(
+                                _t(
+                                  const [
+                                    'Januari',
+                                    'Februari',
+                                    'Maret',
+                                    'April',
+                                    'Mei',
+                                    'Juni',
+                                    'Juli',
+                                    'Agustus',
+                                    'September',
+                                    'Oktober',
+                                    'November',
+                                    'Desember',
+                                  ][index],
+                                  const [
+                                    'January',
+                                    'February',
+                                    'March',
+                                    'April',
+                                    'May',
+                                    'June',
+                                    'July',
+                                    'August',
+                                    'September',
+                                    'October',
+                                    'November',
+                                    'December',
+                                  ][index],
+                                ),
+                              ),
+                            ),
+                          ),
+                          onChanged: (value) => setState(
+                            () => _selectedMonth = value ?? now.month,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: CvantDropdownField<int>(
+                          initialValue: _selectedYear,
+                          decoration: InputDecoration(
+                            labelText: _t('Tahun', 'Year'),
+                          ),
+                          items: List.generate(
+                            6,
+                            (index) {
+                              final year = now.year - index;
+                              return DropdownMenuItem<int>(
+                                value: year,
+                                child: Text('$year'),
+                              );
+                            },
+                          ),
+                          onChanged: (value) => setState(
+                            () => _selectedYear = value ?? now.year,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
             Expanded(

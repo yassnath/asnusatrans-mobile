@@ -23,10 +23,15 @@ dependencies:
   pdf: ^3.11.3
   printing: ^5.13.4
   image: ^4.5.4
+  firebase_core: ^4.6.0
+  firebase_messaging: ^16.1.3
+  flutter_local_notifications: ^21.0.0
 
 dependency_overrides:
   app_links:
     path: third_party/app_links
+  flutter_local_notifications_windows:
+    path: third_party/flutter_local_notifications_windows
   flutter_secure_storage_windows:
     path: third_party/flutter_secure_storage_windows
 
@@ -52,6 +57,7 @@ flutter:
     - assets/images/iconapk.png
     - assets/images/kopsurat.jpeg
     - assets/kopsurat.jpeg
+    - assets/fonts/
     - assets/templates/invoice_table_template.xlsx
     - tooling/windows/render_invoice_table.ps1
     - assets/images/pp-admin.webp

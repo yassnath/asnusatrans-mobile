@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "138985650635",
+    "project_id": "asnusatrans-340b7",
+    "storage_bucket": "asnusatrans-340b7.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:138985650635:android:44ed7662beae6337ee5e4e",
+        "android_client_info": {
+          "package_name": "com.example.cvant_mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDowsm5_ggvlRpfyVt0NfPOm34opM4wqiU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

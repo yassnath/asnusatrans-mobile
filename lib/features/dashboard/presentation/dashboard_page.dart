@@ -20,6 +20,7 @@ import '../../../core/theme/cvant_button_styles.dart';
 import '../../../core/theme/theme_controller.dart';
 import '../../../core/config/app_config.dart';
 import '../../../core/i18n/language_controller.dart';
+import '../../../core/notifications/push_notification_service.dart';
 import '../../../core/security/app_security.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/cvant_dropdown_field.dart';
@@ -234,6 +235,7 @@ class DashboardPage extends StatefulWidget {
 }
 
 class _DashboardPageState extends State<DashboardPage> {
+  static const _staffAlertSeenPrefsKeyPrefix = 'staff_alert_seen_at_v1';
   static const _adminMenus = <String>[
     'Dashboard',
     'Invoice List',
@@ -272,25 +274,221 @@ class _DashboardPageState extends State<DashboardPage> {
       ValueNotifier<List<ArmadaUsage>?>(null);
   final ValueNotifier<List<ActivityItem>?> _recentActivitiesNotifier =
       ValueNotifier<List<ActivityItem>?>(null);
+  StreamSubscription<PushNavigationIntent>? _pushIntentSubscription;
   int _adminIndex = 0;
   int _customerIndex = 0;
   _InvoicePrefillData? _invoicePrefill;
   int _staffApprovalBadgeCount = 0;
   List<Map<String, dynamic>> _staffNotifications = const [];
+  DateTime? _staffAlertsSeenAt;
+  bool _staffAlertsSeenLoaded = false;
+
+  int get _staffUnreadNotificationCount => _staffNotifications
+      .where(
+        (item) =>
+            '${item['status'] ?? 'unread'}'.trim().toLowerCase() != 'read',
+      )
+      .length;
+
+  int get _staffNotificationBadgeCount => _staffUnreadNotificationCount;
+
+  String get _staffAlertSeenPrefsKey {
+    final userKey = widget.session.userId?.trim();
+    if (userKey != null && userKey.isNotEmpty) {
+      return '$_staffAlertSeenPrefsKeyPrefix:$userKey';
+    }
+    final roleKey = widget.session.normalizedRole.trim().isEmpty
+        ? 'staff'
+        : widget.session.normalizedRole.trim().toLowerCase();
+    return '$_staffAlertSeenPrefsKeyPrefix:$roleKey';
+  }
+
+  Map<String, dynamic> _buildStaffApprovalAlertItem(
+    Map<String, dynamic> request,
+  ) {
+    final requestType =
+        '${request['__request_type'] ?? 'new_income'}'.trim().toLowerCase();
+    final isEditRequest = requestType == 'edit_request';
+    final customerName = '${request['nama_pelanggan'] ?? '-'}'.trim();
+    final creatorName = '${request['__creator_name'] ?? '-'}'.trim();
+    final pickup = '${request['lokasi_muat'] ?? '-'}'.trim();
+    final destination = '${request['lokasi_bongkar'] ?? '-'}'.trim();
+    final route = '$pickup-$destination';
+    final requestDate =
+        Formatters.parseDate(request['approval_requested_at']) ??
+            Formatters.parseDate(request['edit_requested_at']) ??
+            Formatters.parseDate(request['created_at']) ??
+            DateTime.now();
+    final message = isEditRequest
+        ? 'Pengurus $creatorName meminta persetujuan edit untuk income $customerName. Rute $route.'
+        : 'Income baru dari pengurus $creatorName untuk $customerName menunggu persetujuan. Rute $route pada ${Formatters.dmy(requestDate)}.';
+
+    return <String, dynamic>{
+      'id': '',
+      'title': isEditRequest
+          ? 'Request Edit Income Pengurus'
+          : 'Income Baru dari Pengurus',
+      'message': message,
+      'status': 'unread',
+      'kind': 'approval',
+      'source_type': 'invoice',
+      'source_id': '${request['id'] ?? ''}'.trim(),
+      'payload': <String, dynamic>{
+        'invoice_id': '${request['id'] ?? ''}'.trim(),
+        'request_type': requestType,
+      },
+      'created_at': (request['approval_requested_at'] ??
+              request['edit_requested_at'] ??
+              request['created_at'] ??
+              DateTime.now().toIso8601String())
+          .toString(),
+      '__synthetic': true,
+    };
+  }
+
+  List<Map<String, dynamic>> _buildStaffApprovalAlerts(
+    List<Map<String, dynamic>> queue,
+  ) {
+    return queue.map(_buildStaffApprovalAlertItem).toList(growable: false);
+  }
+
+  Future<void> _ensureStaffAlertsSeenLoaded() async {
+    if (_staffAlertsSeenLoaded || !widget.session.isAdminOrOwner) return;
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_staffAlertSeenPrefsKey)?.trim() ?? '';
+    _staffAlertsSeenAt = raw.isEmpty ? null : DateTime.tryParse(raw);
+    _staffAlertsSeenLoaded = true;
+  }
+
+  DateTime _alertCreatedAt(Map<String, dynamic> item) {
+    return Formatters.parseDate(item['created_at']) ??
+        DateTime.fromMillisecondsSinceEpoch(0);
+  }
+
+  List<Map<String, dynamic>> _applySeenStatusToStaffAlerts(
+    List<Map<String, dynamic>> items,
+  ) {
+    final seenAt = _staffAlertsSeenAt;
+    return items.map((item) {
+      final base = Map<String, dynamic>.from(item);
+      if (seenAt != null && !_alertCreatedAt(base).isAfter(seenAt)) {
+        base['status'] = 'read';
+      } else {
+        base['status'] = '${base['status'] ?? 'unread'}';
+      }
+      return base;
+    }).toList(growable: false);
+  }
+
+  Future<void> _markStaffAlertsRead(
+    Iterable<Map<String, dynamic>> items,
+  ) async {
+    final alerts = items.toList(growable: false);
+    if (alerts.isEmpty) return;
+    DateTime? nextSeenAt = _staffAlertsSeenAt;
+    for (final item in alerts) {
+      final createdAt = _alertCreatedAt(item);
+      if (nextSeenAt == null || createdAt.isAfter(nextSeenAt)) {
+        nextSeenAt = createdAt;
+      }
+    }
+    if (nextSeenAt == null) return;
+    _staffAlertsSeenAt = nextSeenAt;
+    _staffAlertsSeenLoaded = true;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+        _staffAlertSeenPrefsKey, nextSeenAt.toIso8601String());
+    if (!mounted) return;
+    setState(() {
+      _staffNotifications = _applySeenStatusToStaffAlerts(_staffNotifications);
+    });
+  }
+
+  Future<void> _openStaffNotificationTarget(
+    Map<String, dynamic> item, {
+    Iterable<Map<String, dynamic>>? visibleNotifications,
+  }) async {
+    final notificationId = '${item['id'] ?? ''}'.trim();
+    final isSynthetic = item['__synthetic'] == true;
+    if (notificationId.isNotEmpty && !isSynthetic) {
+      try {
+        await widget.repository.markCustomerNotificationRead(notificationId);
+      } catch (_) {
+        // Keep navigation working even if marking as read fails.
+      }
+    }
+    if (isSynthetic) {
+      await _markStaffAlertsRead(
+        visibleNotifications ?? _staffNotifications,
+      );
+    }
+    if (!mounted) return;
+    Navigator.of(context).pop();
+    setState(() {
+      _adminIndex = 8;
+      _staffNotifications = _staffNotifications.map((current) {
+        if (isSynthetic) {
+          return <String, dynamic>{...current, 'status': 'read'};
+        }
+        if (notificationId.isEmpty) return current;
+        if ('${current['id'] ?? ''}'.trim() != notificationId) return current;
+        return <String, dynamic>{...current, 'status': 'read'};
+      }).toList(growable: false);
+    });
+    unawaited(_refreshStaffAlerts());
+  }
 
   @override
   void initState() {
     super.initState();
     _reload();
     _startDashboardAutoRefresh();
+    _pushIntentSubscription =
+        PushNotificationService.instance.intents.listen(_handlePushIntent);
+    final pendingIntent =
+        PushNotificationService.instance.consumePendingIntent();
+    if (pendingIntent != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _handlePushIntent(pendingIntent);
+      });
+    }
   }
 
   @override
   void dispose() {
     _dashboardAutoRefreshTimer?.cancel();
+    _pushIntentSubscription?.cancel();
     _armadaUsageNotifier.dispose();
     _recentActivitiesNotifier.dispose();
     super.dispose();
+  }
+
+  void _handlePushIntent(PushNavigationIntent intent) {
+    if (!mounted) return;
+    if (widget.session.isAdminOrOwner &&
+        intent.target == PushNavigationTarget.orderAcceptance) {
+      setState(() {
+        _adminIndex = 8;
+      });
+      _reload();
+      return;
+    }
+    if (widget.session.isPengurus &&
+        intent.target == PushNavigationTarget.invoiceList) {
+      setState(() {
+        _adminIndex = 1;
+      });
+      _reload();
+      return;
+    }
+    if (widget.session.isCustomer &&
+        intent.target == PushNavigationTarget.customerNotifications) {
+      setState(() {
+        _customerIndex = 3;
+      });
+      return;
+    }
   }
 
   void _reload() {
@@ -335,15 +533,15 @@ class _DashboardPageState extends State<DashboardPage> {
   Future<void> _refreshStaffAlerts() async {
     if (!widget.session.isAdminOrOwner) return;
     try {
-      final response = await Future.wait<dynamic>([
-        widget.repository.countPendingPengurusApprovals(),
-        widget.repository.fetchCustomerNotifications(currentUserOnly: true),
-      ]);
+      await _ensureStaffAlertsSeenLoaded();
+      final queue = await widget.repository.fetchPengurusApprovalQueue();
+      final alertItems = _applySeenStatusToStaffAlerts(
+        _buildStaffApprovalAlerts(queue),
+      );
       if (!mounted) return;
       setState(() {
-        _staffApprovalBadgeCount = response[0] as int? ?? 0;
-        _staffNotifications =
-            (response[1] as List).cast<Map<String, dynamic>>().toList();
+        _staffApprovalBadgeCount = queue.length;
+        _staffNotifications = alertItems;
       });
     } catch (_) {
       // Keep existing badge values when refresh fails.
@@ -372,7 +570,7 @@ class _DashboardPageState extends State<DashboardPage> {
             width: 520,
             child: notifications.isEmpty
                 ? Text(
-                    'Belum ada notifikasi approval.',
+                    'Belum ada request income pengurus yang menunggu persetujuan.',
                     style: TextStyle(color: AppColors.textMutedFor(context)),
                   )
                 : ListView.separated(
@@ -433,6 +631,27 @@ class _DashboardPageState extends State<DashboardPage> {
                               style: TextStyle(
                                 color: AppColors.textMutedFor(context),
                               ),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                IconButton(
+                                  tooltip: 'Buka Penerimaan Order',
+                                  onPressed: () => _openStaffNotificationTarget(
+                                    item,
+                                    visibleNotifications: notifications,
+                                  ),
+                                  style: IconButton.styleFrom(
+                                    foregroundColor: AppColors.blue,
+                                    side: BorderSide(
+                                      color: AppColors.blue,
+                                    ),
+                                  ),
+                                  icon:
+                                      const Icon(Icons.remove_red_eye_outlined),
+                                ),
+                              ],
                             ),
                           ],
                         ),
@@ -509,8 +728,8 @@ class _DashboardPageState extends State<DashboardPage> {
                 Padding(
                   padding: const EdgeInsets.only(right: 2),
                   child: Badge(
-                    isLabelVisible: _staffNotifications.isNotEmpty,
-                    label: Text('${_staffNotifications.length}'),
+                    isLabelVisible: _staffNotificationBadgeCount > 0,
+                    label: Text('$_staffNotificationBadgeCount'),
                     child: IconButton(
                       tooltip: 'Notifications Alert',
                       onPressed: _openStaffNotificationsDialog,
@@ -650,6 +869,7 @@ class _DashboardPageState extends State<DashboardPage> {
               _adminIndex = 3;
             });
           },
+          onDataChanged: () => setState(_reload),
         );
       case 9:
         return _AdminCustomerRegistrationsView(repository: widget.repository);

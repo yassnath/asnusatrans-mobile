@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/widgets/page_fade_in.dart';
+import '../../../core/notifications/push_notification_service.dart';
 import '../../dashboard/data/dashboard_repository.dart';
 import '../../dashboard/presentation/dashboard_page.dart';
 import '../data/auth_repository.dart';
@@ -19,15 +22,18 @@ class AuthGate extends StatefulWidget {
 
 class _AuthGateState extends State<AuthGate> {
   static const _loadingDuration = Duration(seconds: 5);
+  static const _sessionResumeWindow = Duration(minutes: 10);
 
   late final AuthRepository _authRepository;
   late final DashboardRepository _dashboardRepository;
   late final BiometricLoginService _biometricService;
+  AppLifecycleListener? _appLifecycleListener;
 
   AuthSession? _session;
   bool _loading = true;
   bool _showSignUp = false;
   int _splashCycle = 0;
+  DateTime? _backgroundedAt;
 
   @override
   void initState() {
@@ -35,12 +41,27 @@ class _AuthGateState extends State<AuthGate> {
     _authRepository = AuthRepository(Supabase.instance.client);
     _dashboardRepository = DashboardRepository(Supabase.instance.client);
     _biometricService = BiometricLoginService();
+    _appLifecycleListener = AppLifecycleListener(
+      onPause: _markBackgrounded,
+      onHide: _markBackgrounded,
+      onInactive: _markBackgrounded,
+      onResume: () {
+        unawaited(_handleAppResume());
+      },
+    );
     _bootstrap();
   }
 
   Future<void> _bootstrap() async {
     try {
-      await _authRepository.signOut();
+      final existingSession = await _authRepository.restoreSession();
+      if (existingSession != null) {
+        await PushNotificationService.instance.bindAuthenticatedSession(
+          existingSession,
+        );
+        await PushNotificationService.instance.clearAuthenticatedSession();
+        await _authRepository.signOut();
+      }
       _session = null;
     } catch (_) {
       _session = null;
@@ -54,6 +75,8 @@ class _AuthGateState extends State<AuthGate> {
   }
 
   Future<void> _onSignedIn(AuthSession session) async {
+    _backgroundedAt = null;
+    await PushNotificationService.instance.bindAuthenticatedSession(session);
     if (!mounted) return;
     setState(() {
       _session = session;
@@ -62,6 +85,8 @@ class _AuthGateState extends State<AuthGate> {
   }
 
   Future<void> _logout() async {
+    _backgroundedAt = null;
+    await PushNotificationService.instance.clearAuthenticatedSession();
     await _authRepository.signOut();
     await _biometricService.clearManualBinding();
     if (!mounted) return;
@@ -76,6 +101,40 @@ class _AuthGateState extends State<AuthGate> {
     setState(() {
       _loading = false;
     });
+  }
+
+  void _markBackgrounded() {
+    if (_session == null) return;
+    _backgroundedAt = DateTime.now();
+  }
+
+  Future<void> _handleAppResume() async {
+    final session = _session;
+    final backgroundedAt = _backgroundedAt;
+    _backgroundedAt = null;
+    if (session == null || backgroundedAt == null) return;
+
+    final inactiveDuration = DateTime.now().difference(backgroundedAt);
+    if (inactiveDuration <= _sessionResumeWindow) return;
+
+    await _expireSession();
+  }
+
+  Future<void> _expireSession() async {
+    await PushNotificationService.instance.clearAuthenticatedSession();
+    await _authRepository.signOut();
+    if (!mounted) return;
+    setState(() {
+      _session = null;
+      _showSignUp = false;
+      _backgroundedAt = null;
+    });
+  }
+
+  @override
+  void dispose() {
+    _appLifecycleListener?.dispose();
+    super.dispose();
   }
 
   @override

@@ -178,6 +178,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
   ];
   late Future<List<dynamic>> _future;
   final _search = TextEditingController();
+  final Set<String> _locallyRemovedRowIds = <String>{};
   String _limit = '10';
   bool _backfillRunning = false;
   bool _backgroundFixedInvoiceSyncRunning = false;
@@ -202,9 +203,23 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     return '${row['submission_role'] ?? ''}'.trim().toLowerCase() == 'pengurus';
   }
 
+  String _resolvePengurusApprovalStatus(Map<String, dynamic> row) {
+    final status = '${row['approval_status'] ?? ''}'.trim().toLowerCase();
+    if (status.isNotEmpty) return status;
+    if (Formatters.parseDate(row['rejected_at']) != null) {
+      return 'rejected';
+    }
+    if (Formatters.parseDate(row['approved_at']) != null) {
+      return 'approved';
+    }
+    if (Formatters.parseDate(row['approval_requested_at']) != null) {
+      return 'pending';
+    }
+    return _isPengurusIncome(row) ? 'pending' : 'approved';
+  }
+
   bool _isPengurusIncomeApproved(Map<String, dynamic> row) {
-    final approvalStatus =
-        '${row['approval_status'] ?? 'approved'}'.trim().toLowerCase();
+    final approvalStatus = _resolvePengurusApprovalStatus(row);
     return !_isPengurusIncome(row) || approvalStatus == 'approved';
   }
 
@@ -281,6 +296,54 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     if (match == null) return null;
     final plate = _normalizePlateText(match.group(0) ?? '');
     return plate.isEmpty ? null : plate;
+  }
+
+  String _resolveDetailPlateText(
+    Map<String, dynamic> row, {
+    Map<String, String>? armadaPlateById,
+    String? fallbackArmadaId,
+  }) {
+    final rowArmadaId = '${row['armada_id'] ?? ''}'.trim();
+    if (rowArmadaId.isNotEmpty && armadaPlateById != null) {
+      final byArmada = armadaPlateById[rowArmadaId];
+      if (byArmada != null && byArmada.trim().isNotEmpty && byArmada != '-') {
+        return _normalizePlateText(byArmada);
+      }
+    }
+
+    final manualCandidates = <String>[
+      '${row['armada_manual'] ?? ''}'.trim(),
+      '${row['armada_label'] ?? ''}'.trim(),
+      '${row['armada'] ?? ''}'.trim(),
+    ];
+    for (final candidate in manualCandidates) {
+      if (candidate.isEmpty) continue;
+      final parsed = _extractPlateFromText(candidate);
+      if (parsed != null && parsed.isNotEmpty && parsed != '-') {
+        return parsed;
+      }
+      final normalized = _normalizePlateText(candidate);
+      if (normalized.isNotEmpty && normalized != '-') {
+        return normalized;
+      }
+    }
+
+    final direct = _normalizePlateText(
+      '${row['plat_nomor'] ?? row['no_polisi'] ?? ''}',
+    );
+    if (direct.isNotEmpty && direct != '-') return direct;
+
+    final invoiceArmadaId = (fallbackArmadaId ?? '').trim();
+    if (invoiceArmadaId.isNotEmpty && armadaPlateById != null) {
+      final byFallbackArmada = armadaPlateById[invoiceArmadaId];
+      if (byFallbackArmada != null &&
+          byFallbackArmada.trim().isNotEmpty &&
+          byFallbackArmada != '-') {
+        return _normalizePlateText(byFallbackArmada);
+      }
+    }
+
+    return '-';
   }
 
   Map<String, String> _buildArmadaIdByPlate(
@@ -461,11 +524,15 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     final rawExpenses =
         (response[1] as List).cast<Map<String, dynamic>>().toList();
     final scopedIncomes = rawIncomes.where((item) {
+      final id = '${item['id'] ?? ''}'.trim();
+      if (id.isNotEmpty && _locallyRemovedRowIds.contains(id)) return false;
       if (_isPengurus) return _isOwnedByCurrentUser(item);
       if (_isAdminOrOwner) return _isPengurusIncomeApproved(item);
       return true;
     }).toList();
     final scopedExpenses = rawExpenses.where((item) {
+      final id = '${item['id'] ?? ''}'.trim();
+      if (id.isNotEmpty && _locallyRemovedRowIds.contains(id)) return false;
       if (_isPengurus) return _isOwnedByCurrentUser(item);
       return true;
     }).toList();
@@ -613,7 +680,13 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
   Future<void> _deleteInvoice(String id) async {
     try {
       await widget.repository.deleteInvoice(id);
+      final cleanedId = id.trim();
       if (!mounted) return;
+      setState(() {
+        if (cleanedId.isNotEmpty) {
+          _locallyRemovedRowIds.add(cleanedId);
+        }
+      });
       _snack(_t('Invoice berhasil dihapus.', 'Invoice deleted successfully.'));
       await _refresh();
       _notifyDataChanged();
@@ -626,7 +699,13 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
   Future<void> _deleteExpense(String id) async {
     try {
       await widget.repository.deleteExpense(id);
+      final cleanedId = id.trim();
       if (!mounted) return;
+      setState(() {
+        if (cleanedId.isNotEmpty) {
+          _locallyRemovedRowIds.add(cleanedId);
+        }
+      });
       _snack(_t('Expense berhasil dihapus.', 'Expense deleted successfully.'));
       await _refresh();
       _notifyDataChanged();
@@ -987,12 +1066,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
           DateTime.fromMillisecondsSinceEpoch(0);
       final byDate = aDate.compareTo(bDate);
       if (byDate != 0) return byDate;
-      final aPlate =
-          '${a['plat_nomor'] ?? a['no_polisi'] ?? a['armada_manual'] ?? ''}'
-              .toUpperCase();
-      final bPlate =
-          '${b['plat_nomor'] ?? b['no_polisi'] ?? b['armada_manual'] ?? ''}'
-              .toUpperCase();
+      final aPlate = _resolveDetailPlateText(a);
+      final bPlate = _resolveDetailPlateText(b);
       return aPlate.compareTo(bPlate);
     });
     return details;
@@ -1442,10 +1517,38 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     return result;
   }
 
+  Future<Map<String, dynamic>> _resolveLatestInvoiceItem(
+    Map<String, dynamic> item,
+  ) async {
+    final invoiceId = '${item['id'] ?? ''}'.trim();
+    if (invoiceId.isEmpty) return item;
+    try {
+      final latest = await widget.repository.fetchInvoiceById(invoiceId);
+      if (latest == null || latest.isEmpty) return item;
+      return <String, dynamic>{
+        ...item,
+        ...latest,
+      };
+    } catch (_) {
+      return item;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _resolveLatestInvoiceItems(
+    Iterable<Map<String, dynamic>> items,
+  ) async {
+    final itemList = items.toList();
+    if (itemList.isEmpty) return const [];
+    return Future.wait(
+      itemList.map(_resolveLatestInvoiceItem),
+    );
+  }
+
   Future<void> _printSingleInvoiceFromPreview(
     Map<String, dynamic> item,
   ) async {
-    final selectedGroups = _buildInvoicePrintGroups([item]);
+    final latestItem = await _resolveLatestInvoiceItem(item);
+    final selectedGroups = _buildInvoicePrintGroups([latestItem]);
     if (selectedGroups.isEmpty) return;
     final group = selectedGroups.first;
 
@@ -1641,18 +1744,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     }
 
     String extractPlate(Map<String, dynamic> row) {
-      final direct =
-          '${row['plat_nomor'] ?? row['no_polisi'] ?? ''}'.toUpperCase().trim();
-      if (direct.isNotEmpty && direct != '-') return direct;
-      final manual = '${row['armada_manual'] ?? ''}'.trim();
-      if (manual.isNotEmpty) {
-        final parsed = _extractPlateFromText(manual);
-        if (parsed != null) return parsed;
-      }
-      final label = '${row['armada_label'] ?? row['armada'] ?? ''}'.trim();
-      final parsed = _extractPlateFromText(label);
-      if (parsed != null) return parsed;
-      return '-';
+      return _resolveDetailPlateText(row);
     }
 
     String buildRouteSummary(Map<String, dynamic> item) {
@@ -2280,13 +2372,16 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                       );
                       return;
                     }
-                    final selected = incomes
-                        .where((item) =>
-                            selectedIds.contains('${item['id'] ?? ''}'))
-                        .toList();
+                    final selected = await _resolveLatestInvoiceItems(
+                      incomes
+                          .where((item) =>
+                              selectedIds.contains('${item['id'] ?? ''}'))
+                          .cast<Map<String, dynamic>>(),
+                    );
                     final selectedGroups = _buildInvoicePrintGroups(selected);
                     final generatedNumbersByGroupId =
                         buildGeneratedNumbersForGroups(selectedGroups);
+                    if (!context.mounted) return;
                     Navigator.pop(context);
                     if (!mounted) return;
 
@@ -3610,18 +3705,21 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
   }
 
   Future<void> _openInvoicePreview(Map<String, dynamic> item) async {
+    final previewItem = await _resolveLatestInvoiceItem(item);
+    if (!mounted) return;
+
     await showDialog<void>(
       context: context,
       barrierColor: AppColors.popupOverlay,
       builder: (context) {
-        final detailList = _toDetailList(item['rincian']);
-        final customerName = '${item['nama_pelanggan'] ?? ''}'.trim();
+        final detailList = _toDetailList(previewItem['rincian']);
+        final customerName = '${previewItem['nama_pelanggan'] ?? ''}'.trim();
         final isCompanyInvoice = _resolveIsCompanyInvoice(
-          invoiceNumber: item['no_invoice'],
+          invoiceNumber: previewItem['no_invoice'],
           customerName: customerName,
         );
-        final subtotal = _toNum(item['total_biaya']);
-        final pph = isCompanyInvoice ? _toNum(item['pph']) : 0.0;
+        final subtotal = _toNum(previewItem['total_biaya']);
+        final pph = isCompanyInvoice ? _toNum(previewItem['pph']) : 0.0;
         final total = isCompanyInvoice ? max(0.0, subtotal - pph) : subtotal;
         return AlertDialog(
           title: Text(_t('Preview Invoice', 'Invoice Preview')),
@@ -3632,11 +3730,13 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                      '${_t('Customer', 'Customer')}: ${item['nama_pelanggan'] ?? '-'}'),
-                  Text('${_t('Email', 'Email')}: ${item['email'] ?? '-'}'),
+                      '${_t('Customer', 'Customer')}: ${previewItem['nama_pelanggan'] ?? '-'}'),
                   Text(
-                      '${_t('Tanggal', 'Date')}: ${Formatters.dmy(item['tanggal'] ?? item['armada_start_date'])}'),
-                  Text('${_t('Status', 'Status')}: ${item['status'] ?? '-'}'),
+                      '${_t('Email', 'Email')}: ${previewItem['email'] ?? '-'}'),
+                  Text(
+                      '${_t('Tanggal', 'Date')}: ${Formatters.dmy(previewItem['tanggal'] ?? previewItem['armada_start_date'])}'),
+                  Text(
+                      '${_t('Status', 'Status')}: ${previewItem['status'] ?? '-'}'),
                   const SizedBox(height: 8),
                   Text(
                     '${_t('Total', 'Total')}: ${Formatters.rupiah(total)}',
@@ -3657,11 +3757,13 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                       final subtotalDetail = tonase * harga;
                       final driver = '${row['nama_supir'] ?? ''}'.trim();
                       final muatan = '${row['muatan'] ?? ''}'.trim();
-                      final plate =
-                          '${row['plat_nomor'] ?? row['no_polisi'] ?? row['armada_manual'] ?? ''}'
-                              .trim();
+                      final plate = _resolveDetailPlateText(
+                        row,
+                        fallbackArmadaId: '${previewItem['armada_id'] ?? ''}',
+                      );
                       final departureDate = Formatters.dmy(
-                        row['armada_start_date'] ?? item['armada_start_date'],
+                        row['armada_start_date'] ??
+                            previewItem['armada_start_date'],
                       );
                       return Container(
                         width: double.infinity,
@@ -3719,7 +3821,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
               OutlinedButton.icon(
                 onPressed: () async {
                   Navigator.pop(context);
-                  await _printSingleInvoiceFromPreview(item);
+                  await _printSingleInvoiceFromPreview(previewItem);
                 },
                 style: CvantButtonStyles.outlined(
                   context,
@@ -3974,23 +4076,11 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       };
 
       String resolveNoPolisi(Map<String, dynamic> row) {
-        final rowArmadaId = '${row['armada_id'] ?? item['armada_id'] ?? ''}';
-        final byArmada = armadaPlateById[rowArmadaId.trim()];
-        if (byArmada != null && byArmada.isNotEmpty && byArmada != '-') {
-          return byArmada;
-        }
-        final direct = '${row['plat_nomor'] ?? row['no_polisi'] ?? ''}'
-            .trim()
-            .toUpperCase();
-        if (direct.isNotEmpty && direct != '-') return direct;
-        final armadaManual = '${row['armada_manual'] ?? ''}'.trim();
-        final armadaLabel = armadaManual.isNotEmpty
-            ? armadaManual
-            : '${row['armada_label'] ?? row['armada'] ?? ''}';
-        final match = RegExp(
-          r'\b[A-Z]{1,2}\s?\d{1,4}\s?[A-Z]{1,3}\b',
-        ).firstMatch(armadaLabel.toUpperCase());
-        return (match?.group(0) ?? '-').trim();
+        return _resolveDetailPlateText(
+          row,
+          armadaPlateById: armadaPlateById,
+          fallbackArmadaId: '${item['armada_id'] ?? ''}',
+        );
       }
 
       String formatTonase(dynamic value) {
@@ -6843,9 +6933,33 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                                             armadaManual: armadaManualRaw,
                                             armadaIdByPlate: armadaIdByPlate,
                                           );
+                                          Map<String, dynamic>? selectedArmada;
+                                          if (resolvedArmadaId.isNotEmpty) {
+                                            for (final armada in armadas) {
+                                              if ('${armada['id'] ?? ''}'
+                                                      .trim() ==
+                                                  resolvedArmadaId) {
+                                                selectedArmada = armada;
+                                                break;
+                                              }
+                                            }
+                                          }
                                           final useManual =
                                               resolvedArmadaId.isEmpty &&
                                                   armadaManualRaw.isNotEmpty;
+                                          final resolvedPlate =
+                                              selectedArmada != null
+                                                  ? _normalizePlateText(
+                                                      '${selectedArmada['plat_nomor'] ?? ''}',
+                                                    )
+                                                  : (useManual
+                                                      ? (_extractPlateFromText(
+                                                            armadaManualRaw,
+                                                          ) ??
+                                                          _normalizePlateText(
+                                                            armadaManualRaw,
+                                                          ))
+                                                      : '');
                                           return <String, dynamic>{
                                             'lokasi_muat':
                                                 '${row['lokasi_muat']}'.trim(),
@@ -6868,6 +6982,12 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                                             'armada_label': useManual
                                                 ? armadaManualRaw
                                                 : null,
+                                            'plat_nomor': resolvedPlate.isEmpty
+                                                ? null
+                                                : resolvedPlate,
+                                            'no_polisi': resolvedPlate.isEmpty
+                                                ? null
+                                                : resolvedPlate,
                                             'armada_start_date':
                                                 '${row['armada_start_date']}'
                                                         .trim()
@@ -7477,10 +7597,20 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
 
   List<Map<String, dynamic>> _toDetailList(dynamic value) {
     if (value is List) {
-      return value
-          .whereType<Map>()
-          .map((item) => Map<String, dynamic>.from(item))
-          .toList();
+      return value.whereType<Map>().map((item) {
+        final row = Map<String, dynamic>.from(item);
+        final armadaId = '${row['armada_id'] ?? ''}'.trim();
+        final manualArmada = '${row['armada_manual'] ?? ''}'.trim();
+        if (armadaId.isEmpty && manualArmada.isNotEmpty) {
+          final manualPlate = _extractPlateFromText(manualArmada) ??
+              _normalizePlateText(manualArmada);
+          if (manualPlate.isNotEmpty && manualPlate != '-') {
+            row['plat_nomor'] = manualPlate;
+            row['no_polisi'] = manualPlate;
+          }
+        }
+        return row;
+      }).toList();
     }
     return const <Map<String, dynamic>>[];
   }
@@ -8000,10 +8130,17 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
               : (isEn ? 'Personal' : 'Pribadi');
           final invoiceTypeColor =
               isCompanyInvoice ? AppColors.success : AppColors.blue;
-          final approvalStatus =
-              '${item['approval_status'] ?? 'approved'}'.trim().toLowerCase();
+          final approvalStatus = _resolvePengurusApprovalStatus(item);
           final editRequestStatus =
               '${item['edit_request_status'] ?? 'none'}'.trim().toLowerCase();
+          final canOpenPengurusEdit = isIncome &&
+              _isPengurus &&
+              editRequestStatus == 'approved' &&
+              approvalStatus == 'approved';
+          final canRequestPengurusEdit = isIncome &&
+              _isPengurus &&
+              editRequestStatus != 'approved' &&
+              approvalStatus == 'approved';
           final total = _toNum(item['__total']);
           return _PanelCard(
             child: Column(
@@ -8059,18 +8196,18 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                       }
                       if (approvalStatus == 'pending') {
                         return _t(
-                          'Income menunggu ACC admin/owner.',
-                          'Income is waiting for admin/owner approval.',
+                          'Menunggu persetujuan dari admin/owner.',
+                          'Waiting for admin/owner approval.',
                         );
                       }
                       if (approvalStatus == 'rejected') {
                         return _t(
-                          'Income ditolak admin/owner. Ajukan revisi bila diperlukan.',
-                          'Income was rejected by admin/owner. Request a revision if needed.',
+                          'Income telah ditolak oleh admin/owner.',
+                          'Income has been rejected by admin/owner.',
                         );
                       }
                       return _t(
-                        'Income sudah disetujui admin/owner.',
+                        'Income telah disetujui oleh admin/owner.',
                         'Income has been approved by admin/owner.',
                       );
                     }(),
@@ -8115,28 +8252,31 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                       runSpacing: 8,
                       children: [
                         OutlinedButton(
-                          onPressed: () {
-                            if (isIncome && _isPengurus) {
-                              if (editRequestStatus == 'approved') {
-                                _openInvoiceEdit(item);
-                                return;
-                              }
-                              _requestPengurusInvoiceEdit(item);
-                              return;
-                            }
-                            if (isIncome) {
-                              _openInvoiceEdit(item);
-                              return;
-                            }
-                            _openExpenseEdit(item);
-                          },
+                          onPressed: isIncome && _isPengurus
+                              ? (canOpenPengurusEdit
+                                  ? () => _openInvoiceEdit(item)
+                                  : (canRequestPengurusEdit
+                                      ? () => _requestPengurusInvoiceEdit(item)
+                                      : null))
+                              : () {
+                                  if (isIncome) {
+                                    _openInvoiceEdit(item);
+                                    return;
+                                  }
+                                  _openExpenseEdit(item);
+                                },
                           style: _mobileActionButtonStyle(
                             context: context,
-                            color: AppColors.blue,
+                            color: isIncome && _isPengurus
+                                ? ((canOpenPengurusEdit ||
+                                        canRequestPengurusEdit)
+                                    ? AppColors.blue
+                                    : AppColors.neutralOutline)
+                                : AppColors.blue,
                           ),
                           child: Icon(
                             isIncome && _isPengurus
-                                ? (editRequestStatus == 'approved'
+                                ? (canOpenPengurusEdit
                                     ? Icons.edit_outlined
                                     : Icons.how_to_reg_outlined)
                                 : Icons.edit_outlined,
@@ -8163,7 +8303,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                             ),
                             child: const Icon(Icons.send_outlined, size: 18),
                           ),
-                        if (!(isIncome && _isPengurus))
+                        if (!(isIncome &&
+                            _isPengurus &&
+                            approvalStatus == 'approved'))
                           OutlinedButton(
                             onPressed: () => _confirmDelete(
                               id: '${item['id']}',

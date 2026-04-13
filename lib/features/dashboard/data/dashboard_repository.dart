@@ -104,6 +104,20 @@ class DashboardRepository {
     r'\bmaatschap\b',
   ];
 
+  String _resolveCurrentUserRole(
+    User user, {
+    Map<String, dynamic>? profile,
+  }) {
+    final appRole = '${user.appMetadata['role'] ?? ''}'.trim().toLowerCase();
+    if (appRole == 'admin' || appRole == 'owner' || appRole == 'pengurus') {
+      return appRole;
+    }
+    return (profile?['role'] ?? user.userMetadata?['role'] ?? 'customer')
+        .toString()
+        .trim()
+        .toLowerCase();
+  }
+
   Future<String> _loadCurrentRole() async {
     final user = _supabase.auth.currentUser;
     if (user == null) return 'customer';
@@ -116,18 +130,15 @@ class DashboardRepository {
           .select('role')
           .eq('id', user.id)
           .maybeSingle();
-      final role = (row?['role'] ?? user.userMetadata?['role'] ?? 'customer')
-          .toString()
-          .trim()
-          .toLowerCase();
+      final role = _resolveCurrentUserRole(
+        user,
+        profile: row == null ? null : Map<String, dynamic>.from(row),
+      );
       _cachedRoleUserId = user.id;
       _cachedCurrentRole = role;
       return role;
     } catch (_) {
-      final fallback = (user.userMetadata?['role'] ?? 'customer')
-          .toString()
-          .trim()
-          .toLowerCase();
+      final fallback = _resolveCurrentUserRole(user);
       _cachedRoleUserId = user.id;
       _cachedCurrentRole = fallback;
       return fallback;
@@ -138,9 +149,23 @@ class DashboardRepository {
     return '${row['submission_role'] ?? ''}'.trim().toLowerCase() == 'pengurus';
   }
 
+  String _resolveApprovalStatus(Map<String, dynamic> row) {
+    final status = '${row['approval_status'] ?? ''}'.trim().toLowerCase();
+    if (status.isNotEmpty) return status;
+    if (Formatters.parseDate(row['rejected_at']) != null) {
+      return 'rejected';
+    }
+    if (Formatters.parseDate(row['approved_at']) != null) {
+      return 'approved';
+    }
+    if (Formatters.parseDate(row['approval_requested_at']) != null) {
+      return 'pending';
+    }
+    return _isPengurusSubmission(row) ? 'pending' : 'approved';
+  }
+
   bool _isApprovedForBackoffice(Map<String, dynamic> row) {
-    final approvalStatus =
-        '${row['approval_status'] ?? 'approved'}'.trim().toLowerCase();
+    final approvalStatus = _resolveApprovalStatus(row);
     return !_isPengurusSubmission(row) || approvalStatus == 'approved';
   }
 
@@ -1013,7 +1038,9 @@ class DashboardRepository {
               .from('invoices')
               .select(columns)
               .eq('submission_role', 'pengurus')
-              .or('approval_status.eq.pending,edit_request_status.eq.pending')
+              .or(
+                'approval_status.eq.pending,approval_status.is.null,edit_request_status.eq.pending',
+              )
               .order('created_at', ascending: false),
         ),
       );
@@ -1024,16 +1051,21 @@ class DashboardRepository {
           .toList();
       final profileById = <String, Map<String, dynamic>>{};
       if (creatorIds.isNotEmpty) {
-        final profiles = _toMapList(
-          await _supabase
-              .from('profiles')
-              .select('id,name,username,role')
-              .inFilter('id', creatorIds),
-        );
-        for (final row in profiles) {
-          final id = '${row['id'] ?? ''}'.trim();
-          if (id.isEmpty) continue;
-          profileById[id] = row;
+        try {
+          final profiles = _toMapList(
+            await _supabase
+                .from('profiles')
+                .select('id,name,username,role')
+                .inFilter('id', creatorIds),
+          );
+          for (final row in profiles) {
+            final id = '${row['id'] ?? ''}'.trim();
+            if (id.isEmpty) continue;
+            profileById[id] = row;
+          }
+        } catch (_) {
+          // Approval queue tetap harus tampil walau nama pembuat tidak bisa
+          // di-resolve dari tabel profiles.
         }
       }
       return rows.map((row) {
@@ -1048,7 +1080,8 @@ class DashboardRepository {
           ...row,
           '__request_type': requestType,
           '__creator_name':
-              '${creator?['name'] ?? creator?['username'] ?? '-'}'.trim(),
+              '${creator?['name'] ?? creator?['username'] ?? creatorId ?? '-'}'
+                  .trim(),
         };
       }).toList();
     } on PostgrestException catch (e) {
@@ -1129,7 +1162,7 @@ class DashboardRepository {
     );
     final creatorId = '${invoice['created_by'] ?? ''}'.trim();
     if (creatorId.isNotEmpty) {
-      await _insertCustomerNotification(
+      await _insertCustomerNotificationBestEffort(
         userId: creatorId,
         title: 'Income Pengurus Disetujui',
         message:
@@ -1140,6 +1173,7 @@ class DashboardRepository {
         payload: <String, dynamic>{
           'invoice_id': invoiceId,
           'request_type': 'new_income',
+          'target': 'invoice_list',
         },
       );
     }
@@ -1163,7 +1197,7 @@ class DashboardRepository {
     });
     final creatorId = '${invoice['created_by'] ?? ''}'.trim();
     if (creatorId.isNotEmpty) {
-      await _insertCustomerNotification(
+      await _insertCustomerNotificationBestEffort(
         userId: creatorId,
         title: 'Income Pengurus Ditolak',
         message:
@@ -1174,6 +1208,7 @@ class DashboardRepository {
         payload: <String, dynamic>{
           'invoice_id': invoiceId,
           'request_type': 'new_income',
+          'target': 'invoice_list',
         },
       );
     }
@@ -1197,7 +1232,7 @@ class DashboardRepository {
     });
     final creatorId = '${invoice['created_by'] ?? ''}'.trim();
     if (creatorId.isNotEmpty) {
-      await _insertCustomerNotification(
+      await _insertCustomerNotificationBestEffort(
         userId: creatorId,
         title: 'Request Edit Disetujui',
         message:
@@ -1208,6 +1243,7 @@ class DashboardRepository {
         payload: <String, dynamic>{
           'invoice_id': invoiceId,
           'request_type': 'edit_request',
+          'target': 'invoice_list',
         },
       );
     }
@@ -1231,7 +1267,7 @@ class DashboardRepository {
     });
     final creatorId = '${invoice['created_by'] ?? ''}'.trim();
     if (creatorId.isNotEmpty) {
-      await _insertCustomerNotification(
+      await _insertCustomerNotificationBestEffort(
         userId: creatorId,
         title: 'Request Edit Ditolak',
         message:
@@ -1242,6 +1278,7 @@ class DashboardRepository {
         payload: <String, dynamic>{
           'invoice_id': invoiceId,
           'request_type': 'edit_request',
+          'target': 'invoice_list',
         },
       );
     }
@@ -1618,17 +1655,65 @@ class DashboardRepository {
     }
 
     String insertedInvoiceId = '';
+    PostgrestException? pengurusRpcError;
     final payload = <String, dynamic>{
       ...basePayload,
       if (currentCode.isNotEmpty) 'no_invoice': currentCode,
     };
+    if (submissionRole == 'pengurus') {
+      // Income pengurus belum memiliki nomor invoice. Nomor baru dibuat saat print.
+      payload.remove('no_invoice');
+      currentCode = '';
+    }
+    if (submissionRole == 'pengurus') {
+      try {
+        final insertedRow = await _insertPengurusInvoiceViaRpc(payload);
+        insertedInvoiceId = '${insertedRow?['id'] ?? ''}'.trim();
+        currentCode = '${insertedRow?['no_invoice'] ?? currentCode}'.trim();
+        return <String, String?>{
+          'id': insertedInvoiceId,
+          'no_invoice': currentCode,
+        };
+      } on PostgrestException catch (e) {
+        pengurusRpcError = e;
+        final msg = e.message.toLowerCase();
+        final missingRpc = msg.contains('create_pengurus_income_invoice') &&
+            (msg.contains('does not exist') ||
+                msg.contains('could not find') ||
+                msg.contains('schema cache'));
+        final explicitPengurusDenied = msg.contains('hanya pengurus');
+        if (explicitPengurusDenied) {
+          throw Exception(
+            'Akun ini belum dikenali sebagai pengurus oleh database. Jalankan file supabase/pengurus_save_rpc_minimal.sql di Supabase SQL Editor, lalu logout dan login ulang.',
+          );
+        }
+        if (!missingRpc) {
+          // Lanjut coba jalur insert biasa. Beberapa project belum punya RPC,
+          // tetapi policy insert langsung sudah cukup untuk save pengurus.
+        }
+      }
+    }
+
+    final selectColumns = submissionRole == 'pengurus' ? '' : 'id,no_invoice';
     try {
       final insertedRow = await _insertInvoiceWithFallback(
         payload,
-        selectColumns: 'id,no_invoice',
+        selectColumns: selectColumns,
       );
       insertedInvoiceId = '${insertedRow?['id'] ?? ''}'.trim();
       currentCode = '${insertedRow?['no_invoice'] ?? currentCode}'.trim();
+      if (submissionRole == 'pengurus' && insertedInvoiceId.isEmpty) {
+        final lookedUp = await _findRecentPengurusInvoice(
+          createdBy: createdBy,
+          issueDate: date,
+          customerName: customerName.trim(),
+          total: total,
+          pickup: pickup,
+          destination: destination,
+        );
+        insertedInvoiceId = '${lookedUp?['id'] ?? ''}'.trim();
+        currentCode = '${lookedUp?['no_invoice'] ?? currentCode}'.trim();
+      }
     } on PostgrestException catch (e) {
       final msg = e.message.toLowerCase();
       final duplicateNoInvoice = currentCode.isNotEmpty &&
@@ -1637,6 +1722,21 @@ class DashboardRepository {
               msg.contains('invoices_no_invoice_key') ||
               msg.contains('no_invoice_key'));
       if (!duplicateNoInvoice) {
+        final isPengurusRlsFailure = submissionRole == 'pengurus' &&
+            msg.contains('row-level security policy');
+        if (isPengurusRlsFailure) {
+          final rpcDetail = pengurusRpcError == null
+              ? ''
+              : ' Jalur RPC: ${pengurusRpcError.message}.';
+          throw Exception(
+            'Save income pengurus gagal di database.${rpcDetail.isEmpty ? '' : rpcDetail} Jalur insert: ${e.message}. Jalankan file supabase/pengurus_save_rpc_minimal.sql di Supabase SQL Editor, lalu logout dan login ulang.',
+          );
+        }
+        if (submissionRole == 'pengurus' && pengurusRpcError != null) {
+          throw Exception(
+            'Save income pengurus gagal di database. Jalur RPC: ${pengurusRpcError.message}. Jalur insert: ${e.message}.',
+          );
+        }
         throw Exception('Gagal menambah invoice: ${e.message}');
       }
       throw Exception(
@@ -1648,6 +1748,57 @@ class DashboardRepository {
       'id': insertedInvoiceId,
       'no_invoice': currentCode,
     };
+  }
+
+  Future<Map<String, dynamic>?> _insertPengurusInvoiceViaRpc(
+    Map<String, dynamic> payload,
+  ) async {
+    final result = await _supabase.rpc(
+      'create_pengurus_income_invoice',
+      params: <String, dynamic>{
+        'p_payload': payload,
+      },
+    );
+    final rows = _toMapList(result);
+    if (rows.isEmpty) return null;
+    return Map<String, dynamic>.from(rows.first);
+  }
+
+  Future<Map<String, dynamic>?> _findRecentPengurusInvoice({
+    required String createdBy,
+    required String issueDate,
+    required String customerName,
+    required double total,
+    String? pickup,
+    String? destination,
+  }) async {
+    try {
+      dynamic query = _supabase
+          .from('invoices')
+          .select(
+            'id,no_invoice,created_at,created_by,tanggal,nama_pelanggan,total_biaya,lokasi_muat,lokasi_bongkar,submission_role',
+          )
+          .eq('created_by', createdBy)
+          .eq('submission_role', 'pengurus')
+          .eq('tanggal', issueDate)
+          .eq('nama_pelanggan', customerName)
+          .eq('total_biaya', total)
+          .order('created_at', ascending: false)
+          .limit(1);
+      final cleanedPickup = pickup?.trim() ?? '';
+      final cleanedDestination = destination?.trim() ?? '';
+      if (cleanedPickup.isNotEmpty) {
+        query = query.eq('lokasi_muat', cleanedPickup);
+      }
+      if (cleanedDestination.isNotEmpty) {
+        query = query.eq('lokasi_bongkar', cleanedDestination);
+      }
+      final rows = _toMapList(await query);
+      if (rows.isEmpty) return null;
+      return Map<String, dynamic>.from(rows.first);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<String> generateIncomeInvoiceNumber({
@@ -2071,10 +2222,79 @@ class DashboardRepository {
   }
 
   Future<void> deleteInvoice(String id) async {
+    final cleanedId = id.trim();
+    final currentRole = await _loadCurrentRole();
+    final isPengurus = currentRole == 'pengurus';
     try {
-      await _supabase.from('invoices').delete().eq('id', id);
+      final deletedRows = _toMapList(
+        await _supabase
+            .from('invoices')
+            .delete()
+            .eq('id', cleanedId)
+            .select('id'),
+      );
+      if (deletedRows.isEmpty) {
+        if (isPengurus) {
+          final deletedByRpc = await _deletePengurusInvoiceViaRpc(cleanedId);
+          if (!deletedByRpc) {
+            throw Exception(
+              'Invoice tidak dapat dihapus. Pastikan data belum disetujui admin/owner dan patch SQL delete pengurus di Supabase sudah aktif.',
+            );
+          }
+        } else {
+          throw Exception(
+            'Invoice tidak dapat dihapus. Pastikan data belum disetujui admin/owner dan policy delete pengurus di Supabase sudah aktif.',
+          );
+        }
+      }
       await _syncArmadaStatusNowBestEffort();
     } on PostgrestException catch (e) {
+      if (isPengurus) {
+        final deletedByRpc = await _deletePengurusInvoiceViaRpc(cleanedId);
+        if (deletedByRpc) {
+          await _syncArmadaStatusNowBestEffort();
+          return;
+        }
+      }
+      throw Exception('Gagal hapus invoice: ${e.message}');
+    }
+  }
+
+  Future<bool> _deletePengurusInvoiceViaRpc(String id) async {
+    try {
+      final result = await _supabase.rpc(
+        'delete_pengurus_income_invoice',
+        params: <String, dynamic>{
+          'p_invoice_id': id,
+        },
+      );
+      if (result is bool) return result;
+      if (result is num) return result != 0;
+      if (result is Map<String, dynamic>) {
+        final deleted = result['deleted'];
+        if (deleted is bool) return deleted;
+        if (deleted is num) return deleted != 0;
+      }
+      if (result is List && result.isNotEmpty) {
+        final first = result.first;
+        if (first is Map<String, dynamic>) {
+          final deleted = first['deleted'];
+          if (deleted is bool) return deleted;
+          if (deleted is num) return deleted != 0;
+        }
+      }
+      return false;
+    } on PostgrestException catch (e) {
+      final msg = e.message.toLowerCase();
+      final missingRpc = msg.contains('delete_pengurus_income_invoice') &&
+          (msg.contains('does not exist') ||
+              msg.contains('could not find') ||
+              msg.contains('schema cache'));
+      if (missingRpc) {
+        throw Exception(
+          'Invoice tidak dapat dihapus. Jalankan patch SQL delete pengurus terbaru di Supabase agar pengurus bisa menghapus income yang belum diterima admin/owner.',
+        );
+      }
       throw Exception('Gagal hapus invoice: ${e.message}');
     }
   }
@@ -2583,6 +2803,58 @@ class DashboardRepository {
     }
   }
 
+  Future<void> _insertCustomerNotificationBestEffort({
+    required String userId,
+    required String title,
+    required String message,
+    String status = 'unread',
+    String kind = 'info',
+    String? sourceType,
+    String? sourceId,
+    Map<String, dynamic>? payload,
+  }) async {
+    try {
+      await _insertCustomerNotification(
+        userId: userId,
+        title: title,
+        message: message,
+        status: status,
+        kind: kind,
+        sourceType: sourceType,
+        sourceId: sourceId,
+        payload: payload,
+      );
+      await _sendPushNotificationBestEffort(
+        userIds: <String>[userId],
+        title: title,
+        message: message,
+        payload: <String, dynamic>{
+          'source_type': sourceType,
+          'source_id': sourceId,
+          ...?payload,
+        },
+      );
+    } catch (_) {
+      // Best effort only: primary action should still succeed.
+    }
+  }
+
+  Future<void> markCustomerNotificationRead(String notificationId) async {
+    final cleanedId = notificationId.trim();
+    if (cleanedId.isEmpty) return;
+    try {
+      await _supabase
+          .from('customer_notifications')
+          .update(<String, dynamic>{'status': 'read'}).eq('id', cleanedId);
+    } on PostgrestException catch (e) {
+      final lower = e.message.toLowerCase();
+      final missingTable = lower.contains('customer_notifications') &&
+          (lower.contains('does not exist') || lower.contains('column'));
+      if (missingTable) return;
+      throw Exception('Gagal memperbarui notifikasi: ${e.message}');
+    }
+  }
+
   Future<void> _broadcastRoleNotifications({
     required List<String> targetRoles,
     required String title,
@@ -2612,8 +2884,53 @@ class DashboardRepository {
           'p_payload': payload ?? <String, dynamic>{},
         },
       );
+      await _sendPushNotificationBestEffort(
+        targetRoles: cleanedRoles,
+        title: title,
+        message: message,
+        payload: <String, dynamic>{
+          'source_type': sourceType,
+          'source_id': sourceId,
+          ...?payload,
+        },
+      );
     } on PostgrestException catch (e) {
       throw Exception('Gagal mengirim notifikasi staff: ${e.message}');
+    }
+  }
+
+  Future<void> _sendPushNotificationBestEffort({
+    List<String>? userIds,
+    List<String>? targetRoles,
+    required String title,
+    required String message,
+    Map<String, dynamic>? payload,
+  }) async {
+    final cleanedUserIds = (userIds ?? const <String>[])
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+    final cleanedRoles = (targetRoles ?? const <String>[])
+        .map((role) => role.trim().toLowerCase())
+        .where((role) => role.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+    if (cleanedUserIds.isEmpty && cleanedRoles.isEmpty) return;
+
+    try {
+      await _supabase.functions.invoke(
+        'send-push',
+        body: <String, dynamic>{
+          'userIds': cleanedUserIds,
+          'targetRoles': cleanedRoles,
+          'title': title,
+          'message': message,
+          'data': payload ?? <String, dynamic>{},
+        },
+      );
+    } catch (_) {
+      // Best effort only: push should never block primary app actions.
     }
   }
 
@@ -2639,6 +2956,7 @@ class DashboardRepository {
         'request_type': 'new_income',
         'customer_name': customerName,
         'route': route,
+        'target': 'order_acceptance',
       },
     );
   }
@@ -2683,6 +3001,7 @@ class DashboardRepository {
         'request_type': 'edit_request',
         'customer_name': '${invoice['nama_pelanggan'] ?? '-'}',
         'route': route,
+        'target': 'order_acceptance',
       },
     );
   }
@@ -3494,9 +3813,6 @@ class DashboardRepository {
 
   Set<String> _invoiceColumnsToDisableForMissing(String missingColumn) {
     final normalized = missingColumn.trim().toLowerCase();
-    if (_invoiceWorkflowColumns.contains(normalized)) {
-      return Set<String>.from(_invoiceWorkflowColumns);
-    }
     return <String>{normalized};
   }
 
@@ -3640,6 +3956,11 @@ class DashboardRepository {
 
     while (true) {
       try {
+        if (preferredColumns.trim().isEmpty) {
+          await _supabase.from('invoices').insert(preferredPayload);
+          return null;
+        }
+
         final result = await _supabase
             .from('invoices')
             .insert(preferredPayload)

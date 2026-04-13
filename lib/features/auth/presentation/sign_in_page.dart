@@ -23,7 +23,7 @@ class SignInPage extends StatefulWidget {
 
   final AuthRepository repository;
   final BiometricLoginService biometricService;
-  final ValueChanged<AuthSession> onSignedIn;
+  final Future<void> Function(AuthSession session) onSignedIn;
   final VoidCallback onOpenSignUp;
 
   @override
@@ -192,7 +192,7 @@ class _SignInPageState extends State<SignInPage> {
         autoCloseAfter: const Duration(seconds: 3),
       );
       _resetSecurityThrottle();
-      widget.onSignedIn(session);
+      await widget.onSignedIn(session);
     } catch (e) {
       if (!mounted) return;
       _registerFailedAttempt();
@@ -255,7 +255,7 @@ class _SignInPageState extends State<SignInPage> {
       );
       if (!mounted) return;
       _resetSecurityThrottle();
-      widget.onSignedIn(session);
+      await widget.onSignedIn(session);
     } catch (e) {
       if (!mounted) return;
       final message = e.toString().replaceFirst('Exception: ', '');
@@ -358,10 +358,9 @@ class _SignInPageState extends State<SignInPage> {
             SizedBox(
               height: 50,
               child: OutlinedButton.icon(
-                onPressed:
-                    (_loading || _biometricLoading || _isCooldownActive)
-                        ? null
-                        : _submitBiometric,
+                onPressed: (_loading || _biometricLoading || _isCooldownActive)
+                    ? null
+                    : _submitBiometric,
                 style: CvantButtonStyles.outlined(
                   context,
                   color: AppColors.blue,
