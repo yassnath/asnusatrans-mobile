@@ -341,6 +341,10 @@ class PushNotificationService {
           'p_app_role': session.normalizedRole,
         },
       );
+      await _syncRoleTopicSubscription(
+        previousRole: null,
+        nextRole: session.normalizedRole,
+      );
       AppSecurity.debugLog(
         'Push token synced for role ${session.normalizedRole}.',
       );

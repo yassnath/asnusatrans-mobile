@@ -334,10 +334,14 @@ Deno.serve(async (req) => {
               data: messageData,
               android: {
                 priority: "HIGH",
+                ttl: "3600s",
+                direct_boot_ok: true,
                 notification: {
                   channel_id: "cvant_alerts_v2",
                   icon: "ic_stat_notification",
                   sound: "default",
+                  tag: messageTag,
+                  proxy: "DENY",
                   click_action: "FLUTTER_NOTIFICATION_CLICK",
                 },
               },
@@ -370,6 +374,14 @@ Deno.serve(async (req) => {
 
       const rawError = await response.text();
       errors.push(rawError);
+      console.log(
+        JSON.stringify({
+          stage: "fcm-send-failed",
+          targetType: "token" in target ? "token" : "topic",
+          targetValue: "token" in target ? target.token : target.topic,
+          detail: rawError,
+        }),
+      );
       if ("token" in target) {
         const normalized = rawError.toLowerCase();
         if (

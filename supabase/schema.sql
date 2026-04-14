@@ -619,6 +619,8 @@ create table if not exists public.fixed_invoice_batches (
   customer_name text not null default '',
   kop_date date,
   kop_location text,
+  status text not null default 'Unpaid',
+  paid_at date,
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
 );

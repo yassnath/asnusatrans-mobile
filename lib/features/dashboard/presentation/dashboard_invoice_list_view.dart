@@ -51,6 +51,8 @@ class _FixedInvoiceBatch {
     required this.customerName,
     this.kopDate,
     this.kopLocation,
+    this.status = 'Unpaid',
+    this.paidAt,
     this.createdAt,
   });
 
@@ -60,6 +62,8 @@ class _FixedInvoiceBatch {
   final String customerName;
   final String? kopDate;
   final String? kopLocation;
+  final String status;
+  final String? paidAt;
   final String? createdAt;
 
   Map<String, dynamic> toJson() => <String, dynamic>{
@@ -76,6 +80,8 @@ class _FixedInvoiceBatch {
         'customer_name': customerName,
         'kop_date': kopDate,
         'kop_location': kopLocation,
+        'status': status,
+        'paid_at': paidAt,
         'created_at': createdAt,
       };
 
@@ -85,6 +91,8 @@ class _FixedInvoiceBatch {
     final kopDate = '${map['kop_date'] ?? ''}'.trim();
     final createdAt = '${map['created_at'] ?? ''}'.trim();
     final rawInvoiceNumber = '${map['invoice_number'] ?? ''}'.trim();
+    final status = '${map['status'] ?? 'Unpaid'}'.trim();
+    final paidAt = '${map['paid_at'] ?? ''}'.trim();
     final normalizedInvoiceNumber = rawInvoiceNumber.isEmpty
         ? rawInvoiceNumber
         : (() {
@@ -107,6 +115,8 @@ class _FixedInvoiceBatch {
       customerName: customerName,
       kopDate: kopDate,
       kopLocation: '${map['kop_location'] ?? ''}'.trim(),
+      status: status.isEmpty ? 'Unpaid' : status,
+      paidAt: paidAt.isEmpty ? null : paidAt,
       createdAt: createdAt,
     );
   }
@@ -1653,6 +1663,12 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
           kopDate: effectiveKopDate.isEmpty ? null : effectiveKopDate,
           kopLocation:
               effectiveKopLocation.isEmpty ? null : effectiveKopLocation,
+          status: '${baseItem['status'] ?? 'Unpaid'}'.trim().isEmpty
+              ? 'Unpaid'
+              : '${baseItem['status'] ?? 'Unpaid'}'.trim(),
+          paidAt: '${baseItem['paid_at'] ?? ''}'.trim().isEmpty
+              ? null
+              : '${baseItem['paid_at'] ?? ''}'.trim(),
           createdAt: DateTime.now().toIso8601String(),
         ),
       );
@@ -1742,7 +1758,38 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
   Future<void> _openInvoicePrintSelector({
     required List<Map<String, dynamic>> incomes,
   }) async {
-    if (incomes.isEmpty) {
+    final allPrintableIncomes = await (() async {
+      try {
+        final fixedIds = _isAdminOrOwner
+            ? await _loadFixedInvoiceIds()
+            : await _loadLocalFixedInvoiceIds();
+        final fetched = await widget.repository.fetchInvoices();
+        final scoped = fetched.where((item) {
+          final id = '${item['id'] ?? ''}'.trim();
+          if (id.isNotEmpty && _locallyRemovedRowIds.contains(id)) return false;
+          if (id.isNotEmpty && fixedIds.contains(id)) return false;
+          if (_isPengurus) return _isOwnedByCurrentUser(item);
+          if (_isAdminOrOwner) return _isPengurusIncomeApproved(item);
+          return true;
+        }).toList()
+          ..sort((a, b) {
+            final aDate = Formatters.parseDate(
+                  a['tanggal_kop'] ?? a['tanggal'] ?? a['created_at'],
+                ) ??
+                DateTime.fromMillisecondsSinceEpoch(0);
+            final bDate = Formatters.parseDate(
+                  b['tanggal_kop'] ?? b['tanggal'] ?? b['created_at'],
+                ) ??
+                DateTime.fromMillisecondsSinceEpoch(0);
+            return bDate.compareTo(aDate);
+          });
+        return scoped;
+      } catch (_) {
+        return incomes;
+      }
+    })();
+
+    if (allPrintableIncomes.isEmpty) {
       _snack(
         _t('Tidak ada invoice income untuk dicetak.',
             'No income invoices available to print.'),
@@ -1771,7 +1818,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       List<_InvoicePrintGroup> groups,
     ) {
       return _buildGeneratedInvoiceNumbersForGroups(
-        incomes: incomes,
+        incomes: allPrintableIncomes,
         groups: groups,
         fixedInvoiceBatches: fixedInvoiceBatches,
       );
@@ -2121,7 +2168,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         return date.year == selectedYear && date.month == selectedMonth;
       }
 
-      return incomes.where((item) {
+      return allPrintableIncomes.where((item) {
         if (!inMonthYear(item)) return false;
         if (customerKind == 'company' && !isCompany(item)) return false;
         if (customerKind == 'personal' && isCompany(item)) return false;
@@ -2407,7 +2454,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                       return;
                     }
                     final selected = await _resolveLatestInvoiceItems(
-                      incomes
+                      allPrintableIncomes
                           .where((item) =>
                               selectedIds.contains('${item['id'] ?? ''}'))
                           .cast<Map<String, dynamic>>(),
@@ -2502,6 +2549,15 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                             kopLocation: effectiveKopLocation.isEmpty
                                 ? null
                                 : effectiveKopLocation,
+                            status: '${baseItem['status'] ?? 'Unpaid'}'
+                                    .trim()
+                                    .isEmpty
+                                ? 'Unpaid'
+                                : '${baseItem['status'] ?? 'Unpaid'}'.trim(),
+                            paidAt:
+                                '${baseItem['paid_at'] ?? ''}'.trim().isEmpty
+                                    ? null
+                                    : '${baseItem['paid_at'] ?? ''}'.trim(),
                             createdAt: DateTime.now().toIso8601String(),
                           ),
                         });

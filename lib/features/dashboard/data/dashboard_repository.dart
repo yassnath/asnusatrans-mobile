@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/security/app_security.dart';
 import '../../../core/utils/formatters.dart';
 import '../models/dashboard_models.dart';
 
@@ -490,7 +491,7 @@ class DashboardRepository {
           .from('fixed_invoice_batches')
           .select(
             'batch_id,invoice_ids,invoice_number,customer_name,kop_date,'
-            'kop_location,created_at,updated_at',
+            'kop_location,status,paid_at,created_at,updated_at',
           )
           .order('created_at', ascending: false);
       return _toMapList(res).map(_normalizeFixedInvoiceBatchRow).toList();
@@ -510,6 +511,8 @@ class DashboardRepository {
     String? kopDate,
     String? kopLocation,
     String? createdAt,
+    String? status,
+    String? paidAt,
   }) async {
     final cleanedBatchId = batchId.trim();
     final cleanedInvoiceIds = invoiceIds
@@ -537,6 +540,8 @@ class DashboardRepository {
       'kop_date': (kopDate ?? '').trim().isEmpty ? null : kopDate!.trim(),
       'kop_location':
           (kopLocation ?? '').trim().isEmpty ? null : kopLocation!.trim(),
+      'status': (status ?? '').trim().isEmpty ? 'Unpaid' : status!.trim(),
+      'paid_at': (paidAt ?? '').trim().isEmpty ? null : paidAt!.trim(),
       'created_at': (createdAt ?? '').trim().isEmpty
           ? DateTime.now().toIso8601String()
           : createdAt!.trim(),
@@ -2928,7 +2933,7 @@ class DashboardRepository {
     try {
       final accessToken =
           _supabase.auth.currentSession?.accessToken.trim() ?? '';
-      await _supabase.functions.invoke(
+      final response = await _supabase.functions.invoke(
         'send-push',
         headers: <String, String>{
           if (accessToken.isNotEmpty) 'Authorization': 'Bearer $accessToken',
@@ -2941,6 +2946,32 @@ class DashboardRepository {
           'data': payload ?? <String, dynamic>{},
         },
       );
+      final responseBody = response.data;
+      final responseMap = responseBody is Map
+          ? Map<String, dynamic>.from(
+              responseBody.map(
+                (key, value) => MapEntry('$key', value),
+              ),
+            )
+          : const <String, dynamic>{};
+      final delivered =
+          int.tryParse('${responseMap['delivered'] ?? ''}'.trim()) ?? 0;
+      final attempted =
+          int.tryParse('${responseMap['attempted'] ?? ''}'.trim()) ?? 0;
+      final errors = responseMap['errors'];
+      if (response.status >= 400 || delivered <= 0) {
+        AppSecurity.debugLog(
+          'send-push returned no delivered notifications.',
+          error: <String, dynamic>{
+            'status': response.status,
+            'delivered': delivered,
+            'attempted': attempted,
+            'target_roles': cleanedRoles,
+            'user_ids': cleanedUserIds,
+            'errors': errors,
+          },
+        );
+      }
     } catch (_) {
       // Best effort only: push should never block primary app actions.
     }
@@ -3766,6 +3797,8 @@ class DashboardRepository {
       'customer_name': '${row['customer_name'] ?? ''}'.trim(),
       'kop_date': '${row['kop_date'] ?? ''}'.trim(),
       'kop_location': '${row['kop_location'] ?? ''}'.trim(),
+      'status': '${row['status'] ?? 'Unpaid'}'.trim(),
+      'paid_at': '${row['paid_at'] ?? ''}'.trim(),
       'created_at': '${row['created_at'] ?? ''}'.trim(),
       'updated_at': '${row['updated_at'] ?? ''}'.trim(),
     };

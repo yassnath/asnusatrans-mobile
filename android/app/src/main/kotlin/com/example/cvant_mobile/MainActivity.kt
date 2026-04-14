@@ -71,19 +71,95 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     private fun openAutostartSettings() {
-        val intents = listOf(
-            Intent().apply {
-                component = ComponentName(
-                    "com.miui.securitycenter",
-                    "com.miui.permcenter.autostart.AutoStartManagementActivity",
-                )
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            },
-            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                data = Uri.fromParts("package", packageName, null)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            },
-        )
+        val manufacturer = Build.MANUFACTURER.lowercase()
+        val intents = mutableListOf<Intent>()
+
+        fun componentIntent(pkg: String, cls: String) = Intent().apply {
+            component = ComponentName(pkg, cls)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+
+        if (
+            manufacturer.contains("xiaomi") ||
+                manufacturer.contains("redmi") ||
+                manufacturer.contains("poco")
+        ) {
+            intents += componentIntent(
+                "com.miui.securitycenter",
+                "com.miui.permcenter.autostart.AutoStartManagementActivity",
+            )
+            intents += componentIntent(
+                "com.miui.securitycenter",
+                "com.miui.appmanager.ApplicationsDetailsActivity",
+            )
+        }
+
+        if (
+            manufacturer.contains("oppo") ||
+                manufacturer.contains("realme") ||
+                manufacturer.contains("oneplus")
+        ) {
+            intents += componentIntent(
+                "com.coloros.safecenter",
+                "com.coloros.safecenter.permission.startup.StartupAppListActivity",
+            )
+            intents += componentIntent(
+                "com.oppo.safe",
+                "com.oppo.safe.permission.startup.StartupAppListActivity",
+            )
+            intents += componentIntent(
+                "com.oneplus.security",
+                "com.oneplus.security.chainlaunch.view.ChainLaunchAppListActivity",
+            )
+        }
+
+        if (manufacturer.contains("vivo") || manufacturer.contains("iqoo")) {
+            intents += componentIntent(
+                "com.iqoo.secure",
+                "com.iqoo.secure.ui.phoneoptimize.AddWhiteListActivity",
+            )
+            intents += componentIntent(
+                "com.vivo.permissionmanager",
+                "com.vivo.permissionmanager.activity.BgStartUpManagerActivity",
+            )
+            intents += componentIntent(
+                "com.iqoo.secure",
+                "com.iqoo.secure.ui.phoneoptimize.BgStartUpManager",
+            )
+        }
+
+        if (manufacturer.contains("huawei") || manufacturer.contains("honor")) {
+            intents += componentIntent(
+                "com.huawei.systemmanager",
+                "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity",
+            )
+            intents += componentIntent(
+                "com.huawei.systemmanager",
+                "com.huawei.systemmanager.optimize.process.ProtectActivity",
+            )
+        }
+
+        if (manufacturer.contains("samsung")) {
+            intents += componentIntent(
+                "com.samsung.android.lool",
+                "com.samsung.android.sm.ui.battery.BatteryActivity",
+            )
+        }
+
+        if (manufacturer.contains("asus")) {
+            intents += componentIntent(
+                "com.asus.mobilemanager",
+                "com.asus.mobilemanager.entry.FunctionActivity",
+            )
+        }
+
+        intents += Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        intents += Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.fromParts("package", packageName, null)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
 
         for (intent in intents) {
             if (startSafely(intent) != null) return

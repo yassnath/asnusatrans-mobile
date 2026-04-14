@@ -525,7 +525,7 @@ class _DashboardPageState extends State<DashboardPage> {
     final ignoringBatteryOptimizations = await AndroidDeviceSettingsService
         .instance
         .isIgnoringBatteryOptimizations();
-    if (ignoringBatteryOptimizations || !mounted) return;
+    if (!mounted) return;
 
     final action = await showDialog<String>(
       context: context,
@@ -533,8 +533,10 @@ class _DashboardPageState extends State<DashboardPage> {
       builder: (dialogContext) {
         return AlertDialog(
           title: const Text('Aktifkan Notifikasi Realtime'),
-          content: const Text(
-            'Agar notifikasi income pengurus masuk seperti aplikasi chat, izinkan aplikasi berjalan tanpa batasan baterai. Setelah itu, cek juga pengaturan notifikasi aplikasi.',
+          content: Text(
+            ignoringBatteryOptimizations
+                ? 'Notifikasi aplikasi sudah boleh berjalan lebih bebas dari optimasi baterai. Untuk beberapa Android seperti Xiaomi, POCO, OPPO, vivo, dan Realme, autostart dan pengaturan notifikasi aplikasi tetap perlu dipastikan aktif.'
+                : 'Agar notifikasi income pengurus masuk seperti aplikasi chat, izinkan aplikasi berjalan tanpa batasan baterai lalu cek autostart dan pengaturan notifikasi aplikasi.',
           ),
           actions: [
             TextButton(
@@ -544,6 +546,10 @@ class _DashboardPageState extends State<DashboardPage> {
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop('notification'),
               child: const Text('Pengaturan Notifikasi'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop('autostart'),
+              child: const Text('Autostart'),
             ),
             FilledButton(
               onPressed: () => Navigator.of(dialogContext).pop('battery'),
@@ -559,6 +565,10 @@ class _DashboardPageState extends State<DashboardPage> {
       case 'notification':
         await AndroidDeviceSettingsService.instance
             .openAppNotificationSettings();
+        break;
+      case 'autostart':
+        await AndroidDeviceSettingsService.instance
+            .openAutostartSettingsBestEffort();
         break;
       case 'battery':
         await AndroidDeviceSettingsService.instance

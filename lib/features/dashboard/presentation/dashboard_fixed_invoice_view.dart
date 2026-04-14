@@ -53,6 +53,12 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
     return double.tryParse(cleaned) ?? 0;
   }
 
+  String _toDbDate(DateTime value) {
+    final mm = value.month.toString().padLeft(2, '0');
+    final dd = value.day.toString().padLeft(2, '0');
+    return '${value.year}-$mm-$dd';
+  }
+
   List<Map<String, dynamic>> _toDetailList(dynamic value) {
     if (value is List) {
       return value
@@ -123,6 +129,8 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
     final createdAt =
         '${representative['updated_at'] ?? representative['created_at'] ?? ''}'
             .trim();
+    final status = '${representative['status'] ?? 'Unpaid'}'.trim();
+    final paidAt = '${representative['paid_at'] ?? ''}'.trim();
     return _FixedInvoiceBatch(
       batchId: 'legacy_${invoiceIds.join('_')}',
       invoiceIds: invoiceIds,
@@ -136,6 +144,8 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
           '${representative['tanggal_kop'] ?? representative['tanggal'] ?? ''}'
               .trim(),
       kopLocation: '${representative['lokasi_kop'] ?? ''}'.trim(),
+      status: status.isEmpty ? 'Unpaid' : status,
+      paidAt: paidAt.isEmpty ? null : paidAt,
       createdAt:
           createdAt.isEmpty ? DateTime.now().toIso8601String() : createdAt,
     );
@@ -228,6 +238,8 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
       customerName: batch.customerName,
       kopDate: batch.kopDate,
       kopLocation: batch.kopLocation,
+      status: batch.status,
+      paidAt: batch.paidAt,
       createdAt: batch.createdAt,
     );
   }
@@ -431,6 +443,171 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
     );
   }
 
+  Future<void> _editFixedInvoiceStatus(Map<String, dynamic> item) async {
+    final batchId = '${item['__batch_id'] ?? item['id'] ?? ''}'.trim();
+    if (batchId.isEmpty) {
+      _snack(
+        _t('Batch invoice tidak ditemukan.', 'Batch invoice not found.'),
+        error: true,
+      );
+      return;
+    }
+    final rawStatus = '${item['status'] ?? 'Unpaid'}'.trim();
+    final initialStatus = rawStatus.isEmpty ? 'Unpaid' : rawStatus;
+    final rawPaidAt = '${item['paid_at'] ?? ''}'.trim();
+    final initialPaidDate =
+        rawPaidAt.isEmpty ? null : (Formatters.parseDate(rawPaidAt) ?? null);
+
+    final result = await showDialog<Map<String, String?>>(
+      context: context,
+      barrierColor: AppColors.popupOverlay,
+      builder: (context) {
+        var selectedStatus = initialStatus;
+        DateTime? selectedPaidDate = initialPaidDate;
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            Future<void> pickPaidDate() async {
+              final initial = selectedPaidDate ?? DateTime.now();
+              final picked = await showDatePicker(
+                context: context,
+                firstDate: DateTime(2020),
+                lastDate: DateTime(2100),
+                initialDate: initial,
+              );
+              if (picked == null) return;
+              setDialogState(() {
+                selectedPaidDate = picked;
+              });
+            }
+
+            String paidDateLabel() {
+              if (selectedPaidDate == null) return '-';
+              return Formatters.dmy(selectedPaidDate);
+            }
+
+            return AlertDialog(
+              title: Text(_t('Edit Status Fix Invoice', 'Edit Fixed Invoice')),
+              content: SizedBox(
+                width: 420,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    CvantDropdownField<String>(
+                      initialValue: selectedStatus,
+                      decoration: InputDecoration(
+                        labelText: _t('Status', 'Status'),
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'Unpaid',
+                          child: Text('Unpaid'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'Paid',
+                          child: Text('Paid'),
+                        ),
+                      ],
+                      onChanged: (value) => setDialogState(() {
+                        selectedStatus = value ?? 'Unpaid';
+                        if (selectedStatus != 'Paid') {
+                          selectedPaidDate = null;
+                        } else {
+                          selectedPaidDate ??= DateTime.now();
+                        }
+                      }),
+                    ),
+                    const SizedBox(height: 10),
+                    InkWell(
+                      onTap: selectedStatus == 'Paid' ? pickPaidDate : null,
+                      borderRadius: BorderRadius.circular(10),
+                      child: InputDecorator(
+                        decoration: InputDecoration(
+                          labelText: _t('Tanggal Pelunasan', 'Payment Date'),
+                        ),
+                        child: Text(paidDateLabel()),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                OutlinedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: CvantButtonStyles.outlined(
+                    context,
+                    color: AppColors.isLight(context)
+                        ? AppColors.textSecondaryLight
+                        : const Color(0xFFE2E8F0),
+                    borderColor: AppColors.neutralOutline,
+                  ),
+                  child: Text(_t('Batal', 'Cancel')),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    final paidAt =
+                        selectedStatus == 'Paid' && selectedPaidDate != null
+                            ? _toDbDate(selectedPaidDate!)
+                            : null;
+                    Navigator.pop(context, {
+                      'status': selectedStatus,
+                      'paid_at': paidAt,
+                    });
+                  },
+                  style: CvantButtonStyles.filled(
+                    context,
+                    color: AppColors.success,
+                  ),
+                  child: Text(_t('Simpan', 'Save')),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (result == null) return;
+    final newStatus = '${result['status'] ?? 'Unpaid'}'.trim();
+    final newPaidAt = '${result['paid_at'] ?? ''}'.trim();
+
+    try {
+      final batches = await _loadFixedBatches();
+      final index = batches.indexWhere((batch) => batch.batchId == batchId);
+      if (index >= 0) {
+        final current = batches[index];
+        final updated = _FixedInvoiceBatch(
+          batchId: current.batchId,
+          invoiceIds: current.invoiceIds,
+          invoiceNumber: current.invoiceNumber,
+          customerName: current.customerName,
+          kopDate: current.kopDate,
+          kopLocation: current.kopLocation,
+          status: newStatus.isEmpty ? 'Unpaid' : newStatus,
+          paidAt: newPaidAt.isEmpty ? null : newPaidAt,
+          createdAt: current.createdAt,
+        );
+        batches[index] = updated;
+        await _saveFixedBatches(batches);
+        await _upsertRemoteFixedBatch(updated);
+      }
+      if (!mounted) return;
+      _snack(
+        _t('Status fix invoice diperbarui.', 'Fixed invoice status updated.'),
+      );
+      setState(() {
+        _future = _load();
+      });
+      widget.onDataChanged?.call();
+    } catch (e) {
+      if (!mounted) return;
+      _snack(
+        e.toString().replaceFirst('Exception: ', ''),
+        error: true,
+      );
+    }
+  }
+
   Future<void> _openBatchPreview(Map<String, dynamic> item) async {
     final sourceItems =
         (item['__batch_items'] as List<dynamic>? ?? const <dynamic>[])
@@ -481,6 +658,14 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                   Text(
                     '${_t('Total', 'Total')}: ${Formatters.rupiah(total)}',
                     style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${_t('Status', 'Status')}: ${item['status'] ?? '-'}',
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${_t('Tanggal Pelunasan', 'Payment Date')}: ${((item['paid_at'] ?? '').toString().trim().isEmpty ? '-' : Formatters.dmy(item['paid_at']))}',
                   ),
                   const SizedBox(height: 12),
                   Text(
@@ -820,6 +1005,9 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
             ? first['lokasi_kop']
             : batch.kopLocation,
         'total_bayar': total,
+        'status':
+            batch.status.isEmpty ? (first['status'] ?? 'Unpaid') : batch.status,
+        'paid_at': batch.paidAt,
         '__batch_id': batch.batchId,
         '__batch_invoice_ids': batch.invoiceIds,
         '__batch_invoice_number': batch.invoiceNumber,
@@ -1163,6 +1351,24 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                                         runSpacing: 8,
                                         alignment: WrapAlignment.end,
                                         children: [
+                                          Tooltip(
+                                            message: _t(
+                                              'Edit Status',
+                                              'Edit Status',
+                                            ),
+                                            child: OutlinedButton(
+                                              onPressed: () =>
+                                                  _editFixedInvoiceStatus(item),
+                                              style: _mobileActionButtonStyle(
+                                                context: context,
+                                                color: AppColors.success,
+                                              ),
+                                              child: const Icon(
+                                                Icons.edit_note_outlined,
+                                                size: 18,
+                                              ),
+                                            ),
+                                          ),
                                           Tooltip(
                                             message: _t('Preview', 'Preview'),
                                             child: OutlinedButton(
