@@ -289,6 +289,14 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     return value.toUpperCase().replaceAll(RegExp(r'\s+'), ' ').trim();
   }
 
+  String _normalizeArmadaNameKey(String value) {
+    return value
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
   String? _extractPlateFromText(String value) {
     final match = RegExp(
       r'[A-Z]{1,2}\s?[0-9]{1,4}\s?[A-Z]{1,3}',
@@ -298,9 +306,33 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     return plate.isEmpty ? null : plate;
   }
 
+  void _normalizeDetailPlateFields(Map<String, dynamic> row) {
+    final directPlate =
+        _normalizePlateText('${row['plat_nomor'] ?? row['no_polisi'] ?? ''}');
+    if (directPlate.isNotEmpty && directPlate != '-') {
+      row['plat_nomor'] = directPlate;
+      row['no_polisi'] = directPlate;
+      return;
+    }
+
+    for (final candidate in <String>[
+      '${row['armada_manual'] ?? ''}'.trim(),
+      '${row['armada_label'] ?? ''}'.trim(),
+      '${row['armada'] ?? ''}'.trim(),
+    ]) {
+      if (candidate.isEmpty) continue;
+      final parsed = _extractPlateFromText(candidate);
+      if (parsed == null || parsed.isEmpty || parsed == '-') continue;
+      row['plat_nomor'] = parsed;
+      row['no_polisi'] = parsed;
+      return;
+    }
+  }
+
   String _resolveDetailPlateText(
     Map<String, dynamic> row, {
     Map<String, String>? armadaPlateById,
+    Map<String, String>? armadaPlateByName,
     String? fallbackArmadaId,
   }) {
     final rowArmadaId = '${row['armada_id'] ?? ''}'.trim();
@@ -310,6 +342,11 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         return _normalizePlateText(byArmada);
       }
     }
+
+    final direct = _normalizePlateText(
+      '${row['plat_nomor'] ?? row['no_polisi'] ?? ''}',
+    );
+    if (direct.isNotEmpty && direct != '-') return direct;
 
     final manualCandidates = <String>[
       '${row['armada_manual'] ?? ''}'.trim(),
@@ -322,16 +359,13 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       if (parsed != null && parsed.isNotEmpty && parsed != '-') {
         return parsed;
       }
-      final normalized = _normalizePlateText(candidate);
-      if (normalized.isNotEmpty && normalized != '-') {
-        return normalized;
+      if (armadaPlateByName != null) {
+        final byName = armadaPlateByName[_normalizeArmadaNameKey(candidate)];
+        if (byName != null && byName.trim().isNotEmpty && byName != '-') {
+          return _normalizePlateText(byName);
+        }
       }
     }
-
-    final direct = _normalizePlateText(
-      '${row['plat_nomor'] ?? row['no_polisi'] ?? ''}',
-    );
-    if (direct.isNotEmpty && direct != '-') return direct;
 
     final invoiceArmadaId = (fallbackArmadaId ?? '').trim();
     if (invoiceArmadaId.isNotEmpty && armadaPlateById != null) {
@@ -3706,6 +3740,17 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
 
   Future<void> _openInvoicePreview(Map<String, dynamic> item) async {
     final previewItem = await _resolveLatestInvoiceItem(item);
+    final armadas = await widget.repository.fetchArmadas();
+    final armadaPlateById = <String, String>{
+      for (final armada in armadas)
+        '${armada['id'] ?? ''}'.trim():
+            '${armada['plat_nomor'] ?? ''}'.trim().toUpperCase(),
+    };
+    final armadaPlateByName = <String, String>{
+      for (final armada in armadas)
+        _normalizeArmadaNameKey('${armada['nama_truk'] ?? ''}'):
+            '${armada['plat_nomor'] ?? ''}'.trim().toUpperCase(),
+    };
     if (!mounted) return;
 
     await showDialog<void>(
@@ -3759,6 +3804,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                       final muatan = '${row['muatan'] ?? ''}'.trim();
                       final plate = _resolveDetailPlateText(
                         row,
+                        armadaPlateById: armadaPlateById,
+                        armadaPlateByName: armadaPlateByName,
                         fallbackArmadaId: '${previewItem['armada_id'] ?? ''}',
                       );
                       final departureDate = Formatters.dmy(
@@ -4074,11 +4121,17 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
           '${armada['id'] ?? ''}':
               '${armada['plat_nomor'] ?? ''}'.trim().toUpperCase(),
       };
+      final armadaPlateByName = <String, String>{
+        for (final armada in armadas)
+          _normalizeArmadaNameKey('${armada['nama_truk'] ?? ''}'):
+              '${armada['plat_nomor'] ?? ''}'.trim().toUpperCase(),
+      };
 
       String resolveNoPolisi(Map<String, dynamic> row) {
         return _resolveDetailPlateText(
           row,
           armadaPlateById: armadaPlateById,
+          armadaPlateByName: armadaPlateByName,
           fallbackArmadaId: '${item['armada_id'] ?? ''}',
         );
       }
@@ -7599,16 +7652,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     if (value is List) {
       return value.whereType<Map>().map((item) {
         final row = Map<String, dynamic>.from(item);
-        final armadaId = '${row['armada_id'] ?? ''}'.trim();
-        final manualArmada = '${row['armada_manual'] ?? ''}'.trim();
-        if (armadaId.isEmpty && manualArmada.isNotEmpty) {
-          final manualPlate = _extractPlateFromText(manualArmada) ??
-              _normalizePlateText(manualArmada);
-          if (manualPlate.isNotEmpty && manualPlate != '-') {
-            row['plat_nomor'] = manualPlate;
-            row['no_polisi'] = manualPlate;
-          }
-        }
+        _normalizeDetailPlateFields(row);
         return row;
       }).toList();
     }

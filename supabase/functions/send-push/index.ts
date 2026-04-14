@@ -9,6 +9,11 @@ type PushRequest = {
   data?: Record<string, unknown>;
 };
 
+type DeviceTokenRow = {
+  user_id?: unknown;
+  token?: unknown;
+};
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
@@ -47,6 +52,33 @@ function collectTokens(rows: Array<{ token?: unknown }>): string[] {
       rows
         .map((row) => String(row.token ?? "").trim())
         .filter((token) => token.length > 0),
+    ),
+  );
+}
+
+function collectDeviceTargets(rows: DeviceTokenRow[]): Array<{
+  userId: string;
+  token: string;
+}> {
+  const targets = new Map<string, { userId: string; token: string }>();
+  for (const row of rows) {
+    const token = String(row.token ?? "").trim();
+    const userId = String(row.user_id ?? "").trim();
+    if (!token || !userId) continue;
+    targets.set(token, { userId, token });
+  }
+  return Array.from(targets.values());
+}
+
+function collectRoleTopics(roles: string[]): string[] {
+  return Array.from(
+    new Set(
+      roles
+        .map((role) => role.trim().toLowerCase())
+        .filter((role) =>
+          ["admin", "owner", "pengurus", "customer"].includes(role)
+        )
+        .map((role) => `role_${role}`),
     ),
   );
 }
@@ -123,7 +155,14 @@ Deno.serve(async (req) => {
     const requestedUserIds = normalizeStringArray(body.userIds);
     const title = String(body.title ?? "").trim();
     const message = String(body.message ?? "").trim();
-    const dataPayload = stringifyData(body.data ?? {});
+    const dataPayload = stringifyData({
+      ...(body.data ?? {}),
+      title,
+      body: message,
+      notification_title: title,
+      notification_body: message,
+      sent_at: new Date().toISOString(),
+    });
 
     if (!title || !message) {
       return jsonResponse(400, { error: "title and message are required." });
@@ -131,6 +170,7 @@ Deno.serve(async (req) => {
 
     const serviceClient = createClient(supabaseUrl, supabaseServiceRoleKey);
     const userIds = new Set<string>(requestedUserIds);
+    const roleTopics = collectRoleTopics(targetRoles);
 
     if (targetRoles.length > 0) {
       const { data: profiles, error: profileError } = await serviceClient
@@ -160,12 +200,12 @@ Deno.serve(async (req) => {
       );
     }
 
-    let tokens: string[] = [];
+    let deviceTargets: Array<{ userId: string; token: string }> = [];
 
     if (userIds.size > 0) {
       const { data: tokenRows, error: tokenError } = await serviceClient
         .from("device_push_tokens")
-        .select("token")
+        .select("user_id, token")
         .in("user_id", Array.from(userIds))
         .eq("is_active", true);
 
@@ -176,13 +216,13 @@ Deno.serve(async (req) => {
         });
       }
 
-      tokens = collectTokens(tokenRows ?? []);
+      deviceTargets = collectDeviceTargets((tokenRows ?? []) as DeviceTokenRow[]);
     }
 
-    if (tokens.length === 0 && targetRoles.length > 0) {
+    if (deviceTargets.length === 0 && targetRoles.length > 0) {
       const { data: roleTokenRows, error: roleTokenError } = await serviceClient
         .from("device_push_tokens")
-        .select("token")
+        .select("user_id, token")
         .in("app_role", targetRoles)
         .eq("is_active", true);
 
@@ -193,10 +233,12 @@ Deno.serve(async (req) => {
         });
       }
 
-      tokens = collectTokens(roleTokenRows ?? []);
+      deviceTargets = collectDeviceTargets(
+        (roleTokenRows ?? []) as DeviceTokenRow[],
+      );
     }
 
-    if (tokens.length === 0) {
+    if (deviceTargets.length === 0) {
       console.log(
         JSON.stringify({
           stage: "resolve-device-tokens",
@@ -217,18 +259,63 @@ Deno.serve(async (req) => {
     let delivered = 0;
     const invalidTokens: string[] = [];
     const errors: string[] = [];
+    const unreadCountByUser = new Map<string, number>();
+    const requestType = dataPayload["request_type"] ?? "";
+    const sourceType = dataPayload["source_type"] ?? "push";
+    const sourceId = dataPayload["source_id"] ?? dataPayload["invoice_id"] ?? "";
+    const messageTag = [sourceType, requestType, sourceId]
+      .map((part) => String(part ?? "").trim())
+      .filter((part) => part.length > 0)
+      .join(":") || `push:${Date.now()}`;
+
+    const targetUserIds = Array.from(
+      new Set(deviceTargets.map((target) => target.userId).filter((id) => id)),
+    );
+    if (targetUserIds.length > 0) {
+      const { data: unreadRows, error: unreadError } = await serviceClient
+        .from("customer_notifications")
+        .select("user_id")
+        .in("user_id", targetUserIds)
+        .eq("status", "unread");
+
+      if (unreadError) {
+        console.log(
+          JSON.stringify({
+            stage: "resolve-unread-counts",
+            detail: unreadError.message,
+          }),
+        );
+      } else {
+        for (const row of unreadRows ?? []) {
+          const userId = String(row.user_id ?? "").trim();
+          if (!userId) continue;
+          unreadCountByUser.set(userId, (unreadCountByUser.get(userId) ?? 0) + 1);
+        }
+      }
+    }
 
     console.log(
       JSON.stringify({
         stage: "sending-push",
         targetRoles,
         resolvedUserIds: Array.from(userIds),
-        tokenCount: tokens.length,
+        tokenCount: deviceTargets.length,
+        topicCount: roleTopics.length,
         title,
       }),
     );
 
-    for (const token of tokens) {
+    const sendMessage = async (
+      target:
+        | { token: string; userId?: string; badgeCount?: number }
+        | { topic: string; badgeCount?: number },
+    ) => {
+      const badgeCount = Math.max(1, target.badgeCount ?? 1);
+      const messageData = {
+        ...dataPayload,
+        badge_count: String(badgeCount),
+        notification_count: String(badgeCount),
+      };
       const response = await fetch(
         `https://fcm.googleapis.com/v1/projects/${firebaseProjectId}/messages:send`,
         {
@@ -239,24 +326,35 @@ Deno.serve(async (req) => {
           },
           body: JSON.stringify({
             message: {
-              token,
+              ...target,
               notification: {
                 title,
                 body: message,
               },
-              data: dataPayload,
+              data: messageData,
               android: {
-                priority: "high",
+                priority: "HIGH",
                 notification: {
-                  channel_id: "cvant_alerts",
+                  channel_id: "cvant_alerts_v2",
+                  icon: "ic_stat_notification",
                   sound: "default",
+                  click_action: "FLUTTER_NOTIFICATION_CLICK",
                 },
               },
               apns: {
+                headers: {
+                  "apns-priority": "10",
+                  "apns-push-type": "alert",
+                },
                 payload: {
                   aps: {
+                    alert: {
+                      title,
+                      body: message,
+                    },
                     sound: "default",
                     "content-available": 1,
+                    "mutable-content": 1,
                   },
                 },
               },
@@ -267,18 +365,34 @@ Deno.serve(async (req) => {
 
       if (response.ok) {
         delivered += 1;
-        continue;
+        return;
       }
 
       const rawError = await response.text();
       errors.push(rawError);
-      const normalized = rawError.toLowerCase();
-      if (
-        normalized.includes("registration-token-not-registered") ||
-        normalized.includes("unregistered")
-      ) {
-        invalidTokens.push(token);
+      if ("token" in target) {
+        const normalized = rawError.toLowerCase();
+        if (
+          normalized.includes("registration-token-not-registered") ||
+          normalized.includes("unregistered")
+        ) {
+          invalidTokens.push(target.token);
+        }
       }
+    };
+
+    for (const target of deviceTargets) {
+      const badgeCount = unreadCountByUser.get(target.userId) ?? 1;
+      await sendMessage({
+        token: target.token,
+        userId: target.userId,
+        badgeCount,
+      });
+    }
+
+    for (const topic of roleTopics) {
+      const badgeCount = Math.max(...unreadCountByUser.values(), 1);
+      await sendMessage({ topic, badgeCount });
     }
 
     if (invalidTokens.length > 0) {
@@ -293,7 +407,7 @@ Deno.serve(async (req) => {
 
     return jsonResponse(200, {
       delivered,
-      attempted: tokens.length,
+      attempted: deviceTargets.length + roleTopics.length,
       invalidTokens: invalidTokens.length,
       errors,
     });

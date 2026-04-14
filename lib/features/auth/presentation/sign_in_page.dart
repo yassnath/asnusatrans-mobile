@@ -7,6 +7,7 @@ import '../../../core/security/app_security.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/cvant_button_styles.dart';
 import '../../../core/widgets/cvant_popup.dart';
+import '../../../core/notifications/push_notification_service.dart';
 import '../data/auth_repository.dart';
 import '../data/biometric_login_service.dart';
 import '../models/auth_session.dart';
@@ -48,6 +49,11 @@ class _SignInPageState extends State<SignInPage> {
   void initState() {
     super.initState();
     _refreshBiometricState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(
+        PushNotificationService.instance.ensureNotificationPermissionPrompt(),
+      );
+    });
   }
 
   @override

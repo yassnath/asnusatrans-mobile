@@ -35,6 +35,9 @@ class PushNavigationIntent {
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   try {
     await _initializeFirebaseForPush();
+    await PushNotificationService.instance._initializeLocalNotifications();
+    await PushNotificationService.instance
+        ._showNotificationFromRemoteMessage(message);
   } catch (_) {
     // Ignore: app may already be initialized or Firebase config may be absent.
   }
@@ -68,10 +71,13 @@ class PushNotificationService {
 
   static const AndroidNotificationChannel _defaultChannel =
       AndroidNotificationChannel(
-    'cvant_alerts',
+    'cvant_alerts_v2',
     'CVANT Alerts',
     description: 'Push notification channel for approval and invoice alerts.',
-    importance: Importance.high,
+    importance: Importance.max,
+    playSound: true,
+    enableVibration: true,
+    showBadge: true,
   );
 
   final FlutterLocalNotificationsPlugin _localNotifications =
@@ -93,6 +99,7 @@ class PushNotificationService {
   bool _pushRuntimeReady = false;
   String? _activeToken;
   AuthSession? _boundSession;
+  String? _boundRoleTopic;
   String? _initializationFailureReason;
   AppLifecycleListener? _lifecycleListener;
   Timer? _tokenRetryTimer;
@@ -160,17 +167,33 @@ class PushNotificationService {
     }
   }
 
+  Future<void> ensureNotificationPermissionPrompt() async {
+    await _requestNotificationPermission();
+  }
+
   Future<void> bindAuthenticatedSession(AuthSession session) async {
+    final previousRole = _boundSession?.normalizedRole;
     _boundSession = session;
     if (!_pushRuntimeReady) return;
+    await _syncRoleTopicSubscription(
+      previousRole: previousRole,
+      nextRole: session.normalizedRole,
+    );
     await _requestNotificationPermission();
     await _syncBoundToken();
   }
 
   Future<void> clearAuthenticatedSession() async {
     final token = _activeToken;
+    final previousRole = _boundSession?.normalizedRole;
     _boundSession = null;
     _cancelTokenRetry();
+    if (_pushRuntimeReady) {
+      await _syncRoleTopicSubscription(
+        previousRole: previousRole,
+        nextRole: null,
+      );
+    }
     if (!_pushRuntimeReady || token == null || token.isEmpty) return;
     try {
       await Supabase.instance.client.rpc(
@@ -186,10 +209,61 @@ class PushNotificationService {
     }
   }
 
+  String? _roleTopicName(String? role) {
+    final cleaned = (role ?? '').trim().toLowerCase();
+    switch (cleaned) {
+      case 'admin':
+      case 'owner':
+      case 'pengurus':
+      case 'customer':
+        return 'role_$cleaned';
+      default:
+        return null;
+    }
+  }
+
+  Future<void> _syncRoleTopicSubscription({
+    required String? previousRole,
+    required String? nextRole,
+  }) async {
+    if (!_pushRuntimeReady) return;
+    final previousTopic = _roleTopicName(previousRole);
+    final nextTopic = _roleTopicName(nextRole);
+
+    if (previousTopic != null && previousTopic != nextTopic) {
+      try {
+        await FirebaseMessaging.instance.unsubscribeFromTopic(previousTopic);
+      } catch (error, stackTrace) {
+        AppSecurity.debugLog(
+          'Failed to unsubscribe push role topic $previousTopic',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+    }
+
+    if (nextTopic != null && _boundRoleTopic != nextTopic) {
+      try {
+        await FirebaseMessaging.instance.subscribeToTopic(nextTopic);
+        _boundRoleTopic = nextTopic;
+        AppSecurity.debugLog('Subscribed push role topic $nextTopic');
+      } catch (error, stackTrace) {
+        AppSecurity.debugLog(
+          'Failed to subscribe push role topic $nextTopic',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+      return;
+    }
+
+    _boundRoleTopic = nextTopic;
+  }
+
   Future<void> _initializeLocalNotifications() async {
     if (_localNotificationsReady) return;
     const androidSettings =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
+        AndroidInitializationSettings('ic_stat_notification');
     const iosSettings = DarwinInitializationSettings();
     const initSettings = InitializationSettings(
       android: androidSettings,
@@ -304,26 +378,7 @@ class PushNotificationService {
 
   Future<void> _handleForegroundMessage(RemoteMessage message) async {
     if (!_localNotificationsReady) return;
-    final notification = message.notification;
-    if (notification == null) return;
-
-    await _localNotifications.show(
-      id: message.hashCode,
-      title: notification.title ?? 'AS Nusa Trans',
-      body: notification.body ?? '',
-      notificationDetails: NotificationDetails(
-        android: AndroidNotificationDetails(
-          _defaultChannel.id,
-          _defaultChannel.name,
-          channelDescription: _defaultChannel.description,
-          importance: Importance.high,
-          priority: Priority.high,
-          icon: '@mipmap/ic_launcher',
-        ),
-        iOS: const DarwinNotificationDetails(),
-      ),
-      payload: _encodePayload(message.data),
-    );
+    await _showNotificationFromRemoteMessage(message);
   }
 
   void _handleMessageTap(RemoteMessage message) {
@@ -400,5 +455,65 @@ class PushNotificationService {
       );
     }
     return <String, dynamic>{};
+  }
+
+  Future<void> _showNotificationFromRemoteMessage(RemoteMessage message) async {
+    if (!_localNotificationsReady) return;
+
+    final title = _resolveMessageTitle(message);
+    final body = _resolveMessageBody(message);
+    if (title.isEmpty && body.isEmpty) return;
+    final badgeCount = int.tryParse(
+          '${message.data['badge_count'] ?? message.data['notification_count'] ?? ''}'
+              .trim(),
+        ) ??
+        1;
+
+    await _localNotifications.show(
+      id: message.messageId?.hashCode ?? message.hashCode,
+      title: title.isEmpty ? 'AS Nusa Trans' : title,
+      body: body,
+      notificationDetails: NotificationDetails(
+        android: AndroidNotificationDetails(
+          _defaultChannel.id,
+          _defaultChannel.name,
+          channelDescription: _defaultChannel.description,
+          importance: Importance.max,
+          priority: Priority.max,
+          icon: 'ic_stat_notification',
+          color: const Color(0xFF5B8CFF),
+          playSound: true,
+          enableVibration: true,
+          ticker: title.isEmpty ? 'AS Nusa Trans' : title,
+          visibility: NotificationVisibility.public,
+          category: AndroidNotificationCategory.message,
+          number: badgeCount,
+        ),
+        iOS: const DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+        ),
+      ),
+      payload: _encodePayload(message.data),
+    );
+  }
+
+  String _resolveMessageTitle(RemoteMessage message) {
+    final fromNotification = message.notification?.title?.trim() ?? '';
+    if (fromNotification.isNotEmpty) return fromNotification;
+    final fromData =
+        '${message.data['title'] ?? message.data['notification_title'] ?? ''}'
+            .trim();
+    return fromData;
+  }
+
+  String _resolveMessageBody(RemoteMessage message) {
+    final fromNotification = message.notification?.body?.trim() ?? '';
+    if (fromNotification.isNotEmpty) return fromNotification;
+    final fromData =
+        '${message.data['body'] ?? message.data['notification_body'] ?? message.data['message'] ?? ''}'
+            .trim();
+    return fromData;
   }
 }

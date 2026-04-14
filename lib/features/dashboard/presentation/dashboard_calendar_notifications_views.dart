@@ -67,7 +67,7 @@ class _AdminComingSoonViewState extends State<_AdminComingSoonView> {
       children: [
         Row(
           children: [
-            Image.asset('assets/images/logo.png', width: 96),
+            const CvantLogo(width: 96),
             const Spacer(),
             OutlinedButton(
               onPressed: widget.onGoHome,

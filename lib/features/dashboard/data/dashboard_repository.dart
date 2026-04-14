@@ -2870,6 +2870,7 @@ class DashboardRepository {
         .toSet()
         .toList(growable: false);
     if (cleanedRoles.isEmpty) return;
+    Exception? notificationStoreError;
     try {
       await _supabase.rpc(
         'create_role_notifications',
@@ -2884,18 +2885,24 @@ class DashboardRepository {
           'p_payload': payload ?? <String, dynamic>{},
         },
       );
-      await _sendPushNotificationBestEffort(
-        targetRoles: cleanedRoles,
-        title: title,
-        message: message,
-        payload: <String, dynamic>{
-          'source_type': sourceType,
-          'source_id': sourceId,
-          ...?payload,
-        },
-      );
     } on PostgrestException catch (e) {
-      throw Exception('Gagal mengirim notifikasi staff: ${e.message}');
+      notificationStoreError =
+          Exception('Gagal mengirim notifikasi staff: ${e.message}');
+    }
+
+    await _sendPushNotificationBestEffort(
+      targetRoles: cleanedRoles,
+      title: title,
+      message: message,
+      payload: <String, dynamic>{
+        'source_type': sourceType,
+        'source_id': sourceId,
+        ...?payload,
+      },
+    );
+
+    if (notificationStoreError != null) {
+      throw notificationStoreError;
     }
   }
 
@@ -2919,8 +2926,13 @@ class DashboardRepository {
     if (cleanedUserIds.isEmpty && cleanedRoles.isEmpty) return;
 
     try {
+      final accessToken =
+          _supabase.auth.currentSession?.accessToken.trim() ?? '';
       await _supabase.functions.invoke(
         'send-push',
+        headers: <String, String>{
+          if (accessToken.isNotEmpty) 'Authorization': 'Bearer $accessToken',
+        },
         body: <String, dynamic>{
           'userIds': cleanedUserIds,
           'targetRoles': cleanedRoles,
@@ -2947,7 +2959,7 @@ class DashboardRepository {
       targetRoles: const ['admin', 'owner'],
       title: 'Income Baru dari Pengurus',
       message:
-          'Income $customerName masuk untuk approval. Rute $route pada ${Formatters.dmy(invoiceDate)}.',
+          'Pengurus membuat income baru untuk $customerName. Rute $route, tanggal ${Formatters.dmy(invoiceDate)}. Buka Penerimaan Order untuk meninjau.',
       kind: 'approval',
       sourceType: 'invoice',
       sourceId: invoiceId,
@@ -2992,7 +3004,7 @@ class DashboardRepository {
       targetRoles: const ['admin', 'owner'],
       title: 'Request Edit Income Pengurus',
       message:
-          'Pengurus meminta ACC edit untuk income ${invoice['nama_pelanggan'] ?? '-'} ($route).',
+          'Pengurus meminta persetujuan edit income ${invoice['nama_pelanggan'] ?? '-'} untuk rute $route. Buka Penerimaan Order untuk meninjau.',
       kind: 'approval',
       sourceType: 'invoice',
       sourceId: invoiceId,
@@ -5200,21 +5212,17 @@ class DashboardRepository {
       return directPlate;
     }
 
-    final manual = _firstNonEmptyText([
-      detail['armada_manual'],
-    ]).toUpperCase();
-    if (manual.isNotEmpty && manual != '-') {
-      return manual;
-    }
-
-    final label = _firstNonEmptyText([
-      detail['armada_label'],
-      detail['armada'],
-    ]).toUpperCase();
-    final match =
-        RegExp(r'\b[A-Z]{1,2}\s?\d{1,4}\s?[A-Z]{1,3}\b').firstMatch(label);
-    if (match != null) {
-      return match.group(0)!.trim().toUpperCase();
+    for (final candidate in [
+      _firstNonEmptyText([detail['armada_manual']]),
+      _firstNonEmptyText([detail['armada_label'], detail['armada']]),
+    ]) {
+      final upper = candidate.toUpperCase();
+      if (upper.isEmpty || upper == '-') continue;
+      final match =
+          RegExp(r'\b[A-Z]{1,2}\s?\d{1,4}\s?[A-Z]{1,3}\b').firstMatch(upper);
+      if (match != null) {
+        return match.group(0)!.trim().toUpperCase();
+      }
     }
     return '';
   }

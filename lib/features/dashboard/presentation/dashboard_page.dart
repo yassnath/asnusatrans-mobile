@@ -20,12 +20,14 @@ import '../../../core/theme/cvant_button_styles.dart';
 import '../../../core/theme/theme_controller.dart';
 import '../../../core/config/app_config.dart';
 import '../../../core/i18n/language_controller.dart';
+import '../../../core/notifications/android_device_settings_service.dart';
 import '../../../core/notifications/push_notification_service.dart';
 import '../../../core/security/app_security.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/cvant_dropdown_field.dart';
 import '../../../core/widgets/page_fade_in.dart';
 import '../../../core/widgets/cvant_popup.dart';
+import '../../../core/widgets/cvant_logo.dart';
 import '../../auth/data/biometric_login_service.dart';
 import '../../auth/models/auth_session.dart';
 import '../data/dashboard_repository.dart';
@@ -282,6 +284,7 @@ class _DashboardPageState extends State<DashboardPage> {
   List<Map<String, dynamic>> _staffNotifications = const [];
   DateTime? _staffAlertsSeenAt;
   bool _staffAlertsSeenLoaded = false;
+  bool _androidPushPromptShown = false;
 
   int get _staffUnreadNotificationCount => _staffNotifications
       .where(
@@ -453,6 +456,9 @@ class _DashboardPageState extends State<DashboardPage> {
         _handlePushIntent(pendingIntent);
       });
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_ensureAndroidRealtimePushSetup());
+    });
   }
 
   @override
@@ -505,6 +511,65 @@ class _DashboardPageState extends State<DashboardPage> {
         bundle.recentActivities,
       );
     }).catchError((_) {});
+  }
+
+  Future<void> _ensureAndroidRealtimePushSetup() async {
+    if (_androidPushPromptShown ||
+        !widget.session.isAdminOrOwner ||
+        !Platform.isAndroid ||
+        !mounted) {
+      return;
+    }
+
+    _androidPushPromptShown = true;
+    final ignoringBatteryOptimizations = await AndroidDeviceSettingsService
+        .instance
+        .isIgnoringBatteryOptimizations();
+    if (ignoringBatteryOptimizations || !mounted) return;
+
+    final action = await showDialog<String>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Aktifkan Notifikasi Realtime'),
+          content: const Text(
+            'Agar notifikasi income pengurus masuk seperti aplikasi chat, izinkan aplikasi berjalan tanpa batasan baterai. Setelah itu, cek juga pengaturan notifikasi aplikasi.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop('later'),
+              child: const Text('Nanti'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop('notification'),
+              child: const Text('Pengaturan Notifikasi'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop('battery'),
+              child: const Text('Optimasi Baterai'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (!mounted) return;
+    switch (action) {
+      case 'notification':
+        await AndroidDeviceSettingsService.instance
+            .openAppNotificationSettings();
+        break;
+      case 'battery':
+        await AndroidDeviceSettingsService.instance
+            .requestIgnoreBatteryOptimizations();
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+        await AndroidDeviceSettingsService.instance
+            .openAutostartSettingsBestEffort();
+        break;
+      default:
+        break;
+    }
   }
 
   Future<void> _refreshDashboardLiveSections() async {
@@ -1398,8 +1463,7 @@ class _DashboardDrawer extends StatelessWidget {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(18, 10, 18, 16),
-              child: Image.asset(
-                'assets/images/logo.png',
+              child: CvantLogo(
                 height: 42,
                 fit: BoxFit.contain,
               ),

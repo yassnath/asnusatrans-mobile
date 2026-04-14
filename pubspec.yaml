@@ -51,24 +51,58 @@ flutter_launcher_icons:
 flutter:
   uses-material-design: true
   assets:
-    - assets/images/logo.png
-    - assets/images/logo.webp
-    - assets/images/logo-light.webp
-    - assets/images/logo-icon.webp
-    - assets/images/iconapk.png
-    - assets/images/kopsurat.jpeg
+    - assets/images/
     - assets/kopsurat.jpeg
-    - assets/fonts/
     - assets/templates/invoice_table_template.xlsx
     - tooling/windows/render_invoice_table.ps1
-    - assets/images/pp-admin.webp
-    - assets/images/pp-owner.webp
   fonts:
     - family: Inter
       fonts:
-        - asset: assets/fonts/Inter[opsz,wght].ttf
-        - asset: assets/fonts/Inter-Italic[opsz,wght].ttf
+        - asset: assets/fonts/Inter-Regular.ttf
+          weight: 100
+        - asset: assets/fonts/Inter-Regular.ttf
+          weight: 200
+        - asset: assets/fonts/Inter-Regular.ttf
+          weight: 300
+        - asset: assets/fonts/Inter-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Inter-Regular.ttf
+          weight: 500
+        - asset: assets/fonts/Inter-Regular.ttf
+          weight: 600
+        - asset: assets/fonts/Inter-Regular.ttf
+          weight: 700
+        - asset: assets/fonts/Inter-Regular.ttf
+          weight: 800
+        - asset: assets/fonts/Inter-Regular.ttf
+          weight: 900
+        - asset: assets/fonts/Inter-Italic.ttf
           style: italic
+          weight: 100
+        - asset: assets/fonts/Inter-Italic.ttf
+          style: italic
+          weight: 200
+        - asset: assets/fonts/Inter-Italic.ttf
+          style: italic
+          weight: 300
+        - asset: assets/fonts/Inter-Italic.ttf
+          style: italic
+          weight: 400
+        - asset: assets/fonts/Inter-Italic.ttf
+          style: italic
+          weight: 500
+        - asset: assets/fonts/Inter-Italic.ttf
+          style: italic
+          weight: 600
+        - asset: assets/fonts/Inter-Italic.ttf
+          style: italic
+          weight: 700
+        - asset: assets/fonts/Inter-Italic.ttf
+          style: italic
+          weight: 800
+        - asset: assets/fonts/Inter-Italic.ttf
+          style: italic
+          weight: 900
 
 
 

@@ -22,7 +22,7 @@ class AuthGate extends StatefulWidget {
 
 class _AuthGateState extends State<AuthGate> {
   static const _loadingDuration = Duration(seconds: 5);
-  static const _sessionResumeWindow = Duration(minutes: 10);
+  static const _pushBindTimeout = Duration(seconds: 8);
 
   late final AuthRepository _authRepository;
   late final DashboardRepository _dashboardRepository;
@@ -33,7 +33,6 @@ class _AuthGateState extends State<AuthGate> {
   bool _loading = true;
   bool _showSignUp = false;
   int _splashCycle = 0;
-  DateTime? _backgroundedAt;
 
   @override
   void initState() {
@@ -42,11 +41,15 @@ class _AuthGateState extends State<AuthGate> {
     _dashboardRepository = DashboardRepository(Supabase.instance.client);
     _biometricService = BiometricLoginService();
     _appLifecycleListener = AppLifecycleListener(
-      onPause: _markBackgrounded,
-      onHide: _markBackgrounded,
-      onInactive: _markBackgrounded,
       onResume: () {
-        unawaited(_handleAppResume());
+        final activeSession = _session;
+        if (activeSession != null) {
+          unawaited(
+            PushNotificationService.instance.bindAuthenticatedSession(
+              activeSession,
+            ),
+          );
+        }
       },
     );
     _bootstrap();
@@ -54,14 +57,10 @@ class _AuthGateState extends State<AuthGate> {
 
   Future<void> _bootstrap() async {
     try {
-      final existingSession = await _authRepository.restoreSession();
-      if (existingSession != null) {
-        await PushNotificationService.instance.bindAuthenticatedSession(
-          existingSession,
-        );
-        await PushNotificationService.instance.clearAuthenticatedSession();
-        await _authRepository.signOut();
-      }
+      // Cold start should always return to sign-in.
+      // Biometric binding is intentionally preserved so users can re-enter
+      // quickly with fingerprint/face authentication.
+      await _authRepository.signOut();
       _session = null;
     } catch (_) {
       _session = null;
@@ -75,17 +74,25 @@ class _AuthGateState extends State<AuthGate> {
   }
 
   Future<void> _onSignedIn(AuthSession session) async {
-    _backgroundedAt = null;
-    await PushNotificationService.instance.bindAuthenticatedSession(session);
     if (!mounted) return;
     setState(() {
       _session = session;
       _showSignUp = false;
     });
+    unawaited(_bindPushSessionBestEffort(session));
+  }
+
+  Future<void> _bindPushSessionBestEffort(AuthSession session) async {
+    try {
+      await PushNotificationService.instance
+          .bindAuthenticatedSession(session)
+          .timeout(_pushBindTimeout);
+    } catch (_) {
+      // Best effort only: login should never be blocked by push setup.
+    }
   }
 
   Future<void> _logout() async {
-    _backgroundedAt = null;
     await PushNotificationService.instance.clearAuthenticatedSession();
     await _authRepository.signOut();
     await _biometricService.clearManualBinding();
@@ -100,34 +107,6 @@ class _AuthGateState extends State<AuthGate> {
     if (!mounted) return;
     setState(() {
       _loading = false;
-    });
-  }
-
-  void _markBackgrounded() {
-    if (_session == null) return;
-    _backgroundedAt = DateTime.now();
-  }
-
-  Future<void> _handleAppResume() async {
-    final session = _session;
-    final backgroundedAt = _backgroundedAt;
-    _backgroundedAt = null;
-    if (session == null || backgroundedAt == null) return;
-
-    final inactiveDuration = DateTime.now().difference(backgroundedAt);
-    if (inactiveDuration <= _sessionResumeWindow) return;
-
-    await _expireSession();
-  }
-
-  Future<void> _expireSession() async {
-    await PushNotificationService.instance.clearAuthenticatedSession();
-    await _authRepository.signOut();
-    if (!mounted) return;
-    setState(() {
-      _session = null;
-      _showSignUp = false;
-      _backgroundedAt = null;
     });
   }
 
@@ -265,6 +244,14 @@ class _SplashScreenState extends State<_SplashScreen>
                     width: 112,
                     height: 112,
                     fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Image.asset(
+                        'assets/images/logo.webp',
+                        width: 112,
+                        height: 112,
+                        fit: BoxFit.contain,
+                      );
+                    },
                   ),
                   builder: (context, child) {
                     return Opacity(

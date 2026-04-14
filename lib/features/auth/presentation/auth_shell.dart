@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/cvant_logo.dart';
 
 class AuthShell extends StatelessWidget {
   const AuthShell({
@@ -71,8 +72,7 @@ class AuthShell extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Center(
-                            child: Image.asset(
-                              'assets/images/logo.png',
+                            child: CvantLogo(
                               height: 64,
                               fit: BoxFit.contain,
                             ),
