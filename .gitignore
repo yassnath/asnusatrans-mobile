@@ -20,6 +20,11 @@ Thumbs.db
 **/.env
 **/.env.*
 !**/.env.example
+android/keystore.properties
+android/key.properties
+*.jks
+*.keystore
+*.p12
 
 ########################################
 # Flutter / Dart

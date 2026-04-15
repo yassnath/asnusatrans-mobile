@@ -65,8 +65,8 @@ class MetricCard extends StatelessWidget {
                           (textTheme.titleMedium ?? const TextStyle()).copyWith(
                         color: titleColor,
                         fontSize: 13.5,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.1,
+                        fontWeight: FontWeight.w500,
+                        letterSpacing: 0.15,
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -77,10 +77,10 @@ class MetricCard extends StatelessWidget {
                       style: (textTheme.headlineMedium ?? const TextStyle())
                           .copyWith(
                         color: valueColor,
-                        fontSize: 23,
-                        height: 1.04,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.5,
+                        fontSize: 22,
+                        height: 1.06,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: -0.35,
                       ),
                     ),
                   ],
@@ -102,7 +102,7 @@ class MetricCard extends StatelessWidget {
             style: (textTheme.bodyMedium ?? const TextStyle()).copyWith(
               color: subtitleColor,
               fontSize: 12.5,
-              fontWeight: FontWeight.w500,
+              fontWeight: FontWeight.w400,
             ),
           ),
         ],

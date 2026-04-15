@@ -238,6 +238,8 @@ class DashboardPage extends StatefulWidget {
 
 class _DashboardPageState extends State<DashboardPage> {
   static const _staffAlertSeenPrefsKeyPrefix = 'staff_alert_seen_at_v1';
+  static const _androidRealtimePushPromptSeenPrefsKey =
+      'android_realtime_push_prompt_seen_v1';
   static const _adminMenus = <String>[
     'Dashboard',
     'Invoice List',
@@ -521,7 +523,13 @@ class _DashboardPageState extends State<DashboardPage> {
       return;
     }
 
+    final prefs = await SharedPreferences.getInstance();
+    final hasShownPrompt =
+        prefs.getBool(_androidRealtimePushPromptSeenPrefsKey) ?? false;
+    if (hasShownPrompt) return;
+
     _androidPushPromptShown = true;
+    await prefs.setBool(_androidRealtimePushPromptSeenPrefsKey, true);
     final ignoringBatteryOptimizations = await AndroidDeviceSettingsService
         .instance
         .isIgnoringBatteryOptimizations();

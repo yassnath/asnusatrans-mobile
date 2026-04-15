@@ -3,6 +3,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:cvant_mobile/app.dart';
+import 'package:cvant_mobile/core/i18n/language_controller.dart';
+import 'package:cvant_mobile/core/theme/theme_controller.dart';
 
 void main() {
   setUpAll(() async {
@@ -14,16 +16,20 @@ void main() {
           '.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV4YW1wbGUiLCJyb2xlIjoiYW5vbiIsImlhdCI6MTUxNjIzOTAyMn0'
           '.c2lnbmF0dXJl',
     );
+    await ThemeController.init();
+    await LanguageController.init();
   });
 
-  testWidgets('shows sign in screen when no active session', (tester) async {
-    SharedPreferences.setMockInitialValues({});
-
-    await tester.pumpWidget(const CvantApp());
-    await tester.pump(const Duration(seconds: 6));
+  testWidgets('shows startup error screen safely when startupError is provided',
+      (tester) async {
+    await tester.pumpWidget(const CvantApp(startupError: 'DB timeout'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Sign In'), findsOneWidget);
-    expect(find.text('Login'), findsOneWidget);
+    expect(find.text('Aplikasi gagal dibuka'), findsOneWidget);
+    expect(
+      find.textContaining('Terjadi masalah saat inisialisasi aplikasi'),
+      findsOneWidget,
+    );
+    expect(find.text('DB timeout'), findsOneWidget);
   });
 }

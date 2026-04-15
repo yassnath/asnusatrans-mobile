@@ -11,22 +11,38 @@ param(
   [string]$FirebaseStorageBucket,
   [string]$FirebaseAndroidAppId,
   [string]$FirebaseIosAppId,
-  [string]$FirebaseIosBundleId
+  [string]$FirebaseIosBundleId,
+
+  [switch]$BuildAppBundle
 )
 
 $ErrorActionPreference = 'Stop'
+
+$keystorePath = Join-Path $PSScriptRoot '..\..\android\keystore.properties'
+$resolvedKeystorePath = [System.IO.Path]::GetFullPath($keystorePath)
+
+if (Test-Path $resolvedKeystorePath) {
+  Write-Host "Release signing: using keystore config at $resolvedKeystorePath"
+} else {
+  Write-Warning "Release signing: android\\keystore.properties tidak ditemukan. Build release akan fallback ke debug signing."
+}
 
 flutter clean
 flutter pub get
 
 $buildArgs = @(
   'build',
-  'apk',
   '--release',
   '--no-tree-shake-icons',
   "--dart-define=SUPABASE_URL=$SupabaseUrl",
   "--dart-define=SUPABASE_ANON_KEY=$SupabaseAnonKey"
 )
+
+if ($BuildAppBundle) {
+  $buildArgs = @('build', 'appbundle') + $buildArgs[2..($buildArgs.Length - 1)]
+} else {
+  $buildArgs = @('build', 'apk') + $buildArgs[2..($buildArgs.Length - 1)]
+}
 
 if (-not [string]::IsNullOrWhiteSpace($FirebaseApiKey)) {
   $buildArgs += "--dart-define=FIREBASE_API_KEY=$($FirebaseApiKey.Trim())"

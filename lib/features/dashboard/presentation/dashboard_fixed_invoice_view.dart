@@ -16,6 +16,8 @@ class _AdminFixedInvoiceView extends StatefulWidget {
 class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
   static const _fixedInvoicePrefsKey = 'fixed_invoice_ids_v1';
   static const _fixedInvoiceBatchPrefsKey = 'fixed_invoice_batches_v1';
+  static const _fixedInvoiceNormalizationDoneKey =
+      'fixed_invoice_normalization_done_v1';
   late Future<List<Map<String, dynamic>>> _future;
   final _search = TextEditingController();
   bool _backgroundInvoiceNumberNormalizationRunning = false;
@@ -82,6 +84,42 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
         .toLowerCase()
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
+  }
+
+  Color _invoiceEntityAccentColor(Map<String, dynamic> item) {
+    final entity = _resolveInvoiceEntityShared(
+      invoiceNumber: item['no_invoice'],
+      customerName: item['nama_pelanggan'],
+      invoiceEntity: item['invoice_entity'],
+    );
+    switch (entity) {
+      case Formatters.invoiceEntityCvAnt:
+        return AppColors.success;
+      case Formatters.invoiceEntityPtAnt:
+        return AppColors.cyan;
+      case Formatters.invoiceEntityPersonal:
+      default:
+        return AppColors.blue;
+    }
+  }
+
+  bool _matchesCustomerKind(Map<String, dynamic> item) {
+    if (_customerKind == 'all') return true;
+    final entity = _resolveInvoiceEntityShared(
+      invoiceNumber: item['no_invoice'],
+      customerName: item['nama_pelanggan'],
+      invoiceEntity: item['invoice_entity'],
+    );
+    switch (_customerKind) {
+      case Formatters.invoiceEntityCvAnt:
+        return entity == Formatters.invoiceEntityCvAnt;
+      case Formatters.invoiceEntityPtAnt:
+        return entity == Formatters.invoiceEntityPtAnt;
+      case Formatters.invoiceEntityPersonal:
+        return entity == Formatters.invoiceEntityPersonal;
+      default:
+        return true;
+    }
   }
 
   int _extractInvoiceSequence(dynamic rawValue) {
@@ -160,10 +198,10 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
       final kopDateKey =
           _normalizeTextKey(item['tanggal_kop'] ?? item['tanggal']);
       final kopLocationKey = _normalizeTextKey(item['lokasi_kop']);
-      final modeKey =
-          '${item['no_invoice'] ?? ''}'.toUpperCase().contains('CV.ANT')
-              ? 'company'
-              : 'personal';
+      final modeKey = _resolveInvoiceEntityShared(
+        invoiceNumber: item['no_invoice'],
+        customerName: item['nama_pelanggan'],
+      );
       final key = '$modeKey|$customerKey|$kopDateKey|$kopLocationKey';
       grouped.putIfAbsent(key, () => <Map<String, dynamic>>[]).add(item);
     }
@@ -199,7 +237,12 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
     if (_backgroundInvoiceNumberNormalizationRunning) return;
     _backgroundInvoiceNumberNormalizationRunning = true;
     try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool(_fixedInvoiceNormalizationDoneKey) == true) {
+        return;
+      }
       final report = await widget.repository.normalizeLegacyInvoiceNumbers();
+      await prefs.setBool(_fixedInvoiceNormalizationDoneKey, true);
       if (report.updatedInvoices <= 0 && report.updatedFixedBatches <= 0) {
         return;
       }
@@ -456,7 +499,7 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
     final initialStatus = rawStatus.isEmpty ? 'Unpaid' : rawStatus;
     final rawPaidAt = '${item['paid_at'] ?? ''}'.trim();
     final initialPaidDate =
-        rawPaidAt.isEmpty ? null : (Formatters.parseDate(rawPaidAt) ?? null);
+        rawPaidAt.isEmpty ? null : Formatters.parseDate(rawPaidAt);
 
     final result = await showDialog<Map<String, String?>>(
       context: context,
@@ -568,8 +611,8 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
     );
 
     if (result == null) return;
-    final newStatus = '${result['status'] ?? 'Unpaid'}'.trim();
-    final newPaidAt = '${result['paid_at'] ?? ''}'.trim();
+    final newStatus = (result['status'] ?? 'Unpaid').toString().trim();
+    final newPaidAt = (result['paid_at'] ?? '').toString().trim();
 
     try {
       final batches = await _loadFixedBatches();
@@ -619,12 +662,11 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
     final invoiceNumber = _resolveDisplayNumber(item);
     final customerName = '${item['nama_pelanggan'] ?? '-'}';
     final total = _toNum(item['total_bayar'] ?? item['total_biaya']);
-    final isCompanyInvoice = _resolveIsCompanyInvoiceShared(
+    final invoiceEntityLabel = _resolveInvoiceEntityLabelShared(
       invoiceNumber: item['no_invoice'],
       customerName: item['nama_pelanggan'],
     );
-    final invoiceNumberColor =
-        isCompanyInvoice ? AppColors.success : AppColors.blue;
+    final invoiceNumberColor = _invoiceEntityAccentColor(item);
     final wantsPrint = await showDialog<bool>(
       context: context,
       barrierColor: AppColors.popupOverlay,
@@ -646,6 +688,8 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                   ),
                   const SizedBox(height: 4),
                   Text('${_t('Nama', 'Name')}: $customerName'),
+                  const SizedBox(height: 2),
+                  Text('${_t('Tipe', 'Type')}: $invoiceEntityLabel'),
                   const SizedBox(height: 2),
                   Text(
                     '${_t('Tanggal KOP', 'Header Date')}: ${Formatters.dmy(item['tanggal_kop'] ?? item['tanggal'])}',
@@ -933,14 +977,26 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
   }
 
   Future<List<Map<String, dynamic>>> _load() async {
-    final invoices = await widget.repository.fetchInvoices();
-    final localIds = await _loadFixedIds();
+    final payload = await Future.wait<dynamic>([
+      _loadFixedIds(),
+      _loadFixedBatches(),
+      _loadRemoteFixedBatches(),
+    ]);
+    final localIds = payload[0] as Set<String>;
+    var localBatches = payload[1] as List<_FixedInvoiceBatch>;
+    final initialRemoteBatches = payload[2] as List<_FixedInvoiceBatch>;
+    final rows = <Map<String, dynamic>>[];
+
+    final invoiceIdsToFetch = <String>{
+      ...localIds,
+      for (final batch in localBatches) ...batch.invoiceIds,
+      for (final batch in initialRemoteBatches) ...batch.invoiceIds,
+    };
+    final invoices = await widget.repository.fetchInvoicesByIds(invoiceIdsToFetch);
     final invoiceById = <String, Map<String, dynamic>>{
       for (final item in invoices)
         '${item['id'] ?? ''}'.trim(): Map<String, dynamic>.from(item),
     };
-    var localBatches = await _loadFixedBatches();
-    final rows = <Map<String, dynamic>>[];
 
     final legacyItems = invoices
         .where((item) {
@@ -967,12 +1023,12 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
     }
 
     if (localBatches.isNotEmpty) {
-      for (final batch in localBatches) {
-        await _upsertRemoteFixedBatch(batch);
-      }
+      await Future.wait(localBatches.map(_upsertRemoteFixedBatch));
     }
 
-    final remoteBatches = await _loadRemoteFixedBatches();
+    final remoteBatches = localBatches.isEmpty
+        ? initialRemoteBatches
+        : await _loadRemoteFixedBatches();
     final batches = remoteBatches.isNotEmpty ? remoteBatches : localBatches;
     if (batches.isEmpty) return <Map<String, dynamic>>[];
     await _syncLocalCacheFromBatches(batches);
@@ -1053,13 +1109,7 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
       return false;
     }
 
-    final isCompany = _resolveIsCompanyInvoiceShared(
-      invoiceNumber: item['no_invoice'],
-      customerName: item['nama_pelanggan'],
-    );
-    if (_customerKind == 'company' && !isCompany) return false;
-    if (_customerKind == 'personal' && isCompany) return false;
-    return true;
+    return _matchesCustomerKind(item);
   }
 
   @override
@@ -1122,30 +1172,55 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                       Expanded(
                         child: OutlinedButton(
                           onPressed: () =>
-                              setState(() => _customerKind = 'company'),
+                              setState(() =>
+                                  _customerKind = Formatters.invoiceEntityCvAnt),
                           style: CvantButtonStyles.outlined(
                             context,
-                            color: _customerKind == 'company'
+                            color: _customerKind ==
+                                    Formatters.invoiceEntityCvAnt
                                 ? AppColors.success
                                 : AppColors.textMutedFor(context),
-                            borderColor: _customerKind == 'company'
+                            borderColor: _customerKind ==
+                                    Formatters.invoiceEntityCvAnt
                                 ? AppColors.success
                                 : AppColors.cardBorder(context),
                           ),
-                          child: Text(_t('Perusahaan', 'Company')),
+                          child: const Text('CV. ANT'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => setState(() =>
+                              _customerKind = Formatters.invoiceEntityPtAnt),
+                          style: CvantButtonStyles.outlined(
+                            context,
+                            color:
+                                _customerKind == Formatters.invoiceEntityPtAnt
+                                    ? AppColors.cyan
+                                    : AppColors.textMutedFor(context),
+                            borderColor:
+                                _customerKind == Formatters.invoiceEntityPtAnt
+                                    ? AppColors.cyan
+                                    : AppColors.cardBorder(context),
+                          ),
+                          child: const Text('PT. ANT'),
                         ),
                       ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: OutlinedButton(
                           onPressed: () =>
-                              setState(() => _customerKind = 'personal'),
+                              setState(() => _customerKind =
+                                  Formatters.invoiceEntityPersonal),
                           style: CvantButtonStyles.outlined(
                             context,
-                            color: _customerKind == 'personal'
+                            color: _customerKind ==
+                                    Formatters.invoiceEntityPersonal
                                 ? AppColors.warning
                                 : AppColors.textMutedFor(context),
-                            borderColor: _customerKind == 'personal'
+                            borderColor: _customerKind ==
+                                    Formatters.invoiceEntityPersonal
                                 ? AppColors.warning
                                 : AppColors.cardBorder(context),
                           ),
@@ -1256,22 +1331,14 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                           item['total_bayar'] ?? item['total_biaya'],
                         );
                         final customerTypeLabel =
-                            _resolveIsCompanyInvoiceShared(
-                          invoiceNumber: item['no_invoice'],
-                          customerName: item['nama_pelanggan'],
-                        )
-                                ? _t('Perusahaan', 'Company')
-                                : _t('Pribadi', 'Personal');
-                        final isCompanyInvoice = _resolveIsCompanyInvoiceShared(
+                            _resolveInvoiceEntityLabelShared(
                           invoiceNumber: item['no_invoice'],
                           customerName: item['nama_pelanggan'],
                         );
-                        final invoiceNumberColor = isCompanyInvoice
-                            ? AppColors.success
-                            : AppColors.blue;
-                        final customerTypeColor = isCompanyInvoice
-                            ? AppColors.success
-                            : AppColors.blue;
+                        final invoiceNumberColor =
+                            _invoiceEntityAccentColor(item);
+                        final customerTypeColor =
+                            _invoiceEntityAccentColor(item);
                         final batchItems =
                             (item['__batch_items'] as List<dynamic>? ??
                                     const <dynamic>[])

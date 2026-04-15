@@ -52,47 +52,56 @@ void main() {
       expect(out, 'EXP-03-2026-0012');
     });
 
-    test('converts company income pattern with month', () {
+    test('normalizes company income pattern with month into compact format', () {
       final out = Formatters.invoiceNumber(
         'INC-03-2026-15',
         '2026-03-11',
         customerName: 'PT Maju Terus',
       );
-      expect(out, '015 / CV.ANT / III / 26');
+      expect(out, 'CV.ANT260315');
     });
 
-    test('converts personal income pattern with month', () {
+    test('normalizes PT income pattern with explicit invoice entity', () {
+      final out = Formatters.invoiceNumber(
+        'INC-04-2026-1',
+        '2026-04-15',
+        invoiceEntity: Formatters.invoiceEntityPtAnt,
+      );
+      expect(out, 'PT.ANT260401');
+    });
+
+    test('normalizes personal income pattern with month into compact format', () {
       final out = Formatters.invoiceNumber(
         'INC-03-2026-15',
         '2026-03-11',
         customerName: 'Budi Santoso',
       );
-      expect(out, '015 / BS / III / 26');
+      expect(out, 'BS260315');
     });
 
-    test('converts old income pattern using tanggal month', () {
+    test('normalizes old income pattern using tanggal month into compact format', () {
       final out = Formatters.invoiceNumber(
         'INC-2026-20',
         '2026-08-01',
         customerName: 'cv. nusa jaya',
       );
-      expect(out, '020 / CV.ANT / VIII / 26');
+      expect(out, 'CV.ANT260820');
     });
 
-    test('keeps new company format while syncing year from date', () {
+    test('normalizes legacy company format while syncing year from date', () {
       final out = Formatters.invoiceNumber(
         '017 / CV.ANT / I / 26',
         '2027-01-10',
       );
-      expect(out, '017 / CV.ANT / I / 27');
+      expect(out, 'CV.ANT270117');
     });
 
-    test('keeps new personal format while syncing year from date', () {
+    test('normalizes legacy personal format while syncing year from date', () {
       final out = Formatters.invoiceNumber(
         '017 / BS / I / 26',
         '2027-01-10',
       );
-      expect(out, '017 / BS / I / 27');
+      expect(out, 'BS270117');
     });
 
     test('strips NO: prefix for non-income values', () {

@@ -162,7 +162,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
   static const _fixedInvoicePrefsKey = 'fixed_invoice_ids_v1';
   static const _fixedInvoiceBatchPrefsKey = 'fixed_invoice_batches_v1';
   static const _invoiceListColumns =
-      'id,no_invoice,tanggal,tanggal_kop,lokasi_kop,nama_pelanggan,email,no_telp,due_date,'
+      'id,no_invoice,invoice_entity,tanggal,tanggal_kop,lokasi_kop,nama_pelanggan,email,no_telp,due_date,'
       'lokasi_muat,lokasi_bongkar,armada_start_date,armada_end_date,'
       'tonase,harga,muatan,nama_supir,status,total_bayar,total_biaya,pph,diterima_oleh,'
       'customer_id,armada_id,order_id,rincian,created_at,updated_at,created_by,'
@@ -172,20 +172,6 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
   static const _expenseListColumns =
       'id,no_expense,tanggal,kategori,keterangan,total_pengeluaran,'
       'status,dicatat_oleh,note,rincian,created_at,updated_at,created_by';
-  static const _companyKeywords = <String>[
-    r'\bcv\b',
-    r'\bpt\b',
-    r'\bfa\b',
-    r'\bud\b',
-    r'\bpo\b',
-    r'\byayasan\b',
-    r'\bbumn\b',
-    r'\bbumd\b',
-    r'\bperum\b',
-    r'\bkoperasi\b',
-    r'\bpersekutuan\s+perdata\b',
-    r'\bmaatschap\b',
-  ];
   late Future<List<dynamic>> _future;
   final _search = TextEditingController();
   final Set<String> _locallyRemovedRowIds = <String>{};
@@ -1124,10 +1110,12 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     for (final item in items) {
       final customerName =
           _normalizeInvoicePrintCustomerKey('${item['nama_pelanggan'] ?? ''}');
-      final key = '${_resolveIsCompanyInvoice(
+      final entity = _resolveInvoiceEntity(
+        invoiceEntity: item['invoice_entity'],
         invoiceNumber: item['no_invoice'],
         customerName: item['nama_pelanggan'],
-      ) ? 'company' : 'personal'}|$customerName';
+      );
+      final key = '$entity|$customerName';
       groups.putIfAbsent(key, () => <Map<String, dynamic>>[]).add(item);
     }
     return groups.entries
@@ -1154,7 +1142,13 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     final baseItem = Map<String, dynamic>.from(group.baseItem);
     final mergedDetails = _expandInvoicePrintDetails(group.items);
     final customerName = '${baseItem['nama_pelanggan'] ?? ''}';
+    final resolvedInvoiceEntity = _resolveInvoiceEntity(
+      invoiceEntity: baseItem['invoice_entity'],
+      invoiceNumber: baseItem['no_invoice'],
+      customerName: customerName,
+    );
     final isCompanyInvoice = _resolveIsCompanyInvoice(
+      invoiceEntity: baseItem['invoice_entity'],
       invoiceNumber: baseItem['no_invoice'],
       customerName: customerName,
     );
@@ -1189,6 +1183,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         );
 
     baseItem['rincian'] = mergedDetails;
+    baseItem['invoice_entity'] = resolvedInvoiceEntity;
     baseItem['total_biaya'] = subtotal;
     baseItem['pph'] = pph;
     baseItem['total_bayar'] = total;
@@ -1229,8 +1224,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     final now = DateTime.now();
     final maxSeqByBucket = <String, int>{};
 
-    bool isCompany(Map<String, dynamic> item) {
-      return _resolveIsCompanyInvoice(
+    String invoiceEntity(Map<String, dynamic> item) {
+      return _resolveInvoiceEntity(
+        invoiceEntity: item['invoice_entity'],
         invoiceNumber: item['no_invoice'],
         customerName: item['nama_pelanggan'],
       );
@@ -1238,31 +1234,32 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
 
     String bucketKey({
       required DateTime issuedDate,
-      required bool isCompany,
+      required String invoiceEntity,
     }) {
       final localDate = issuedDate.toLocal();
-      final kind = isCompany ? 'company' : 'personal';
+      final kind = Formatters.normalizeInvoiceEntity(invoiceEntity);
       return '$kind|${localDate.year % 100}|${localDate.month}';
     }
 
     void consumeExistingInvoiceNumber({
       required String invoiceNumber,
       required DateTime issuedDate,
-      required bool isCompany,
+      required String invoiceEntity,
       DateTime? referenceDate,
     }) {
       final localDate = issuedDate.toLocal();
+      final normalizedEntity = Formatters.normalizeInvoiceEntity(invoiceEntity);
       final seq = _extractPrintInvoiceSequence(
         invoiceNumber: invoiceNumber,
         month: localDate.month,
         yearTwoDigits: localDate.year % 100,
-        isCompany: isCompany,
+        invoiceEntity: normalizedEntity,
         referenceDate: referenceDate ?? localDate,
       );
       if (seq <= 0) return;
       final key = bucketKey(
         issuedDate: localDate,
-        isCompany: isCompany,
+        invoiceEntity: normalizedEntity,
       );
       final currentMax = maxSeqByBucket[key] ?? 0;
       if (seq > currentMax) {
@@ -1280,7 +1277,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       consumeExistingInvoiceNumber(
         invoiceNumber: rawNumber,
         issuedDate: issuedDate,
-        isCompany: isCompany(income),
+        invoiceEntity: invoiceEntity(income),
         referenceDate: issuedDate,
       );
     }
@@ -1293,7 +1290,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       consumeExistingInvoiceNumber(
         invoiceNumber: rawNumber,
         issuedDate: referenceDate,
-        isCompany: _resolveIsCompanyInvoice(
+        invoiceEntity: _resolveInvoiceEntity(
           invoiceNumber: batch.invoiceNumber,
           customerName: batch.customerName,
         ),
@@ -1318,9 +1315,10 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
             now;
         final byDate = aDate.compareTo(bDate);
         if (byDate != 0) return byDate;
-        final byCompany = (isCompany(a.baseItem) ? 1 : 0)
-            .compareTo(isCompany(b.baseItem) ? 1 : 0);
-        if (byCompany != 0) return byCompany;
+        final aEntity = invoiceEntity(a.baseItem);
+        final bEntity = invoiceEntity(b.baseItem);
+        final byEntity = aEntity.compareTo(bEntity);
+        if (byEntity != 0) return byEntity;
         final aName = '${a.baseItem['nama_pelanggan'] ?? ''}'.trim();
         final bName = '${b.baseItem['nama_pelanggan'] ?? ''}'.trim();
         return aName.toLowerCase().compareTo(bName.toLowerCase());
@@ -1333,12 +1331,13 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
           ) ??
           now;
       final generatedIssuedDate = now;
-      final companyMode = isCompany(item);
+      final resolvedEntity = invoiceEntity(item);
       final normalizedExisting = Formatters.invoiceNumber(
         item['no_invoice'],
         item['tanggal_kop'] ?? item['tanggal'],
         customerName: item['nama_pelanggan'],
-        isCompany: companyMode,
+        isCompany: Formatters.isCompanyInvoiceEntity(resolvedEntity),
+        invoiceEntity: resolvedEntity,
       );
 
       if (normalizedExisting != '-') {
@@ -1346,7 +1345,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         consumeExistingInvoiceNumber(
           invoiceNumber: normalizedExisting,
           issuedDate: existingIssuedDate,
-          isCompany: companyMode,
+          invoiceEntity: resolvedEntity,
           referenceDate: existingIssuedDate,
         );
         continue;
@@ -1354,14 +1353,14 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
 
       final key = bucketKey(
         issuedDate: generatedIssuedDate,
-        isCompany: companyMode,
+        invoiceEntity: resolvedEntity,
       );
       final nextSeq = (maxSeqByBucket[key] ?? 0) + 1;
       maxSeqByBucket[key] = nextSeq;
       generatedById[group.id] = _buildPrintInvoiceNumber(
         sequence: nextSeq,
         issuedDate: generatedIssuedDate,
-        isCompany: companyMode,
+        invoiceEntity: resolvedEntity,
       );
     }
 
@@ -1375,12 +1374,11 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     if (!mounted) return null;
     final item = group.baseItem;
     final customer = '${item['nama_pelanggan'] ?? '-'}';
-    final modeLabel = _resolveIsCompanyInvoice(
+    final modeLabel = _resolveInvoiceEntityLabel(
+      invoiceEntity: item['invoice_entity'],
       invoiceNumber: item['no_invoice'],
       customerName: item['nama_pelanggan'],
-    )
-        ? _t('Perusahaan', 'Company')
-        : _t('Pribadi', 'Personal');
+    );
     final now = DateTime.now();
     final defaultKopLocation = '${item['lokasi_kop'] ?? ''}'.trim();
     final detailRows = _expandInvoicePrintDetails(group.items);
@@ -1807,11 +1805,26 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     final searchController = TextEditingController();
     final fixedInvoiceBatches = await _loadFixedInvoiceBatches();
 
-    bool isCompany(Map<String, dynamic> item) {
-      return _resolveIsCompanyInvoice(
+    bool matchesCustomerKind(
+      Map<String, dynamic> item,
+      String selectedKind,
+    ) {
+      if (selectedKind == 'all') return true;
+      final entity = _resolveInvoiceEntity(
         invoiceNumber: item['no_invoice'],
         customerName: item['nama_pelanggan'],
+        invoiceEntity: item['invoice_entity'],
       );
+      switch (selectedKind) {
+        case Formatters.invoiceEntityCvAnt:
+          return entity == Formatters.invoiceEntityCvAnt;
+        case Formatters.invoiceEntityPtAnt:
+          return entity == Formatters.invoiceEntityPtAnt;
+        case Formatters.invoiceEntityPersonal:
+          return entity == Formatters.invoiceEntityPersonal;
+        default:
+          return true;
+      }
     }
 
     Map<String, String> buildGeneratedNumbersForGroups(
@@ -1997,9 +2010,11 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                           return const SizedBox.shrink();
                         }
                         final customer = '${item['nama_pelanggan'] ?? '-'}';
-                        final modeLabel = isCompany(item)
-                            ? _t('Perusahaan', 'Company')
-                            : _t('Pribadi', 'Personal');
+                        final modeLabel = _resolveInvoiceEntityLabel(
+                          invoiceEntity: item['invoice_entity'],
+                          invoiceNumber: item['no_invoice'],
+                          customerName: item['nama_pelanggan'],
+                        );
                         final departureLines =
                             buildDepartureSummaryForItems(group.items)
                                 .split('\n')
@@ -2170,8 +2185,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
 
       return allPrintableIncomes.where((item) {
         if (!inMonthYear(item)) return false;
-        if (customerKind == 'company' && !isCompany(item)) return false;
-        if (customerKind == 'personal' && isCompany(item)) return false;
+        if (!matchesCustomerKind(item, customerKind)) return false;
         if (keyword.trim().isEmpty) return true;
         return _matchesKeywordInAnyColumn(
           {
@@ -2222,30 +2236,62 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                           Expanded(
                             child: OutlinedButton(
                               onPressed: () => setDialogState(
-                                  () => customerKind = 'company'),
+                                () =>
+                                    customerKind =
+                                        Formatters.invoiceEntityCvAnt,
+                              ),
                               style: CvantButtonStyles.outlined(
                                 context,
-                                color: customerKind == 'company'
+                                color: customerKind ==
+                                        Formatters.invoiceEntityCvAnt
                                     ? AppColors.success
                                     : AppColors.textMutedFor(context),
-                                borderColor: customerKind == 'company'
+                                borderColor: customerKind ==
+                                        Formatters.invoiceEntityCvAnt
                                     ? AppColors.success
                                     : AppColors.cardBorder(context),
                               ),
-                              child: Text(_t('Perusahaan', 'Company')),
+                              child: const Text('CV. ANT'),
                             ),
                           ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: OutlinedButton(
                               onPressed: () => setDialogState(
-                                  () => customerKind = 'personal'),
+                                () =>
+                                    customerKind =
+                                        Formatters.invoiceEntityPtAnt,
+                              ),
                               style: CvantButtonStyles.outlined(
                                 context,
-                                color: customerKind == 'personal'
+                                color: customerKind ==
+                                        Formatters.invoiceEntityPtAnt
+                                    ? AppColors.cyan
+                                    : AppColors.textMutedFor(context),
+                                borderColor: customerKind ==
+                                        Formatters.invoiceEntityPtAnt
+                                    ? AppColors.cyan
+                                    : AppColors.cardBorder(context),
+                              ),
+                              child: const Text('PT. ANT'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () => setDialogState(
+                                () =>
+                                    customerKind =
+                                        Formatters.invoiceEntityPersonal,
+                              ),
+                              style: CvantButtonStyles.outlined(
+                                context,
+                                color: customerKind ==
+                                        Formatters.invoiceEntityPersonal
                                     ? AppColors.warning
                                     : AppColors.textMutedFor(context),
-                                borderColor: customerKind == 'personal'
+                                borderColor: customerKind ==
+                                        Formatters.invoiceEntityPersonal
                                     ? AppColors.warning
                                     : AppColors.cardBorder(context),
                               ),
@@ -2397,9 +2443,11 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                                   final detailLabel =
                                       buildDepartureSummary(item);
                                   final routeLabel = buildRouteSummary(item);
-                                  final kindLabel = isCompany(item)
-                                      ? _t('Perusahaan', 'Company')
-                                      : _t('Pribadi', 'Personal');
+                                  final kindLabel = _resolveInvoiceEntityLabel(
+                                    invoiceEntity: item['invoice_entity'],
+                                    invoiceNumber: item['no_invoice'],
+                                    customerName: item['nama_pelanggan'],
+                                  );
                                   return CheckboxListTile(
                                     value: checked,
                                     onChanged: (value) {
@@ -2748,11 +2796,21 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         if (customerKind == 'all') return true;
         final customerName = '${source['nama_pelanggan'] ?? ''}'.trim();
         final invoiceNumber = '${source['no_invoice'] ?? ''}'.trim();
-        final isCompany = _resolveIsCompanyInvoice(
+        final entity = _resolveInvoiceEntity(
           invoiceNumber: invoiceNumber,
           customerName: customerName,
+          invoiceEntity: source['invoice_entity'],
         );
-        return customerKind == 'company' ? isCompany : !isCompany;
+        switch (customerKind) {
+          case Formatters.invoiceEntityCvAnt:
+            return entity == Formatters.invoiceEntityCvAnt;
+          case Formatters.invoiceEntityPtAnt:
+            return entity == Formatters.invoiceEntityPtAnt;
+          case Formatters.invoiceEntityPersonal:
+            return entity == Formatters.invoiceEntityPersonal;
+          default:
+            return true;
+        }
       }
 
       if (includeIncome) {
@@ -2941,13 +2999,19 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
           );
         }
         if (includeIncome) {
-          if (customerKind == 'company') {
+          if (customerKind == Formatters.invoiceEntityCvAnt) {
             return _t(
-              'Laporan Pemasukkan (Perusahaan)',
-              'Income Report (Company)',
+              'Laporan Pemasukkan (CV. ANT)',
+              'Income Report (CV. ANT)',
             );
           }
-          if (customerKind == 'personal') {
+          if (customerKind == Formatters.invoiceEntityPtAnt) {
+            return _t(
+              'Laporan Pemasukkan (PT. ANT)',
+              'Income Report (PT. ANT)',
+            );
+          }
+          if (customerKind == Formatters.invoiceEntityPersonal) {
             return _t(
               'Laporan Pemasukkan (Pribadi)',
               'Income Report (Personal)',
@@ -2955,13 +3019,19 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
           }
           return _t('Laporan Pemasukkan', 'Income Report');
         }
-        if (customerKind == 'company') {
+        if (customerKind == Formatters.invoiceEntityCvAnt) {
           return _t(
-            'Laporan Pengeluaran (Perusahaan)',
-            'Expense Report (Company)',
+            'Laporan Pengeluaran (CV. ANT)',
+            'Expense Report (CV. ANT)',
           );
         }
-        if (customerKind == 'personal') {
+        if (customerKind == Formatters.invoiceEntityPtAnt) {
+          return _t(
+            'Laporan Pengeluaran (PT. ANT)',
+            'Expense Report (PT. ANT)',
+          );
+        }
+        if (customerKind == Formatters.invoiceEntityPersonal) {
           return _t(
             'Laporan Pengeluaran (Pribadi)',
             'Expense Report (Personal)',
@@ -2972,7 +3042,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
 
       await Printing.layoutPdf(
         onLayout: (format) async {
-          final companyMode = customerKind == 'company';
+          final companyMode =
+              customerKind == Formatters.invoiceEntityCvAnt ||
+              customerKind == Formatters.invoiceEntityPtAnt;
           final maxNumberLen = rows
               .map((row) => '${row['__number'] ?? '-'}'.length)
               .fold<int>(0, (maxLen, len) => max(maxLen, len));
@@ -3408,30 +3480,62 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                           Expanded(
                             child: OutlinedButton(
                               onPressed: () => setDialogState(
-                                  () => customerKind = 'company'),
+                                () =>
+                                    customerKind =
+                                        Formatters.invoiceEntityCvAnt,
+                              ),
                               style: CvantButtonStyles.outlined(
                                 context,
-                                color: customerKind == 'company'
+                                color: customerKind ==
+                                        Formatters.invoiceEntityCvAnt
                                     ? AppColors.success
                                     : AppColors.textMutedFor(context),
-                                borderColor: customerKind == 'company'
+                                borderColor: customerKind ==
+                                        Formatters.invoiceEntityCvAnt
                                     ? AppColors.success
                                     : AppColors.cardBorder(context),
                               ),
-                              child: Text(_t('Perusahaan', 'Company')),
+                              child: const Text('CV. ANT'),
                             ),
                           ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: OutlinedButton(
                               onPressed: () => setDialogState(
-                                  () => customerKind = 'personal'),
+                                () =>
+                                    customerKind =
+                                        Formatters.invoiceEntityPtAnt,
+                              ),
                               style: CvantButtonStyles.outlined(
                                 context,
-                                color: customerKind == 'personal'
+                                color: customerKind ==
+                                        Formatters.invoiceEntityPtAnt
+                                    ? AppColors.cyan
+                                    : AppColors.textMutedFor(context),
+                                borderColor: customerKind ==
+                                        Formatters.invoiceEntityPtAnt
+                                    ? AppColors.cyan
+                                    : AppColors.cardBorder(context),
+                              ),
+                              child: const Text('PT. ANT'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () => setDialogState(
+                                () =>
+                                    customerKind =
+                                        Formatters.invoiceEntityPersonal,
+                              ),
+                              style: CvantButtonStyles.outlined(
+                                context,
+                                color: customerKind ==
+                                        Formatters.invoiceEntityPersonal
                                     ? AppColors.warning
                                     : AppColors.textMutedFor(context),
-                                borderColor: customerKind == 'personal'
+                                borderColor: customerKind ==
+                                        Formatters.invoiceEntityPersonal
                                     ? AppColors.warning
                                     : AppColors.cardBorder(context),
                               ),
@@ -3815,7 +3919,13 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       builder: (context) {
         final detailList = _toDetailList(previewItem['rincian']);
         final customerName = '${previewItem['nama_pelanggan'] ?? ''}'.trim();
+        final invoiceEntityLabel = _resolveInvoiceEntityLabel(
+          invoiceEntity: previewItem['invoice_entity'],
+          invoiceNumber: previewItem['no_invoice'],
+          customerName: customerName,
+        );
         final isCompanyInvoice = _resolveIsCompanyInvoice(
+          invoiceEntity: previewItem['invoice_entity'],
           invoiceNumber: previewItem['no_invoice'],
           customerName: customerName,
         );
@@ -3836,6 +3946,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                       '${_t('Email', 'Email')}: ${previewItem['email'] ?? '-'}'),
                   Text(
                       '${_t('Tanggal', 'Date')}: ${Formatters.dmy(previewItem['tanggal'] ?? previewItem['armada_start_date'])}'),
+                  Text('${_t('Tipe', 'Type')}: $invoiceEntityLabel'),
                   Text(
                       '${_t('Status', 'Status')}: ${previewItem['status'] ?? '-'}'),
                   const SizedBox(height: 8),
@@ -3950,51 +4061,87 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     );
   }
 
-  String _normalizeCompanyText(String value) {
-    return value
-        .toLowerCase()
-        .replaceAll('.', ' ')
-        .replaceAll(RegExp(r'[^a-z0-9\s]'), ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-  }
-
-  bool _isCompanyCustomerName(String value) {
-    final normalized = _normalizeCompanyText(value);
-    if (normalized.isEmpty) return false;
-    for (final keyword in _companyKeywords) {
-      if (RegExp(keyword).hasMatch(normalized)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  bool? _companyModeFromInvoiceNumber(String number) {
+  String? _invoiceEntityFromInvoiceNumber(String number) {
     final compact = number.toUpperCase().replaceAll(RegExp(r'\s+'), '');
     if (compact.isEmpty) return null;
+    if (compact.contains('PT.ANT') || compact.contains('/PT.ANT/')) {
+      return Formatters.invoiceEntityPtAnt;
+    }
     if (compact.contains('CV.ANT') || compact.contains('/CV.ANT/')) {
-      return true;
+      return Formatters.invoiceEntityCvAnt;
     }
     if (compact.contains('/BS/') ||
         compact.contains('/ANT/') ||
         compact.startsWith('BS')) {
-      return false;
+      return Formatters.invoiceEntityPersonal;
     }
     return null;
   }
 
-  bool _resolveIsCompanyInvoice({
+  String _resolveInvoiceEntity({
+    dynamic invoiceEntity,
     dynamic invoiceNumber,
     dynamic customerName,
     bool fallback = true,
   }) {
-    final fromNumber =
-        _companyModeFromInvoiceNumber('${invoiceNumber ?? ''}'.trim());
-    if (fromNumber != null) return fromNumber;
-    final name = '${customerName ?? ''}'.trim();
-    if (name.isNotEmpty) return _isCompanyCustomerName(name);
-    return fallback;
+    final explicitEntity = '${invoiceEntity ?? ''}'.trim();
+    final entityFromNumber =
+        _invoiceEntityFromInvoiceNumber('${invoiceNumber ?? ''}'.trim());
+    return Formatters.normalizeInvoiceEntity(
+      explicitEntity.isNotEmpty ? explicitEntity : entityFromNumber,
+      invoiceNumber: invoiceNumber,
+      customerName: customerName,
+      isCompany: fallback,
+    );
+  }
+
+  bool _resolveIsCompanyInvoice({
+    dynamic invoiceEntity,
+    dynamic invoiceNumber,
+    dynamic customerName,
+    bool fallback = true,
+  }) {
+    final entity = _resolveInvoiceEntity(
+      invoiceEntity: invoiceEntity,
+      invoiceNumber: invoiceNumber,
+      customerName: customerName,
+      fallback: fallback,
+    );
+    return Formatters.isCompanyInvoiceEntity(entity);
+  }
+
+  String _resolveInvoiceEntityLabel({
+    dynamic invoiceEntity,
+    dynamic invoiceNumber,
+    dynamic customerName,
+  }) {
+    final entity = _resolveInvoiceEntity(
+      invoiceEntity: invoiceEntity,
+      invoiceNumber: invoiceNumber,
+      customerName: customerName,
+    );
+    return Formatters.invoiceEntityLabel(entity);
+  }
+
+  Color _invoiceEntityAccentColor({
+    dynamic invoiceEntity,
+    dynamic invoiceNumber,
+    dynamic customerName,
+  }) {
+    final entity = _resolveInvoiceEntity(
+      invoiceEntity: invoiceEntity,
+      invoiceNumber: invoiceNumber,
+      customerName: customerName,
+    );
+    switch (entity) {
+      case Formatters.invoiceEntityCvAnt:
+        return AppColors.success;
+      case Formatters.invoiceEntityPtAnt:
+        return AppColors.cyan;
+      case Formatters.invoiceEntityPersonal:
+      default:
+        return AppColors.blue;
+    }
   }
 
   String _displayInvoiceNumber(String number) {
@@ -4022,12 +4169,12 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
   String _buildPrintInvoiceNumber({
     required int sequence,
     required DateTime issuedDate,
-    required bool isCompany,
+    required String invoiceEntity,
   }) {
     final seq = sequence.toString().padLeft(2, '0');
     final mm = issuedDate.toLocal().month.toString().padLeft(2, '0');
     final yy = (issuedDate.toLocal().year % 100).toString().padLeft(2, '0');
-    final code = isCompany ? 'CV.ANT' : 'BS';
+    final code = Formatters.invoiceEntityCode(invoiceEntity);
     return '$code$yy$mm$seq';
   }
 
@@ -4035,7 +4182,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     required String invoiceNumber,
     required int month,
     required int yearTwoDigits,
-    required bool isCompany,
+    required String invoiceEntity,
     DateTime? referenceDate,
   }) {
     final cleaned = invoiceNumber
@@ -4043,8 +4190,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         .trim();
     if (cleaned.isEmpty) return 0;
 
+    final normalizedEntity = Formatters.normalizeInvoiceEntity(invoiceEntity);
     final compactPattern = RegExp(
-      r'^(CV\.ANT|BS)(\d{2})(\d{2})(\d{2,})$',
+      r'^(CV\.ANT|PT\.ANT|BS)(\d{2})(\d{2})(\d{2,})$',
       caseSensitive: false,
     );
     final compactMatch = compactPattern.firstMatch(cleaned);
@@ -4053,7 +4201,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       final rowYear = int.tryParse(compactMatch.group(2) ?? '') ?? -1;
       final rowMonth = int.tryParse(compactMatch.group(3) ?? '') ?? 0;
       final seq = int.tryParse(compactMatch.group(4) ?? '') ?? 0;
-      final sameType = isCompany ? prefix == 'CV.ANT' : prefix == 'BS';
+      final sameType =
+          prefix == Formatters.invoiceEntityCode(normalizedEntity);
       if (sameType && rowMonth == month && rowYear == yearTwoDigits) {
         return seq;
       }
@@ -4061,7 +4210,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     }
 
     final newPattern = RegExp(
-      r'^(\d{1,4})\s*\/\s*(CV\.ANT|BS|ANT)\s*\/\s*([IVX]+)\s*\/\s*(\d{2})\s*$',
+      r'^(\d{1,4})\s*\/\s*(CV\.ANT|PT\.ANT|BS|ANT)\s*\/\s*([IVX]+)\s*\/\s*(\d{2})\s*$',
       caseSensitive: false,
     );
     final newMatch = newPattern.firstMatch(cleaned);
@@ -4070,8 +4219,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       final prefix = (newMatch.group(2) ?? '').toUpperCase().trim();
       final rowMonth = _printInvoiceRomanToMonth(newMatch.group(3) ?? '');
       final rowYear = int.tryParse(newMatch.group(4) ?? '') ?? -1;
-      final sameType =
-          isCompany ? prefix == 'CV.ANT' : (prefix == 'BS' || prefix == 'ANT');
+      final sameType = normalizedEntity == Formatters.invoiceEntityPersonal
+          ? (prefix == 'BS' || prefix == 'ANT')
+          : prefix == Formatters.invoiceEntityCode(normalizedEntity);
       if (sameType && rowMonth == month && rowYear == yearTwoDigits) {
         return seq;
       }
@@ -4086,9 +4236,11 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     if (legacyMatch != null) {
       final prefix =
           (legacyMatch.group(1) ?? '').toUpperCase().replaceAll(' ', '');
-      final sameType = isCompany
+      final sameType = normalizedEntity == Formatters.invoiceEntityCvAnt
           ? prefix.startsWith('480/CV.ANT')
-          : prefix.startsWith('268/ANT');
+          : normalizedEntity == Formatters.invoiceEntityPersonal
+              ? prefix.startsWith('268/ANT')
+              : false;
       if (!sameType) return 0;
 
       final rowMonth = _printInvoiceRomanToMonth(legacyMatch.group(2) ?? '');
@@ -4131,7 +4283,13 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       final usePortrait = invoiceDetailList.length > 16;
       final invoiceRawNumber = '${item['no_invoice'] ?? '-'}';
       final customerName = '${item['nama_pelanggan'] ?? ''}';
+      final resolvedInvoiceEntity = _resolveInvoiceEntity(
+        invoiceEntity: item['invoice_entity'],
+        invoiceNumber: invoiceRawNumber,
+        customerName: customerName,
+      );
       final isCompanyInvoice = _resolveIsCompanyInvoice(
+        invoiceEntity: item['invoice_entity'],
         invoiceNumber: invoiceRawNumber,
         customerName: customerName,
       );
@@ -4155,6 +4313,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                 effectiveKopDateRaw,
                 customerName: customerName,
                 isCompany: isCompanyInvoice,
+                invoiceEntity: resolvedInvoiceEntity,
               ),
       );
       pw.MemoryImage? kopLogo;
@@ -4166,7 +4325,10 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       }
       pw.MemoryImage? companyKopImage;
       try {
-        final kopBytes = await rootBundle.load('assets/images/kopsurat.jpeg');
+        final kopAsset = resolvedInvoiceEntity == Formatters.invoiceEntityPtAnt
+            ? 'assets/images/kopsuratpt.png'
+            : 'assets/images/kopsurat.jpeg';
+        final kopBytes = await rootBundle.load(kopAsset);
         companyKopImage = pw.MemoryImage(kopBytes.buffer.asUint8List());
       } catch (_) {
         companyKopImage = null;
@@ -6131,7 +6293,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     String status = '${item['status'] ?? 'Unpaid'}';
     String acceptedBy = '${item['diterima_oleh'] ?? 'Admin'}';
     bool saving = false;
-    bool isCompanyInvoiceMode = _resolveIsCompanyInvoice(
+    String invoiceEntityMode = _resolveInvoiceEntity(
+      invoiceEntity: item['invoice_entity'],
       invoiceNumber: item['no_invoice'],
       customerName: item['nama_pelanggan'],
     );
@@ -6322,6 +6485,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                 0,
                 (sum, row) => sum + detailSubtotal(row),
               );
+              final isCompanyInvoiceMode =
+                  Formatters.isCompanyInvoiceEntity(invoiceEntityMode);
               final pph = isCompanyInvoiceMode
                   ? (subtotal * 0.02).floorToDouble()
                   : 0.0;
@@ -6346,20 +6511,36 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                           children: [
                             Expanded(
                               child: _buildEditInvoiceModeTab(
-                                label: _t('Pribadi', 'Personal'),
-                                selected: !isCompanyInvoiceMode,
+                                label: 'CV. ANT',
+                                selected: invoiceEntityMode ==
+                                    Formatters.invoiceEntityCvAnt,
                                 onTap: () => setDialogState(
-                                  () => isCompanyInvoiceMode = false,
+                                  () => invoiceEntityMode =
+                                      Formatters.invoiceEntityCvAnt,
                                 ),
                               ),
                             ),
                             const SizedBox(width: 8),
                             Expanded(
                               child: _buildEditInvoiceModeTab(
-                                label: _t('Perusahaan', 'Company'),
-                                selected: isCompanyInvoiceMode,
+                                label: 'PT. ANT',
+                                selected: invoiceEntityMode ==
+                                    Formatters.invoiceEntityPtAnt,
                                 onTap: () => setDialogState(
-                                  () => isCompanyInvoiceMode = true,
+                                  () => invoiceEntityMode =
+                                      Formatters.invoiceEntityPtAnt,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: _buildEditInvoiceModeTab(
+                                label: _t('Pribadi', 'Personal'),
+                                selected: invoiceEntityMode ==
+                                    Formatters.invoiceEntityPersonal,
+                                onTap: () => setDialogState(
+                                  () => invoiceEntityMode =
+                                      Formatters.invoiceEntityPersonal,
                                 ),
                               ),
                             ),
@@ -7168,6 +7349,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                                             totalBiaya: subtotal,
                                             pph: pph,
                                             totalBayar: totalBayar,
+                                            invoiceEntity: invoiceEntityMode,
                                             email: email.text,
                                             noTelp: phone.text,
                                             kopDate: kopDate.text.trim().isEmpty
@@ -8219,17 +8401,20 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
           final item = rows[index];
           final isIncome = '${item['__type']}' == 'Income';
           final isEn = LanguageController.language.value == AppLanguage.en;
-          final isCompanyInvoice = isIncome
-              ? _resolveIsCompanyInvoice(
+          final invoiceTypeLabel = isIncome
+              ? _resolveInvoiceEntityLabel(
+                  invoiceEntity: item['invoice_entity'],
                   invoiceNumber: item['no_invoice'] ?? item['__number'],
                   customerName: item['__name'],
                 )
-              : false;
-          final invoiceTypeLabel = isCompanyInvoice
-              ? (isEn ? 'Company' : 'Perusahaan')
               : (isEn ? 'Personal' : 'Pribadi');
-          final invoiceTypeColor =
-              isCompanyInvoice ? AppColors.success : AppColors.blue;
+          final invoiceTypeColor = isIncome
+              ? _invoiceEntityAccentColor(
+                  invoiceEntity: item['invoice_entity'],
+                  invoiceNumber: item['no_invoice'] ?? item['__number'],
+                  customerName: item['__name'],
+                )
+              : AppColors.blue;
           final approvalStatus = _resolvePengurusApprovalStatus(item);
           final editRequestStatus =
               '${item['edit_request_status'] ?? 'none'}'.trim().toLowerCase();

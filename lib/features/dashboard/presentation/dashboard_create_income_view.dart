@@ -79,7 +79,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
   final _kopLocation = TextEditingController();
   final _dueDate = TextEditingController();
   final DateTime _date = DateTime.now();
-  bool _isCompanyInvoice = true;
+  String _invoiceEntity = Formatters.invoiceEntityCvAnt;
   String _status = 'Unpaid';
   String _acceptedBy = 'Admin';
   bool _loading = false;
@@ -88,6 +88,10 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
   List<Map<String, dynamic>> _hargaPerTonRules = const [];
   bool _prefillApplied = false;
   bool _prefillArmadaResolved = false;
+  bool get _isCompanyInvoice =>
+      Formatters.isCompanyInvoiceEntity(_invoiceEntity);
+  bool get _showSavedCustomerDropdown =>
+      _invoiceEntity != Formatters.invoiceEntityPtAnt;
 
   @override
   void dispose() {
@@ -545,9 +549,13 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
 
   List<Map<String, dynamic>> _filterCustomerOptionsByMode(
     List<Map<String, dynamic>> options, {
-    bool? isCompanyOverride,
+    String? invoiceEntityOverride,
   }) {
-    final isCompanyTarget = isCompanyOverride ?? _isCompanyInvoice;
+    final effectiveEntity = Formatters.normalizeInvoiceEntity(
+      invoiceEntityOverride ?? _invoiceEntity,
+    );
+    final isCompanyTarget =
+        Formatters.isCompanyInvoiceEntity(effectiveEntity);
     return options.where((option) {
       final name = '${option['customer_name'] ?? option['label'] ?? ''}';
       final isCompanyName = _isCompanyCustomerName(name);
@@ -555,17 +563,24 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
     }).toList();
   }
 
-  void _switchInvoiceMode(
-    bool isCompany,
+  void _switchInvoiceEntity(
+    String invoiceEntity,
     List<Map<String, dynamic>> customerOptions,
   ) {
-    if (_isCompanyInvoice == isCompany) return;
+    final nextEntity = Formatters.normalizeInvoiceEntity(invoiceEntity);
+    if (_invoiceEntity == nextEntity) return;
     final filtered = _filterCustomerOptionsByMode(
       customerOptions,
-      isCompanyOverride: isCompany,
+      invoiceEntityOverride: nextEntity,
     );
     setState(() {
-      _isCompanyInvoice = isCompany;
+      _invoiceEntity = nextEntity;
+      if (nextEntity == Formatters.invoiceEntityPtAnt) {
+        _selectedCustomerOptionId = _customerManualOptionId;
+        _linkedCustomerId = null;
+        _linkedOrderId = null;
+        return;
+      }
       final isCurrentValid = filtered.any(
         (item) => '${item['id']}' == _selectedCustomerOptionId,
       );
@@ -927,6 +942,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
         total: _subtotal,
         noInvoice: null,
         includePph: _isCompanyInvoice,
+        invoiceEntity: _invoiceEntity,
         status: _status,
         issuedDate: effectiveDate,
         email: _email.text,
@@ -959,6 +975,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
       _kopLocation.clear();
       _dueDate.clear();
       _status = 'Unpaid';
+      _invoiceEntity = Formatters.invoiceEntityCvAnt;
       _acceptedBy = widget.session.isOwner
           ? 'Owner'
           : (widget.session.isPengurus ? 'Pengurus' : 'Admin');
@@ -1124,49 +1141,99 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                       Expanded(
                         child: _buildInvoiceModeDot(
                           label: isEn ? 'Personal' : 'Pribadi',
-                          selected: !_isCompanyInvoice,
-                          onTap: () =>
-                              _switchInvoiceMode(false, customerOptions),
+                          selected:
+                              _invoiceEntity ==
+                              Formatters.invoiceEntityPersonal,
+                          onTap: () => _switchInvoiceEntity(
+                            Formatters.invoiceEntityPersonal,
+                            customerOptions,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: _buildInvoiceModeDot(
-                          label: isEn ? 'Company' : 'Perusahaan',
-                          selected: _isCompanyInvoice,
-                          onTap: () =>
-                              _switchInvoiceMode(true, customerOptions),
+                          label: 'CV. ANT',
+                          selected:
+                              _invoiceEntity == Formatters.invoiceEntityCvAnt,
+                          onTap: () => _switchInvoiceEntity(
+                            Formatters.invoiceEntityCvAnt,
+                            customerOptions,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _buildInvoiceModeDot(
+                          label: 'PT. ANT',
+                          selected:
+                              _invoiceEntity == Formatters.invoiceEntityPtAnt,
+                          onTap: () => _switchInvoiceEntity(
+                            Formatters.invoiceEntityPtAnt,
+                            customerOptions,
+                          ),
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 12),
-                  CvantDropdownField<String>(
-                    initialValue: selectedCustomerValue,
-                    decoration: InputDecoration(
-                      labelText:
-                          _t('Data Customer Tersimpan', 'Saved Customer Data'),
+                  if (_showSavedCustomerDropdown) ...[
+                    CvantDropdownField<String>(
+                      initialValue: selectedCustomerValue,
+                      decoration: InputDecoration(
+                        labelText:
+                            _t('Data Customer Tersimpan', 'Saved Customer Data'),
+                      ),
+                      items: [
+                        ...filteredCustomerOptions.map(
+                          (option) => DropdownMenuItem<String>(
+                            value: '${option['id']}',
+                            child: Text('${option['label'] ?? '-'}'),
+                          ),
+                        ),
+                        DropdownMenuItem<String>(
+                          value: _customerManualOptionId,
+                          child: Text(
+                            _t(
+                              'Other (Input Manual)',
+                              'Other (Manual Input)',
+                            ),
+                          ),
+                        ),
+                      ],
+                      onChanged: (value) => _applySavedCustomerOption(
+                        value,
+                        filteredCustomerOptions,
+                        armadas: armadas,
+                      ),
                     ),
-                    items: [
-                      ...filteredCustomerOptions.map(
-                        (option) => DropdownMenuItem<String>(
-                          value: '${option['id']}',
-                          child: Text('${option['label'] ?? '-'}'),
+                    const SizedBox(height: 10),
+                  ] else ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: AppColors.cardBorder(context),
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        _t(
+                          'Untuk PT. ANT, nama customer diisi manual dulu.',
+                          'For PT. ANT, customer name is entered manually for now.',
+                        ),
+                        style: TextStyle(
+                          color: AppColors.textMutedFor(context),
+                          fontSize: 13,
                         ),
                       ),
-                      DropdownMenuItem<String>(
-                        value: _customerManualOptionId,
-                        child: Text(
-                            _t('Other (Input Manual)', 'Other (Manual Input)')),
-                      ),
-                    ],
-                    onChanged: (value) => _applySavedCustomerOption(
-                      value,
-                      filteredCustomerOptions,
-                      armadas: armadas,
                     ),
-                  ),
-                  const SizedBox(height: 10),
+                    const SizedBox(height: 10),
+                  ],
                   TextField(
                     controller: _customer,
                     decoration: InputDecoration(

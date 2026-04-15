@@ -3,6 +3,10 @@ import 'package:intl/intl.dart';
 class Formatters {
   const Formatters._();
 
+  static const invoiceEntityCvAnt = 'cv_ant';
+  static const invoiceEntityPtAnt = 'pt_ant';
+  static const invoiceEntityPersonal = 'personal';
+
   static const _companyKeywords = <String>[
     r'\bcv\b',
     r'\bpt\b',
@@ -152,7 +156,12 @@ class Formatters {
 
   static bool _isCompanyByInvoicePattern(String value) {
     final compact = value.toUpperCase().replaceAll(RegExp(r'\s+'), '');
-    if (compact.contains('/CV.ANT/') || compact.contains('CV.ANT')) return true;
+    if (compact.contains('/CV.ANT/') ||
+        compact.contains('CV.ANT') ||
+        compact.contains('/PT.ANT/') ||
+        compact.contains('PT.ANT')) {
+      return true;
+    }
     if ((compact.contains('/BS/') ||
             compact.contains('/ANT/') ||
             compact.startsWith('BS')) &&
@@ -162,11 +171,88 @@ class Formatters {
     return true;
   }
 
+  static bool isCompanyInvoiceEntity(String entity) {
+    final normalized = normalizeInvoiceEntity(entity);
+    return normalized != invoiceEntityPersonal;
+  }
+
+  static String invoiceEntityLabel(String entity) {
+    switch (normalizeInvoiceEntity(entity)) {
+      case invoiceEntityPtAnt:
+        return 'PT. ANT';
+      case invoiceEntityPersonal:
+        return 'Pribadi';
+      case invoiceEntityCvAnt:
+      default:
+        return 'CV. ANT';
+    }
+  }
+
+  static String normalizeInvoiceEntity(
+    String? entity, {
+    dynamic invoiceNumber,
+    dynamic customerName,
+    bool? isCompany,
+  }) {
+    final cleaned = (entity ?? '').trim().toLowerCase();
+    switch (cleaned) {
+      case invoiceEntityCvAnt:
+      case 'cv.ant':
+      case 'cv ant':
+      case 'company':
+        return invoiceEntityCvAnt;
+      case invoiceEntityPtAnt:
+      case 'pt.ant':
+      case 'pt ant':
+        return invoiceEntityPtAnt;
+      case invoiceEntityPersonal:
+      case 'pribadi':
+        return invoiceEntityPersonal;
+    }
+
+    final rawNumber = '${invoiceNumber ?? ''}'.trim();
+    final compact = rawNumber.toUpperCase().replaceAll(RegExp(r'\s+'), '');
+    if (compact.contains('/PT.ANT/') || compact.contains('PT.ANT')) {
+      return invoiceEntityPtAnt;
+    }
+    if (compact.contains('/CV.ANT/') || compact.contains('CV.ANT')) {
+      return invoiceEntityCvAnt;
+    }
+    if ((compact.contains('/BS/') ||
+            compact.contains('/ANT/') ||
+            compact.startsWith('BS')) &&
+        !compact.contains('CV.ANT') &&
+        !compact.contains('PT.ANT')) {
+      return invoiceEntityPersonal;
+    }
+
+    final customerRaw = '${customerName ?? ''}'.trim();
+    if (customerRaw.isNotEmpty && _isCompanyCustomerName(customerRaw)) {
+      return invoiceEntityCvAnt;
+    }
+
+    if (isCompany == true) return invoiceEntityCvAnt;
+    return invoiceEntityPersonal;
+  }
+
+  static String invoiceEntityCode(String entity) {
+    switch (normalizeInvoiceEntity(entity)) {
+      case invoiceEntityPtAnt:
+        return 'PT.ANT';
+      case invoiceEntityPersonal:
+        return 'BS';
+      case invoiceEntityCvAnt:
+      default:
+        return 'CV.ANT';
+    }
+  }
+
   static String invoiceNumber(
     dynamic value,
     dynamic tanggal, {
     dynamic customerName,
     bool? isCompany,
+    String? invoiceEntity,
   }) {
     final raw = (value ?? '').toString().trim();
     if (raw.isEmpty) return '-';
@@ -195,35 +281,45 @@ class Formatters {
     }
 
     final customerRaw = (customerName ?? '').toString().trim();
-    final resolvedIsCompany = isCompany ??
-        (customerRaw.isNotEmpty
-            ? _isCompanyCustomerName(customerRaw)
-            : _isCompanyByInvoicePattern(cleaned));
+    final resolvedEntity = normalizeInvoiceEntity(
+      invoiceEntity,
+      invoiceNumber: cleaned,
+      customerName: customerRaw,
+      isCompany: isCompany ??
+          (customerRaw.isNotEmpty
+              ? _isCompanyCustomerName(customerRaw)
+              : _isCompanyByInvoicePattern(cleaned)),
+    );
 
     String composeNumber({
       required int sequence,
       required int month,
       required int yearTwoDigits,
-      required bool company,
+      required String entity,
     }) {
       final seq = sequence.toString().padLeft(2, '0');
       final yy = yearTwoDigits.toString().padLeft(2, '0');
       final mm = month.toString().padLeft(2, '0');
-      final code = company ? 'CV.ANT' : 'BS';
+      final code = invoiceEntityCode(entity);
       return '$code$yy$mm$seq';
     }
 
     // New preferred format:
     // BS260401
     // CV.ANT260401
+    // PT.ANT260401
     final compactPattern = RegExp(
-      r'^(CV\.ANT|BS)(\d{2})(\d{2})(\d{2,})$',
+      r'^(CV\.ANT|PT\.ANT|BS)(\d{2})(\d{2})(\d{2,})$',
       caseSensitive: false,
     );
     final compactMatch = compactPattern.firstMatch(upper);
     if (compactMatch != null) {
       final prefix = (compactMatch.group(1) ?? '').toUpperCase().trim();
-      final companyFromPrefix = prefix == 'CV.ANT';
+      final entityFromPrefix = switch (prefix) {
+        'PT.ANT' => invoiceEntityPtAnt,
+        'CV.ANT' => invoiceEntityCvAnt,
+        _ => invoiceEntityPersonal,
+      };
       final yearTwoDigits = int.tryParse(compactMatch.group(2) ?? '') ??
           (parseDate(tanggal)?.year ?? DateTime.now().year) % 100;
       final month = int.tryParse(compactMatch.group(3) ?? '') ??
@@ -234,15 +330,16 @@ class Formatters {
         sequence: seq,
         month: month <= 0 ? DateTime.now().month : month,
         yearTwoDigits: yearTwoDigits,
-        company: companyFromPrefix,
+        entity: entityFromPrefix,
       );
     }
 
     // Legacy preferred format:
     // 017 / BS / I / 26
     // 017 / CV.ANT / I / 26
+    // 017 / PT.ANT / I / 26
     final newPattern = RegExp(
-      r'^(\d{1,4})\s*\/\s*(CV\.ANT|BS|ANT)\s*\/\s*([IVX]+)\s*\/\s*(\d{2})$',
+      r'^(\d{1,4})\s*\/\s*(CV\.ANT|PT\.ANT|BS|ANT)\s*\/\s*([IVX]+)\s*\/\s*(\d{2})$',
       caseSensitive: false,
     );
     final newMatch = newPattern.firstMatch(upper);
@@ -250,7 +347,11 @@ class Formatters {
       final dt = parseDate(tanggal);
       final seq = int.tryParse(newMatch.group(1) ?? '') ?? 1;
       final prefix = (newMatch.group(2) ?? '').toUpperCase().trim();
-      final companyFromPrefix = prefix == 'CV.ANT';
+      final entityFromPrefix = switch (prefix) {
+        'PT.ANT' => invoiceEntityPtAnt,
+        'CV.ANT' => invoiceEntityCvAnt,
+        _ => invoiceEntityPersonal,
+      };
       final month = dt?.month ??
           _romanMonths.indexOf((newMatch.group(3) ?? '').toUpperCase());
       final yearTwoDigits = dt != null
@@ -261,7 +362,7 @@ class Formatters {
         sequence: seq,
         month: month <= 0 ? DateTime.now().month : month,
         yearTwoDigits: yearTwoDigits,
-        company: companyFromPrefix,
+        entity: entityFromPrefix,
       );
     }
 
@@ -278,7 +379,7 @@ class Formatters {
         sequence: seq,
         month: month <= 0 ? DateTime.now().month : month,
         yearTwoDigits: year % 100,
-        company: resolvedIsCompany,
+        entity: resolvedEntity,
       );
     }
 
@@ -300,7 +401,7 @@ class Formatters {
         sequence: seq,
         month: month <= 0 ? DateTime.now().month : month,
         yearTwoDigits: yearTwoDigits,
-        company: resolvedIsCompany,
+        entity: resolvedEntity,
       );
     }
 
@@ -316,7 +417,7 @@ class Formatters {
         sequence: seq,
         month: month,
         yearTwoDigits: year % 100,
-        company: resolvedIsCompany,
+        entity: resolvedEntity,
       );
     }
 

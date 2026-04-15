@@ -23,6 +23,11 @@ dibaca otomatis oleh Edge Function runtime Supabase.
 supabase functions deploy send-push
 ```
 
+Jika project memakai JWT Signing Keys baru dan request ke function sempat gagal
+`Invalid JWT`, deploy dengan konfigurasi `verify_jwt = false` pada
+`supabase/config.toml`. Function ini sudah memverifikasi bearer token sendiri di
+dalam handler.
+
 ### Catatan
 
 - Flutter app juga butuh file Firebase platform:

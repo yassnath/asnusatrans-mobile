@@ -504,6 +504,7 @@ execute function public.set_updated_at();
 create table if not exists public.invoices (
   id uuid primary key default gen_random_uuid(),
   no_invoice text not null unique,
+  invoice_entity text not null default 'cv_ant',
   tanggal date not null default current_date,
   nama_pelanggan text not null,
   customer_id uuid references public.profiles(id) on delete set null,
@@ -616,6 +617,7 @@ create table if not exists public.fixed_invoice_batches (
   batch_id text primary key,
   invoice_ids text[] not null default '{}',
   invoice_number text not null default '',
+  invoice_entity text not null default 'cv_ant',
   customer_name text not null default '',
   kop_date date,
   kop_location text,
@@ -959,6 +961,7 @@ begin
 
   insert into public.invoices (
     no_invoice,
+    invoice_entity,
     tanggal,
     tanggal_kop,
     lokasi_kop,
@@ -994,6 +997,11 @@ begin
   )
   values (
     null,
+    case lower(coalesce(trim(p_payload->>'invoice_entity'), ''))
+      when 'pt_ant' then 'pt_ant'
+      when 'personal' then 'personal'
+      else 'cv_ant'
+    end,
     coalesce(nullif(trim(p_payload->>'tanggal'), ''), current_date::text)::date,
     case
       when coalesce(trim(p_payload->>'tanggal_kop'), '') = '' then null

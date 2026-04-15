@@ -12,66 +12,66 @@ class _InvoiceTableRenderResult {
   final String renderSource;
 }
 
-const _dashboardInvoiceCompanyKeywords = <String>[
-  r'\bcv\b',
-  r'\bpt\b',
-  r'\bfa\b',
-  r'\bud\b',
-  r'\bpo\b',
-  r'\byayasan\b',
-  r'\bbumn\b',
-  r'\bbumd\b',
-  r'\bperum\b',
-  r'\bkoperasi\b',
-  r'\bpersekutuan\s+perdata\b',
-  r'\bmaatschap\b',
-];
-
-String _normalizeDashboardCompanyText(String value) {
-  return value
-      .toLowerCase()
-      .replaceAll('.', ' ')
-      .replaceAll(RegExp(r'[^a-z0-9\s]'), ' ')
-      .replaceAll(RegExp(r'\s+'), ' ')
-      .trim();
-}
-
-bool _isDashboardCompanyCustomerName(String value) {
-  final normalized = _normalizeDashboardCompanyText(value);
-  if (normalized.isEmpty) return false;
-  for (final keyword in _dashboardInvoiceCompanyKeywords) {
-    if (RegExp(keyword).hasMatch(normalized)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-bool? _dashboardCompanyModeFromInvoiceNumber(String number) {
+String? _dashboardInvoiceEntityFromInvoiceNumber(String number) {
   final compact = number.toUpperCase().replaceAll(RegExp(r'\s+'), '');
   if (compact.isEmpty) return null;
+  if (compact.contains('PT.ANT') || compact.contains('/PT.ANT/')) {
+    return Formatters.invoiceEntityPtAnt;
+  }
   if (compact.contains('CV.ANT') || compact.contains('/CV.ANT/')) {
-    return true;
+    return Formatters.invoiceEntityCvAnt;
   }
   if (compact.contains('/BS/') ||
       compact.contains('/ANT/') ||
       compact.startsWith('BS')) {
-    return false;
+    return Formatters.invoiceEntityPersonal;
   }
   return null;
 }
 
-bool _resolveIsCompanyInvoiceShared({
+String _resolveInvoiceEntityShared({
+  dynamic invoiceEntity,
   dynamic invoiceNumber,
   dynamic customerName,
   bool fallback = true,
 }) {
-  final fromNumber =
-      _dashboardCompanyModeFromInvoiceNumber('${invoiceNumber ?? ''}'.trim());
-  if (fromNumber != null) return fromNumber;
-  final name = '${customerName ?? ''}'.trim();
-  if (name.isNotEmpty) return _isDashboardCompanyCustomerName(name);
-  return fallback;
+  final explicitEntity = '${invoiceEntity ?? ''}'.trim();
+  final entityFromNumber =
+      _dashboardInvoiceEntityFromInvoiceNumber('${invoiceNumber ?? ''}'.trim());
+  return Formatters.normalizeInvoiceEntity(
+    explicitEntity.isNotEmpty ? explicitEntity : entityFromNumber,
+    invoiceNumber: invoiceNumber,
+    customerName: customerName,
+    isCompany: fallback,
+  );
+}
+
+bool _resolveIsCompanyInvoiceShared({
+  dynamic invoiceEntity,
+  dynamic invoiceNumber,
+  dynamic customerName,
+  bool fallback = true,
+}) {
+  final entity = _resolveInvoiceEntityShared(
+    invoiceEntity: invoiceEntity,
+    invoiceNumber: invoiceNumber,
+    customerName: customerName,
+    fallback: fallback,
+  );
+  return Formatters.isCompanyInvoiceEntity(entity);
+}
+
+String _resolveInvoiceEntityLabelShared({
+  dynamic invoiceEntity,
+  dynamic invoiceNumber,
+  dynamic customerName,
+}) {
+  final entity = _resolveInvoiceEntityShared(
+    invoiceEntity: invoiceEntity,
+    invoiceNumber: invoiceNumber,
+    customerName: customerName,
+  );
+  return Formatters.invoiceEntityLabel(entity);
 }
 
 String _displayInvoiceNumberShared(String number) {
@@ -199,7 +199,13 @@ List<Map<String, dynamic>> _expandInvoicePrintDetailsForPdf(
   final baseItem = Map<String, dynamic>.from(sourceItems.first);
   final mergedDetails = _expandInvoicePrintDetailsForPdf(sourceItems);
   final customerName = '${baseItem['nama_pelanggan'] ?? ''}';
+  final resolvedInvoiceEntity = _resolveInvoiceEntityShared(
+    invoiceEntity: baseItem['invoice_entity'],
+    invoiceNumber: baseItem['no_invoice'],
+    customerName: customerName,
+  );
   final isCompanyInvoice = _resolveIsCompanyInvoiceShared(
+    invoiceEntity: baseItem['invoice_entity'],
     invoiceNumber: baseItem['no_invoice'],
     customerName: customerName,
   );
@@ -235,6 +241,7 @@ List<Map<String, dynamic>> _expandInvoicePrintDetailsForPdf(
       );
 
   baseItem['rincian'] = mergedDetails;
+  baseItem['invoice_entity'] = resolvedInvoiceEntity;
   baseItem['total_biaya'] = subtotal;
   baseItem['pph'] = pph;
   baseItem['total_bayar'] = total;
@@ -444,7 +451,13 @@ Future<bool> _printDashboardInvoicePdf(
     final usePortrait = invoiceDetailList.length > 16;
     final invoiceRawNumber = '${item['no_invoice'] ?? '-'}';
     final customerName = '${item['nama_pelanggan'] ?? ''}';
+    final resolvedInvoiceEntity = _resolveInvoiceEntityShared(
+      invoiceEntity: item['invoice_entity'],
+      invoiceNumber: invoiceRawNumber,
+      customerName: customerName,
+    );
     final isCompanyInvoice = _resolveIsCompanyInvoiceShared(
+      invoiceEntity: item['invoice_entity'],
       invoiceNumber: invoiceRawNumber,
       customerName: customerName,
     );
@@ -468,6 +481,7 @@ Future<bool> _printDashboardInvoicePdf(
               effectiveKopDateRaw,
               customerName: customerName,
               isCompany: isCompanyInvoice,
+              invoiceEntity: resolvedInvoiceEntity,
             ),
     );
     pw.MemoryImage? kopLogo;
@@ -479,7 +493,10 @@ Future<bool> _printDashboardInvoicePdf(
     }
     pw.MemoryImage? companyKopImage;
     try {
-      final kopBytes = await rootBundle.load('assets/images/kopsurat.jpeg');
+      final kopAsset = resolvedInvoiceEntity == Formatters.invoiceEntityPtAnt
+          ? 'assets/images/kopsuratpt.png'
+          : 'assets/images/kopsurat.jpeg';
+      final kopBytes = await rootBundle.load(kopAsset);
       companyKopImage = pw.MemoryImage(kopBytes.buffer.asUint8List());
     } catch (_) {
       companyKopImage = null;

@@ -85,6 +85,7 @@ class DashboardRepository {
   };
   static const _optionalInvoiceColumns = <String>{
     'no_invoice',
+    'invoice_entity',
     ..._invoiceWorkflowColumns,
   };
   static const _optionalExpenseColumns = <String>{
@@ -173,7 +174,7 @@ class DashboardRepository {
   Future<DashboardBundle> loadAdminDashboard() async {
     try {
       const invoiceColumns =
-          'id,no_invoice,tanggal,tanggal_kop,nama_pelanggan,status,total_bayar,total_biaya,pph,'
+          'id,no_invoice,invoice_entity,tanggal,tanggal_kop,nama_pelanggan,status,total_bayar,total_biaya,pph,'
           'armada_id,armada_start_date,armada_end_date,muatan,created_at,rincian,'
           'created_by,submission_role,approval_status';
       final response = await Future.wait<dynamic>([
@@ -239,7 +240,7 @@ class DashboardRepository {
 
   Future<DashboardLiveSections> loadAdminLiveSections() async {
     try {
-      const invoiceColumns = 'id,no_invoice,tanggal,tanggal_kop,nama_pelanggan,'
+      const invoiceColumns = 'id,no_invoice,invoice_entity,tanggal,tanggal_kop,nama_pelanggan,'
           'armada_id,armada_start_date,armada_end_date,created_at,rincian,'
           'created_by,submission_role,approval_status';
       final response = await Future.wait<dynamic>([
@@ -353,7 +354,7 @@ class DashboardRepository {
   Future<List<Map<String, dynamic>>> fetchInvoices() async {
     try {
       const invoiceColumns =
-          'id,no_invoice,tanggal,tanggal_kop,lokasi_kop,nama_pelanggan,email,no_telp,due_date,'
+          'id,no_invoice,invoice_entity,tanggal,tanggal_kop,lokasi_kop,nama_pelanggan,email,no_telp,due_date,'
           'lokasi_muat,lokasi_bongkar,armada_start_date,armada_end_date,'
           'tonase,harga,muatan,nama_supir,status,total_bayar,total_biaya,pph,diterima_oleh,'
           'customer_id,armada_id,order_id,rincian,created_at,updated_at,created_by,'
@@ -373,10 +374,54 @@ class DashboardRepository {
     }
   }
 
+  Future<List<Map<String, dynamic>>> fetchInvoicesByIds(
+    Iterable<String> ids,
+  ) async {
+    final cleanedIds = ids
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+    if (cleanedIds.isEmpty) {
+      return const <Map<String, dynamic>>[];
+    }
+
+    try {
+      const invoiceColumns =
+          'id,no_invoice,invoice_entity,tanggal,tanggal_kop,lokasi_kop,nama_pelanggan,email,no_telp,due_date,'
+          'lokasi_muat,lokasi_bongkar,armada_start_date,armada_end_date,'
+          'tonase,harga,muatan,nama_supir,status,total_bayar,total_biaya,pph,diterima_oleh,'
+          'customer_id,armada_id,order_id,rincian,created_at,updated_at,created_by,'
+          'submission_role,approval_status,approval_requested_at,approval_requested_by,'
+          'approved_at,approved_by,rejected_at,rejected_by,edit_request_status,'
+          'edit_requested_at,edit_requested_by,edit_resolved_at,edit_resolved_by';
+      const chunkSize = 150;
+      final rows = <Map<String, dynamic>>[];
+      for (var start = 0; start < cleanedIds.length; start += chunkSize) {
+        final end = (start + chunkSize < cleanedIds.length)
+            ? start + chunkSize
+            : cleanedIds.length;
+        final chunk = cleanedIds.sublist(start, end);
+        final res = await _runInvoiceSelectWithFallback(
+          invoiceColumns,
+          (columns) => _supabase
+              .from('invoices')
+              .select(columns)
+              .inFilter('id', chunk)
+              .order('tanggal', ascending: false),
+        );
+        rows.addAll(_toMapList(res));
+      }
+      return rows;
+    } on PostgrestException catch (e) {
+      throw Exception('Gagal memuat invoice batch: ${e.message}');
+    }
+  }
+
   Future<List<Map<String, dynamic>>> fetchInvoicesSince(DateTime since) async {
     try {
       const invoiceColumns =
-          'id,no_invoice,tanggal,tanggal_kop,lokasi_kop,nama_pelanggan,email,no_telp,due_date,'
+          'id,no_invoice,invoice_entity,tanggal,tanggal_kop,lokasi_kop,nama_pelanggan,email,no_telp,due_date,'
           'lokasi_muat,lokasi_bongkar,armada_start_date,armada_end_date,'
           'tonase,harga,muatan,nama_supir,status,total_bayar,total_biaya,pph,diterima_oleh,'
           'customer_id,armada_id,order_id,rincian,created_at,updated_at,created_by,'
@@ -584,7 +629,7 @@ class DashboardRepository {
     if (_invoiceNumberColumnAvailable != false) {
       try {
         final invoiceRows = await _runInvoiceSelectWithFallback(
-          'id,no_invoice,nama_pelanggan,tanggal,tanggal_kop',
+          'id,no_invoice,invoice_entity,nama_pelanggan,tanggal,tanggal_kop',
           (columns) => _supabase.from('invoices').select(columns),
         );
         if (_invoiceNumberColumnAvailable != false) {
@@ -1034,7 +1079,7 @@ class DashboardRepository {
     try {
       final rows = _toMapList(
         await _runInvoiceSelectWithFallback(
-          'id,no_invoice,tanggal,tanggal_kop,nama_pelanggan,lokasi_muat,lokasi_bongkar,'
+          'id,no_invoice,invoice_entity,tanggal,tanggal_kop,nama_pelanggan,lokasi_muat,lokasi_bongkar,'
           'armada_start_date,status,total_biaya,pph,total_bayar,created_by,created_at,updated_at,'
           'submission_role,approval_status,approval_requested_at,approval_requested_by,'
           'approved_at,approved_by,rejected_at,rejected_by,edit_request_status,'
@@ -1324,6 +1369,7 @@ class DashboardRepository {
     required String customerName,
     required double total,
     String? noInvoice,
+    String? invoiceEntity,
     bool includePph = true,
     String status = 'Unpaid',
     DateTime? issuedDate,
@@ -1436,6 +1482,7 @@ class DashboardRepository {
           customerName: customerName,
           total: detailTotal,
           requestedNoInvoice: i == 0 ? requestedInvoiceNumber : null,
+          invoiceEntity: invoiceEntity,
           includePph: includePph,
           status: status,
           issueDate: detailIssueDate,
@@ -1500,6 +1547,7 @@ class DashboardRepository {
       customerName: customerName,
       total: total,
       requestedNoInvoice: requestedInvoiceNumber,
+      invoiceEntity: invoiceEntity,
       includePph: includePph,
       status: status,
       issueDate: parsedIssueDate,
@@ -1566,6 +1614,7 @@ class DashboardRepository {
     required String submissionRole,
     required String approvalStatus,
     String? requestedNoInvoice,
+    String? invoiceEntity,
     String? email,
     String? noTelp,
     DateTime? kopDate,
@@ -1595,15 +1644,21 @@ class DashboardRepository {
     );
     final pphValue = includePph ? max(0, (total * 0.02).floorToDouble()) : 0.0;
     final totalBayarValue = max(0, total - pphValue);
-    final isCompanyInvoice = _isCompanyCustomerName(customerName.trim()) ||
-        _isCompanyInvoiceNumber(requestedNoInvoice ?? '');
+    final normalizedInvoiceEntity = _resolveInvoiceEntity(
+      invoiceEntity: invoiceEntity,
+      invoiceNumber: requestedNoInvoice,
+      customerName: customerName,
+      isCompany: _isCompanyCustomerName(customerName.trim()) ||
+          _isCompanyInvoiceNumber(requestedNoInvoice ?? ''),
+    );
     var currentCode = '';
     if ((requestedNoInvoice ?? '').trim().isNotEmpty) {
       final normalized = Formatters.invoiceNumber(
         requestedNoInvoice!.trim(),
         kopDate ?? issueDate,
         customerName: customerName,
-        isCompany: isCompanyInvoice,
+        isCompany: Formatters.isCompanyInvoiceEntity(normalizedInvoiceEntity),
+        invoiceEntity: normalizedInvoiceEntity,
       );
       currentCode = normalized == '-' ? requestedNoInvoice.trim() : normalized;
     }
@@ -1636,6 +1691,7 @@ class DashboardRepository {
       'created_by': createdBy,
       'submission_role': submissionRole,
       'approval_status': approvalStatus,
+      'invoice_entity': normalizedInvoiceEntity,
       'approval_requested_at':
           approvalStatus == 'pending' ? DateTime.now().toIso8601String() : null,
       'approval_requested_by': approvalStatus == 'pending' ? createdBy : null,
@@ -1781,7 +1837,7 @@ class DashboardRepository {
       dynamic query = _supabase
           .from('invoices')
           .select(
-            'id,no_invoice,created_at,created_by,tanggal,nama_pelanggan,total_biaya,lokasi_muat,lokasi_bongkar,submission_role',
+            'id,no_invoice,invoice_entity,created_at,created_by,tanggal,nama_pelanggan,total_biaya,lokasi_muat,lokasi_bongkar,submission_role',
           )
           .eq('created_by', createdBy)
           .eq('submission_role', 'pengurus')
@@ -1808,7 +1864,7 @@ class DashboardRepository {
 
   Future<String> generateIncomeInvoiceNumber({
     required DateTime issuedDate,
-    required bool isCompany,
+    required String invoiceEntity,
   }) async {
     if (_invoiceNumberColumnAvailable == false) {
       return '';
@@ -1816,7 +1872,7 @@ class DashboardRepository {
     try {
       final localIssuedDate = issuedDate.toLocal();
       final res = await _runInvoiceSelectWithFallback(
-        'no_invoice,nama_pelanggan,tanggal_kop,tanggal',
+        'no_invoice,invoice_entity,nama_pelanggan,tanggal_kop,tanggal',
         (columns) => _supabase.from('invoices').select(columns),
       );
       if (_invoiceNumberColumnAvailable == false) {
@@ -1826,18 +1882,26 @@ class DashboardRepository {
       final rows = _toMapList(res);
       var maxSeq = 0;
       final yearTwoDigits = localIssuedDate.year % 100;
+      final normalizedTargetEntity = _resolveInvoiceEntity(
+        invoiceEntity: invoiceEntity,
+      );
       for (final row in rows) {
         final no = '${row['no_invoice'] ?? ''}';
         final customerName = '${row['nama_pelanggan'] ?? ''}'.trim();
-        final isCompanyEntry = customerName.isNotEmpty
-            ? _isCompanyCustomerName(customerName)
-            : _isCompanyInvoiceNumber(no);
-        if (isCompany != isCompanyEntry) continue;
+        final rowEntity = _resolveInvoiceEntity(
+          invoiceEntity: '${row['invoice_entity'] ?? ''}',
+          invoiceNumber: no,
+          customerName: customerName,
+          isCompany: customerName.isNotEmpty
+              ? _isCompanyCustomerName(customerName)
+              : _isCompanyInvoiceNumber(no),
+        );
+        if (rowEntity != normalizedTargetEntity) continue;
         final seq = _extractInvoiceSequenceForMonth(
           noInvoice: no,
           month: localIssuedDate.month,
           yearTwoDigits: yearTwoDigits,
-          isCompany: isCompany,
+          invoiceEntity: normalizedTargetEntity,
           referenceDate:
               Formatters.parseDate(row['tanggal_kop'] ?? row['tanggal']),
         );
@@ -1847,10 +1911,8 @@ class DashboardRepository {
       final mm = localIssuedDate.month.toString().padLeft(2, '0');
       final seq = (maxSeq + 1).toString().padLeft(2, '0');
       final yy = yearTwoDigits.toString().padLeft(2, '0');
-      if (isCompany) {
-        return 'CV.ANT$yy$mm$seq';
-      }
-      return 'BS$yy$mm$seq';
+      final code = Formatters.invoiceEntityCode(normalizedTargetEntity);
+      return '$code$yy$mm$seq';
     } on PostgrestException catch (e) {
       throw Exception('Gagal menyiapkan nomor invoice: ${e.message}');
     }
@@ -1955,7 +2017,7 @@ class DashboardRepository {
   Future<Map<String, dynamic>?> fetchInvoiceById(String id) async {
     try {
       const invoiceColumns =
-          'id,no_invoice,tanggal,tanggal_kop,lokasi_kop,nama_pelanggan,email,no_telp,due_date,'
+          'id,no_invoice,invoice_entity,tanggal,tanggal_kop,lokasi_kop,nama_pelanggan,email,no_telp,due_date,'
           'lokasi_muat,lokasi_bongkar,armada_start_date,armada_end_date,'
           'tonase,harga,muatan,nama_supir,status,total_biaya,pph,total_bayar,diterima_oleh,'
           'customer_id,armada_id,order_id,rincian,created_at,updated_at,created_by,'
@@ -1985,6 +2047,7 @@ class DashboardRepository {
     required double totalBiaya,
     required double pph,
     required double totalBayar,
+    String? invoiceEntity,
     String? email,
     String? noTelp,
     String? kopDate,
@@ -2038,6 +2101,12 @@ class DashboardRepository {
       }
 
       final resolvedIssueDate = resolveIssueDateForUpdate() ?? DateTime.now();
+      final normalizedInvoiceEntity = _resolveInvoiceEntity(
+        invoiceEntity: invoiceEntity,
+        invoiceNumber: noInvoice,
+        customerName: customerName,
+        isCompany: _isCompanyCustomerName(customerName),
+      );
       final payload = <String, dynamic>{
         'nama_pelanggan': customerName.trim(),
         'tanggal': _dateOnly(resolvedIssueDate),
@@ -2045,6 +2114,7 @@ class DashboardRepository {
         'total_biaya': totalBiaya,
         'pph': pph,
         'total_bayar': totalBayar,
+        'invoice_entity': normalizedInvoiceEntity,
         'email': email?.trim().isEmpty == true ? null : email?.trim(),
         'no_telp': noTelp?.trim().isEmpty == true ? null : noTelp?.trim(),
         'tanggal_kop': kopDate?.trim().isEmpty == true ? null : kopDate?.trim(),
@@ -2075,7 +2145,8 @@ class DashboardRepository {
           noInvoice.trim(),
           (kopDate?.trim().isNotEmpty == true) ? kopDate : date,
           customerName: customerName,
-          isCompany: _isCompanyCustomerName(customerName),
+          isCompany: Formatters.isCompanyInvoiceEntity(normalizedInvoiceEntity),
+          invoiceEntity: normalizedInvoiceEntity,
         );
         payload['no_invoice'] =
             normalized == '-' ? noInvoice.trim() : normalized;
@@ -2152,7 +2223,7 @@ class DashboardRepository {
 
       final ids = cleanUpdates.map((item) => item['id']!).toSet().toList();
       final current = await _runInvoiceSelectWithFallback(
-        'id,no_invoice,nama_pelanggan,tanggal,tanggal_kop,lokasi_kop',
+        'id,no_invoice,invoice_entity,nama_pelanggan,tanggal,tanggal_kop,lokasi_kop',
         (columns) =>
             _supabase.from('invoices').select(columns).inFilter('id', ids),
       );
@@ -2172,6 +2243,12 @@ class DashboardRepository {
         if (currentMap == null) continue;
 
         final customerName = '${currentMap['nama_pelanggan'] ?? ''}'.trim();
+        final normalizedInvoiceEntity = _resolveInvoiceEntity(
+          invoiceEntity: '${currentMap['invoice_entity'] ?? ''}',
+          invoiceNumber: currentMap['no_invoice'],
+          customerName: customerName,
+          isCompany: _isCompanyCustomerName(customerName),
+        );
         final rawNoInvoice = (item['no_invoice'] ?? '').isNotEmpty
             ? item['no_invoice']!
             : '${currentMap['no_invoice'] ?? ''}'.trim();
@@ -2194,7 +2271,10 @@ class DashboardRepository {
                   rawNoInvoice,
                   parsedEffectiveDate,
                   customerName: customerName,
-                  isCompany: _isCompanyCustomerName(customerName),
+                  isCompany: Formatters.isCompanyInvoiceEntity(
+                    normalizedInvoiceEntity,
+                  ),
+                  invoiceEntity: normalizedInvoiceEntity,
                 );
                 return normalized == '-' ? rawNoInvoice : normalized;
               })();
@@ -2202,6 +2282,7 @@ class DashboardRepository {
         final payload = <String, dynamic>{
           'id': id,
           'updated_at': nowIso,
+          'invoice_entity': normalizedInvoiceEntity,
           'tanggal_kop': effectiveKopDate.isEmpty ? null : effectiveKopDate,
           'lokasi_kop':
               effectiveKopLocation.isEmpty ? null : effectiveKopLocation,
@@ -2548,7 +2629,7 @@ class DashboardRepository {
 
   Future<Map<String, dynamic>?> findInvoiceForOrder(String orderId) async {
     try {
-      const invoiceColumns = 'id,no_invoice,status,total_biaya,pph,total_bayar,'
+      const invoiceColumns = 'id,no_invoice,invoice_entity,status,total_biaya,pph,total_bayar,'
           'lokasi_muat,lokasi_bongkar,armada_id,tanggal,order_id,created_at';
       final res = await _runInvoiceSelectWithFallback(
         invoiceColumns,
@@ -4236,17 +4317,26 @@ class DashboardRepository {
   }
 
   bool _isCompanyInvoiceNumber(String number) {
-    final raw = number.toUpperCase().trim();
-    if (raw.isEmpty) return false;
-    final compact = raw.replaceAll(RegExp(r'\s+'), '');
-    if (compact.contains('CV.ANT') || compact.contains('/CV.ANT/')) {
-      return true;
-    }
-    if (_isPersonalInvoiceNumber(raw)) {
-      return false;
-    }
-    // Legacy pattern defaults to company to keep backward compatibility.
-    return raw.startsWith('INC-');
+    return Formatters.isCompanyInvoiceEntity(
+      Formatters.normalizeInvoiceEntity(
+        null,
+        invoiceNumber: number,
+      ),
+    );
+  }
+
+  String _resolveInvoiceEntity({
+    String? invoiceEntity,
+    dynamic invoiceNumber,
+    dynamic customerName,
+    bool? isCompany,
+  }) {
+    return Formatters.normalizeInvoiceEntity(
+      invoiceEntity,
+      invoiceNumber: invoiceNumber,
+      customerName: customerName,
+      isCompany: isCompany,
+    );
   }
 
   String _normalizeCompanyText(String value) {
@@ -4267,19 +4357,6 @@ class DashboardRepository {
       }
     }
     return false;
-  }
-
-  bool _isPersonalInvoiceNumber(String number) {
-    final raw = number.toUpperCase().trim();
-    if (raw.isEmpty) return false;
-    final compact = raw.replaceAll(RegExp(r'\s+'), '');
-    if ((compact.contains('/BS/') ||
-            compact.contains('/ANT/') ||
-            compact.startsWith('BS')) &&
-        !compact.contains('CV.ANT')) {
-      return true;
-    }
-    return compact.startsWith('NO:268/') || compact.startsWith('NO:BS/');
   }
 
   int _romanToMonth(String roman) {
@@ -4304,16 +4381,20 @@ class DashboardRepository {
     required String noInvoice,
     required int month,
     required int yearTwoDigits,
-    required bool isCompany,
+    required String invoiceEntity,
     DateTime? referenceDate,
   }) {
     final cleaned = noInvoice
         .replaceFirst(RegExp(r'^\s*NO\s*:\s*', caseSensitive: false), '')
         .trim();
     if (cleaned.isEmpty) return 0;
+    final normalizedEntity = _resolveInvoiceEntity(
+      invoiceEntity: invoiceEntity,
+      invoiceNumber: noInvoice,
+    );
 
     final compactPattern = RegExp(
-      r'^(CV\.ANT|BS)(\d{2})(\d{2})(\d{2,})$',
+      r'^(CV\.ANT|PT\.ANT|BS)(\d{2})(\d{2})(\d{2,})$',
       caseSensitive: false,
     );
     final compactMatch = compactPattern.firstMatch(cleaned);
@@ -4322,7 +4403,8 @@ class DashboardRepository {
       final rowYear = int.tryParse(compactMatch.group(2) ?? '') ?? -1;
       final rowMonth = int.tryParse(compactMatch.group(3) ?? '') ?? 0;
       final seq = int.tryParse(compactMatch.group(4) ?? '') ?? 0;
-      final sameType = isCompany ? prefix == 'CV.ANT' : prefix == 'BS';
+      final sameType =
+          prefix == Formatters.invoiceEntityCode(normalizedEntity);
       if (sameType && rowMonth == month && rowYear == yearTwoDigits) {
         return seq;
       }
@@ -4333,7 +4415,7 @@ class DashboardRepository {
     // 017 / BS / I / 26
     // 017 / CV.ANT / I / 26
     final newPattern = RegExp(
-      r'^(\d{1,4})\s*\/\s*(CV\.ANT|BS|ANT)\s*\/\s*([IVX]+)\s*\/\s*(\d{2})\s*$',
+      r'^(\d{1,4})\s*\/\s*(CV\.ANT|PT\.ANT|BS|ANT)\s*\/\s*([IVX]+)\s*\/\s*(\d{2})\s*$',
       caseSensitive: false,
     );
     final newMatch = newPattern.firstMatch(cleaned);
@@ -4342,8 +4424,9 @@ class DashboardRepository {
       final prefix = (newMatch.group(2) ?? '').toUpperCase().trim();
       final rowMonth = _romanToMonth(newMatch.group(3) ?? '');
       final rowYear = int.tryParse(newMatch.group(4) ?? '') ?? -1;
-      final sameType =
-          isCompany ? prefix == 'CV.ANT' : (prefix == 'BS' || prefix == 'ANT');
+      final sameType = normalizedEntity == Formatters.invoiceEntityPersonal
+          ? (prefix == 'BS' || prefix == 'ANT')
+          : prefix == Formatters.invoiceEntityCode(normalizedEntity);
       if (sameType && rowMonth == month && rowYear == yearTwoDigits) {
         return seq;
       }
@@ -4359,9 +4442,11 @@ class DashboardRepository {
     if (legacyMatch != null) {
       final prefix =
           (legacyMatch.group(1) ?? '').toUpperCase().replaceAll(' ', '');
-      final sameType = isCompany
+      final sameType = normalizedEntity == Formatters.invoiceEntityCvAnt
           ? prefix.startsWith('480/CV.ANT')
-          : prefix.startsWith('268/ANT');
+          : normalizedEntity == Formatters.invoiceEntityPersonal
+              ? prefix.startsWith('268/ANT')
+              : false;
       if (!sameType) return 0;
 
       final rowMonth = _romanToMonth(legacyMatch.group(2) ?? '');
@@ -4958,7 +5043,7 @@ class DashboardRepository {
     try {
       final invoices = _toMapList(
         await _runInvoiceSelectWithFallback(
-          'id,no_invoice,tanggal,tanggal_kop,lokasi_muat,lokasi_bongkar,armada_id,armada_start_date,rincian,nama_pelanggan,submission_role,approval_status',
+          'id,no_invoice,invoice_entity,tanggal,tanggal_kop,lokasi_muat,lokasi_bongkar,armada_id,armada_start_date,rincian,nama_pelanggan,submission_role,approval_status',
           (columns) => _supabase.from('invoices').select(columns),
         ),
       ).where(_isApprovedForBackoffice).toList();

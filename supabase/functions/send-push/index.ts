@@ -93,6 +93,15 @@ const firebasePrivateKey = (Deno.env.get("FIREBASE_PRIVATE_KEY") ?? "").replace(
   "\n",
 );
 
+function extractBearerToken(authHeader: string | null): string | null {
+  const raw = String(authHeader ?? "").trim();
+  if (!raw) return null;
+  const [scheme, token] = raw.split(" ");
+  if (scheme?.toLowerCase() !== "bearer") return null;
+  const cleanedToken = String(token ?? "").trim();
+  return cleanedToken.length > 0 ? cleanedToken : null;
+}
+
 async function getGoogleAccessToken(): Promise<string> {
   const auth = new GoogleAuth({
     credentials: {
@@ -132,19 +141,16 @@ Deno.serve(async (req) => {
     }
 
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
+    const bearerToken = extractBearerToken(authHeader);
+    if (!bearerToken) {
       return jsonResponse(401, { error: "Missing Authorization header." });
     }
 
-    const callerClient = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
-    const {
-      data: { user },
-      error: userError,
-    } = await callerClient.auth.getUser();
-
-    if (userError || !user) {
+    const callerClient = createClient(supabaseUrl, supabaseAnonKey);
+    const { data: claimsData, error: claimsError } = await callerClient.auth
+      .getClaims(bearerToken);
+    const callerUserId = String(claimsData?.claims?.sub ?? "").trim();
+    if (claimsError || !callerUserId) {
       return jsonResponse(401, { error: "Unauthorized caller." });
     }
 
@@ -311,6 +317,10 @@ Deno.serve(async (req) => {
         | { topic: string; badgeCount?: number },
     ) => {
       const badgeCount = Math.max(1, target.badgeCount ?? 1);
+      const fcmTarget =
+        "token" in target
+          ? { token: target.token }
+          : { topic: target.topic };
       const messageData = {
         ...dataPayload,
         badge_count: String(badgeCount),
@@ -326,7 +336,7 @@ Deno.serve(async (req) => {
           },
           body: JSON.stringify({
             message: {
-              ...target,
+              ...fcmTarget,
               notification: {
                 title,
                 body: message,
@@ -338,7 +348,7 @@ Deno.serve(async (req) => {
                 direct_boot_ok: true,
                 notification: {
                   channel_id: "cvant_alerts_v2",
-                  icon: "ic_stat_notification",
+                  icon: "ic_app_notification",
                   sound: "default",
                   tag: messageTag,
                   proxy: "DENY",
@@ -402,9 +412,11 @@ Deno.serve(async (req) => {
       });
     }
 
-    for (const topic of roleTopics) {
-      const badgeCount = Math.max(...unreadCountByUser.values(), 1);
-      await sendMessage({ topic, badgeCount });
+    if (deviceTargets.length === 0) {
+      for (const topic of roleTopics) {
+        const badgeCount = Math.max(...unreadCountByUser.values(), 1);
+        await sendMessage({ topic, badgeCount });
+      }
     }
 
     if (invalidTokens.length > 0) {

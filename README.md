@@ -107,6 +107,71 @@ If your operation depends on speed, accountability, and clear financial movement
 - **PDF / Printing** for business document output
 - **Shared Preferences + Secure Storage** for session and local operational state
 
+## Release and Operations
+
+### Android Release Build
+
+For release APK generation, use:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tooling/android/build_release.ps1 `
+  -SupabaseUrl "https://your-project.supabase.co" `
+  -SupabaseAnonKey "your-anon-key"
+```
+
+If you want a signed production build, create `android/keystore.properties`
+based on `android/keystore.properties.example` and place your keystore file
+outside version control.
+
+If you need an app bundle for Play Console:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tooling/android/build_release.ps1 `
+  -SupabaseUrl "https://your-project.supabase.co" `
+  -SupabaseAnonKey "your-anon-key" `
+  -BuildAppBundle
+```
+
+### Push Notification Setup
+
+Set Firebase service account secrets to Supabase:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tooling/supabase/set_push_secrets.ps1 `
+  -ServiceAccountJsonPath "C:\path\to\firebase-service-account.json" `
+  -ProjectRef "your-supabase-project-ref"
+```
+
+Then deploy the function:
+
+```powershell
+npx supabase functions deploy send-push --project-ref your-supabase-project-ref --use-api
+```
+
+### Push Smoke Test
+
+To verify that push delivery is alive from Supabase to admin/owner devices:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tooling/supabase/test_send_push.ps1 `
+  -SupabaseUrl "https://your-project.supabase.co" `
+  -SupabaseAnonKey "your-anon-key" `
+  -Email "pengurus@cvant.local" `
+  -Password "your-password"
+```
+
+### Quality Gate
+
+Before shipping, run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tooling/windows/run_quality_gate.ps1
+```
+
+The script stops early if the local Windows app from this workspace is still
+running, because that can lock generated plugin files and make tests fail for
+environment reasons instead of code reasons.
+
 ## Current Strength of the Repo
 
 This codebase already includes strong operational behavior such as:
