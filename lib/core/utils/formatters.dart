@@ -176,6 +176,23 @@ class Formatters {
     return normalized != invoiceEntityPersonal;
   }
 
+  static String? invoiceEntityFromInvoiceNumber(String number) {
+    final compact = number.toUpperCase().replaceAll(RegExp(r'\s+'), '');
+    if (compact.isEmpty) return null;
+    if (compact.contains('PT.ANT') || compact.contains('/PT.ANT/')) {
+      return invoiceEntityPtAnt;
+    }
+    if (compact.contains('CV.ANT') || compact.contains('/CV.ANT/')) {
+      return invoiceEntityCvAnt;
+    }
+    if (compact.contains('/BS/') ||
+        compact.contains('/ANT/') ||
+        compact.startsWith('BS')) {
+      return invoiceEntityPersonal;
+    }
+    return null;
+  }
+
   static String invoiceEntityLabel(String entity) {
     switch (normalizeInvoiceEntity(entity)) {
       case invoiceEntityPtAnt:
@@ -211,19 +228,9 @@ class Formatters {
     }
 
     final rawNumber = '${invoiceNumber ?? ''}'.trim();
-    final compact = rawNumber.toUpperCase().replaceAll(RegExp(r'\s+'), '');
-    if (compact.contains('/PT.ANT/') || compact.contains('PT.ANT')) {
-      return invoiceEntityPtAnt;
-    }
-    if (compact.contains('/CV.ANT/') || compact.contains('CV.ANT')) {
-      return invoiceEntityCvAnt;
-    }
-    if ((compact.contains('/BS/') ||
-            compact.contains('/ANT/') ||
-            compact.startsWith('BS')) &&
-        !compact.contains('CV.ANT') &&
-        !compact.contains('PT.ANT')) {
-      return invoiceEntityPersonal;
+    final entityFromNumber = invoiceEntityFromInvoiceNumber(rawNumber);
+    if (entityFromNumber != null) {
+      return entityFromNumber;
     }
 
     final customerRaw = '${customerName ?? ''}'.trim();

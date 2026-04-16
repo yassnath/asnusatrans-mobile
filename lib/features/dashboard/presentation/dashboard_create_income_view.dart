@@ -112,6 +112,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
   String? _linkedOrderId;
   bool get _isEn => LanguageController.language.value == AppLanguage.en;
   String _t(String id, String en) => _isEn ? en : id;
+  void _refreshState(VoidCallback fn) => setState(fn);
 
   @override
   void initState() {
@@ -214,6 +215,12 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
           driverText.isNotEmpty && !_isKnownDriverOption(driverText);
       final row = <String, dynamic>{
         'lokasi_muat': _safeInputText(option['lokasi_muat']),
+        'lokasi_muat_manual': '',
+        'lokasi_muat_is_manual':
+            _safeInputText(option['lokasi_muat']).isNotEmpty &&
+                !_defaultMuatOptions.contains(
+                  _safeInputText(option['lokasi_muat']),
+                ),
         'lokasi_bongkar': _safeInputText(option['lokasi_bongkar']),
         'muatan': _safeInputText(option['muatan']),
         'nama_supir': driverText,
@@ -284,519 +291,6 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
       }
       _detailFieldRefreshToken++;
     });
-  }
-
-  String _safeInputText(dynamic value) {
-    final raw = (value ?? '').toString().trim();
-    if (raw.toLowerCase() == 'null') return '';
-    return raw;
-  }
-
-  String _safeNumberInputText(dynamic value) {
-    if (value == null) return '';
-    if (value is num) {
-      final number = value.toDouble();
-      if (!number.isFinite) return '';
-      return number.floor().toString();
-    }
-    final raw = value.toString().trim();
-    if (raw.isEmpty || raw.toLowerCase() == 'null') return '';
-    final sanitized = raw.replaceAll(RegExp(r'[^0-9,.\-]'), '');
-    if (sanitized.isEmpty ||
-        sanitized == '-' ||
-        sanitized == '.' ||
-        sanitized == ',') {
-      return raw;
-    }
-    var candidate = sanitized;
-    if (candidate.contains('.') && candidate.contains(',')) {
-      candidate = candidate.replaceAll('.', '').replaceAll(',', '.');
-    } else if (candidate.contains(',') && !candidate.contains('.')) {
-      candidate = candidate.replaceAll(',', '.');
-    } else if (candidate.contains('.') && candidate.split('.').length > 2) {
-      candidate = candidate.replaceAll('.', '');
-    }
-    final parsed = double.tryParse(candidate);
-    if (parsed != null) {
-      return parsed.floor().toString();
-    }
-    return raw;
-  }
-
-  String _normalizeCompanyText(String value) {
-    return value
-        .toLowerCase()
-        .replaceAll('.', ' ')
-        .replaceAll(RegExp(r'[^a-z0-9\s]'), ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-  }
-
-  bool _isCompanyCustomerName(String value) {
-    final normalized = _normalizeCompanyText(value);
-    if (normalized.isEmpty) return false;
-    for (final keyword in _companyKeywords) {
-      if (RegExp(keyword).hasMatch(normalized)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  String _normalizeLokasiKey(String value) {
-    return value
-        .toLowerCase()
-        .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-  }
-
-  bool _lokasiKeyMatches(String inputKey, String ruleKey) {
-    if (inputKey.isEmpty || ruleKey.isEmpty) return false;
-    if (inputKey == ruleKey) return true;
-
-    final inputCompact = inputKey.replaceAll(' ', '');
-    final ruleCompact = ruleKey.replaceAll(' ', '');
-    if (inputCompact.isNotEmpty && inputCompact == ruleCompact) return true;
-
-    final inputTokens = inputKey.split(' ').where((part) => part.isNotEmpty);
-    final ruleTokens = ruleKey.split(' ').where((part) => part.isNotEmpty);
-    final inputList = inputTokens.toList(growable: false);
-    final ruleList = ruleTokens.toList(growable: false);
-
-    if (inputList.contains(ruleKey) || ruleList.contains(inputKey)) {
-      return true;
-    }
-    if (ruleList.length == 1 && ruleList.first.length >= 2) {
-      return inputList.contains(ruleList.first);
-    }
-    if (inputList.length == 1 && inputList.first.length >= 2) {
-      return ruleList.contains(inputList.first);
-    }
-
-    if (inputList.length < 2 || ruleList.isEmpty) {
-      return false;
-    }
-
-    final shorter = inputList.length <= ruleList.length ? inputList : ruleList;
-    final longer = inputList.length <= ruleList.length ? ruleList : inputList;
-    return shorter.length >= 2 &&
-        shorter.every((token) => longer.contains(token));
-  }
-
-  double? _resolveHargaPerTon({
-    required String lokasiMuat,
-    required String lokasiBongkar,
-  }) {
-    if (_hargaPerTonRules.isEmpty) return null;
-    final bongkarKey = _normalizeLokasiKey(lokasiBongkar);
-    if (bongkarKey.isEmpty) return null;
-    final muatKey = _normalizeLokasiKey(lokasiMuat);
-
-    Map<String, dynamic>? exactMatch;
-    Map<String, dynamic>? fallbackMatch;
-
-    for (final rule in _hargaPerTonRules) {
-      final ruleBongkar =
-          _normalizeLokasiKey('${rule['lokasi_bongkar'] ?? ''}'.trim());
-      if (!_lokasiKeyMatches(bongkarKey, ruleBongkar)) continue;
-
-      final ruleMuat =
-          _normalizeLokasiKey('${rule['lokasi_muat'] ?? ''}'.trim());
-      if (muatKey.isNotEmpty &&
-          ruleMuat.isNotEmpty &&
-          _lokasiKeyMatches(muatKey, ruleMuat)) {
-        exactMatch = rule;
-        break;
-      }
-      fallbackMatch ??= rule;
-    }
-
-    final matchedRule = exactMatch ?? fallbackMatch;
-    if (matchedRule == null) return null;
-    final resolved =
-        _toNum(matchedRule['harga_per_ton'] ?? matchedRule['harga']);
-    return resolved > 0 ? resolved : null;
-  }
-
-  bool _applyAutoHargaPerTon(
-    Map<String, dynamic> row, {
-    bool force = false,
-  }) {
-    final previousHarga = '${row['harga'] ?? ''}'.trim();
-    final wasAuto = row['harga_auto'] == true;
-    final harga = _resolveHargaPerTon(
-      lokasiMuat: '${row['lokasi_muat'] ?? ''}',
-      lokasiBongkar: '${row['lokasi_bongkar'] ?? ''}',
-    );
-    if (harga == null || harga <= 0) {
-      if (force && wasAuto && previousHarga.isNotEmpty) {
-        row['harga'] = '';
-        row['harga_auto'] = true;
-        return true;
-      }
-      return false;
-    }
-
-    final currentHarga = _toNum(row['harga']);
-    final isAuto = row['harga_auto'] == true;
-    if (!force && currentHarga > 0 && !isAuto) {
-      return false;
-    }
-
-    final nextHarga = _safeNumberInputText(harga);
-    row['harga'] = nextHarga;
-    row['harga_auto'] = true;
-    return previousHarga != nextHarga || !wasAuto;
-  }
-
-  bool _isKnownDriverOption(String value) {
-    final normalized = _normalizeText(value);
-    if (normalized.isEmpty) return false;
-    return _defaultDriverOptions
-        .any((option) => _normalizeText(option) == normalized);
-  }
-
-  String? _resolveDefaultDriverForRow(
-    Map<String, dynamic> row, {
-    required List<Map<String, dynamic>> armadas,
-  }) {
-    var plate = '';
-    final armadaId = '${row['armada_id'] ?? ''}'.trim();
-    if (armadaId.isNotEmpty) {
-      Map<String, dynamic>? selected;
-      for (final armada in armadas) {
-        if ('${armada['id'] ?? ''}'.trim() == armadaId) {
-          selected = armada;
-          break;
-        }
-      }
-      plate = _normalizePlateText('${selected?['plat_nomor'] ?? ''}');
-    }
-    if (plate.isEmpty) {
-      final manual = '${row['armada_manual'] ?? ''}'.trim();
-      if (manual.isNotEmpty) {
-        plate = _extractPlateFromText(manual) ?? _normalizePlateText(manual);
-      }
-    }
-    if (plate.isEmpty) return null;
-    for (final entry in _defaultDriverByPlate.entries) {
-      if (_normalizePlateText(entry.key) == plate) {
-        return entry.value;
-      }
-    }
-    return null;
-  }
-
-  void _applyDefaultDriverForRow(
-    Map<String, dynamic> row, {
-    required List<Map<String, dynamic>> armadas,
-    bool force = false,
-  }) {
-    final defaultDriver = _resolveDefaultDriverForRow(row, armadas: armadas);
-    if (defaultDriver == null || defaultDriver.trim().isEmpty) return;
-
-    final currentDriver = '${row['nama_supir'] ?? ''}'.trim();
-    final isDriverManual = row['nama_supir_is_manual'] == true;
-    final isDriverAuto = row['nama_supir_auto'] == true;
-    if (!force &&
-        currentDriver.isNotEmpty &&
-        (isDriverManual || !isDriverAuto)) {
-      return;
-    }
-
-    row['nama_supir'] = defaultDriver;
-    row['nama_supir_manual'] = '';
-    row['nama_supir_is_manual'] = false;
-    row['nama_supir_auto'] = true;
-  }
-
-  void _syncDriverWithArmadaSelection(
-    Map<String, dynamic> row, {
-    required List<Map<String, dynamic>> armadas,
-    bool overrideManualDriver = false,
-  }) {
-    final defaultDriver =
-        _resolveDefaultDriverForRow(row, armadas: armadas)?.trim() ?? '';
-    if (row['nama_supir_is_manual'] == true && !overrideManualDriver) {
-      return;
-    }
-    if (defaultDriver.isNotEmpty) {
-      _applyDefaultDriverForRow(row, armadas: armadas, force: true);
-      return;
-    }
-
-    final currentDriver = '${row['nama_supir'] ?? ''}'.trim();
-    if (currentDriver.isEmpty ||
-        row['nama_supir_auto'] == true ||
-        _isKnownDriverOption(currentDriver)) {
-      row['nama_supir'] = '';
-      row['nama_supir_manual'] = '';
-      row['nama_supir_is_manual'] = false;
-      row['nama_supir_auto'] = false;
-    }
-  }
-
-  void _enableManualDriverInput(Map<String, dynamic> row) {
-    final currentDriver = '${row['nama_supir'] ?? ''}'.trim();
-    final currentManual = '${row['nama_supir_manual'] ?? ''}'.trim();
-    final seed = currentManual.isNotEmpty ? currentManual : currentDriver;
-    row['nama_supir_is_manual'] = true;
-    row['nama_supir_manual'] = !_isKnownDriverOption(seed) ? seed : '';
-    row['nama_supir'] = '${row['nama_supir_manual'] ?? ''}';
-    row['nama_supir_auto'] = false;
-  }
-
-  List<Map<String, dynamic>> _filterCustomerOptionsByMode(
-    List<Map<String, dynamic>> options, {
-    String? invoiceEntityOverride,
-  }) {
-    final effectiveEntity = Formatters.normalizeInvoiceEntity(
-      invoiceEntityOverride ?? _invoiceEntity,
-    );
-    final isCompanyTarget =
-        Formatters.isCompanyInvoiceEntity(effectiveEntity);
-    return options.where((option) {
-      final name = '${option['customer_name'] ?? option['label'] ?? ''}';
-      final isCompanyName = _isCompanyCustomerName(name);
-      return isCompanyTarget ? isCompanyName : !isCompanyName;
-    }).toList();
-  }
-
-  void _switchInvoiceEntity(
-    String invoiceEntity,
-    List<Map<String, dynamic>> customerOptions,
-  ) {
-    final nextEntity = Formatters.normalizeInvoiceEntity(invoiceEntity);
-    if (_invoiceEntity == nextEntity) return;
-    final filtered = _filterCustomerOptionsByMode(
-      customerOptions,
-      invoiceEntityOverride: nextEntity,
-    );
-    setState(() {
-      _invoiceEntity = nextEntity;
-      if (nextEntity == Formatters.invoiceEntityPtAnt) {
-        _selectedCustomerOptionId = _customerManualOptionId;
-        _linkedCustomerId = null;
-        _linkedOrderId = null;
-        return;
-      }
-      final isCurrentValid = filtered.any(
-        (item) => '${item['id']}' == _selectedCustomerOptionId,
-      );
-      if (!isCurrentValid) {
-        _selectedCustomerOptionId = _customerManualOptionId;
-        _linkedCustomerId = null;
-        _linkedOrderId = null;
-        _customer.clear();
-        _email.clear();
-        _phone.clear();
-        _detailFieldRefreshToken++;
-      }
-    });
-  }
-
-  String _normalizeText(String value) {
-    return value.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
-  }
-
-  void _tryResolvePrefillArmada(List<Map<String, dynamic>> armadas) {
-    if (_prefillArmadaResolved || _prefillArmadaName.trim().isEmpty) return;
-    if (_details.isEmpty) return;
-    if ('${_details.first['armada_id']}'.trim().isNotEmpty) {
-      _prefillArmadaResolved = true;
-      return;
-    }
-
-    final target = _normalizeText(_prefillArmadaName);
-    if (target.isEmpty) return;
-    Map<String, dynamic>? matched;
-    for (final item in armadas) {
-      final name = _normalizeText('${item['nama_truk'] ?? ''}');
-      if (name.isEmpty) continue;
-      if (name == target || name.contains(target) || target.contains(name)) {
-        matched = item;
-        break;
-      }
-    }
-
-    _prefillArmadaResolved = true;
-    if (matched == null) return;
-    _details.first['armada_id'] = '${matched['id']}';
-    _applyDefaultDriverForRow(_details.first, armadas: armadas);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      setState(() {});
-    });
-  }
-
-  Future<void> _pickDetailDate(int index, String field) async {
-    final initial =
-        Formatters.parseDate(_details[index][field]) ?? DateTime.now();
-    final picked = await showDatePicker(
-      context: context,
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2100),
-      initialDate: initial,
-    );
-    if (picked == null) return;
-    setState(() => _details[index][field] = _toInputDate(picked));
-  }
-
-  Future<void> _pickDueDate() async {
-    final initial = Formatters.parseDate(_dueDate.text) ??
-        _date.add(const Duration(days: 7));
-    final picked = await showDatePicker(
-      context: context,
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2100),
-      initialDate: initial,
-    );
-    if (picked == null) return;
-    setState(() => _dueDate.text = _toInputDate(picked));
-  }
-
-  Map<String, dynamic> _newDetail() {
-    return {
-      'lokasi_muat': '',
-      'lokasi_bongkar': '',
-      'muatan': '',
-      'nama_supir': '',
-      'nama_supir_manual': '',
-      'nama_supir_is_manual': false,
-      'nama_supir_auto': false,
-      'armada_id': '',
-      'armada_manual': '',
-      'armada_is_manual': false,
-      'armada_start_date': '',
-      'armada_end_date': '',
-      'tonase': '',
-      'harga': '',
-      'harga_auto': true,
-    };
-  }
-
-  double _detailSubtotal(Map<String, dynamic> row) {
-    return _toNum(row['tonase']) * _toNum(row['harga']);
-  }
-
-  String? _nullableInputText(dynamic value) {
-    final raw = value?.toString().trim() ?? '';
-    if (raw.isEmpty) return null;
-    final lowered = raw.toLowerCase();
-    if (lowered == 'null' || lowered == 'undefined' || lowered == '-') {
-      return null;
-    }
-    return raw;
-  }
-
-  Color _armadaStatusColor(String status) {
-    final lower = status.toLowerCase();
-    if (lower.contains('full')) return AppColors.warning;
-    if (lower.contains('ready')) return AppColors.success;
-    if (lower.contains('inactive') ||
-        lower.contains('non active') ||
-        lower.contains('non-active')) {
-      return AppColors.neutralOutline;
-    }
-    return AppColors.textMutedFor(context);
-  }
-
-  String _normalizePlateText(String value) {
-    return value.toUpperCase().replaceAll(RegExp(r'\s+'), ' ').trim();
-  }
-
-  String? _extractPlateFromText(String value) {
-    final match = RegExp(
-      r'[A-Z]{1,2}\s?[0-9]{1,4}\s?[A-Z]{1,3}',
-    ).firstMatch(value.toUpperCase());
-    if (match == null) return null;
-    final plate = _normalizePlateText(match.group(0) ?? '');
-    return plate.isEmpty ? null : plate;
-  }
-
-  Map<String, String> _buildArmadaIdByPlate(
-    List<Map<String, dynamic>> armadas,
-  ) {
-    final map = <String, String>{};
-    for (final armada in armadas) {
-      final id = '${armada['id'] ?? ''}'.trim();
-      final plate = _normalizePlateText('${armada['plat_nomor'] ?? ''}');
-      if (id.isEmpty || plate.isEmpty) continue;
-      map[plate] = id;
-    }
-    return map;
-  }
-
-  String _resolveArmadaIdFromInput({
-    required String armadaId,
-    required String armadaManual,
-    required Map<String, String> armadaIdByPlate,
-  }) {
-    final direct = armadaId.trim();
-    if (direct.isNotEmpty) return direct;
-    final manual = armadaManual.trim();
-    if (manual.isEmpty) return '';
-    final extracted = _extractPlateFromText(manual);
-    final normalized = _normalizePlateText(manual);
-    return armadaIdByPlate[extracted ?? normalized] ?? '';
-  }
-
-  void _normalizeManualRowsToArmadaId(List<Map<String, dynamic>> armadas) {
-    if (_details.isEmpty) return;
-    final armadaIdByPlate = _buildArmadaIdByPlate(armadas);
-    if (armadaIdByPlate.isEmpty) return;
-    var changed = false;
-    for (final row in _details) {
-      final currentArmadaId = '${row['armada_id'] ?? ''}'.trim();
-      final currentManual = '${row['armada_manual'] ?? ''}'.trim();
-      if (currentArmadaId.isNotEmpty || currentManual.isEmpty) continue;
-      final resolvedArmadaId = _resolveArmadaIdFromInput(
-        armadaId: currentArmadaId,
-        armadaManual: currentManual,
-        armadaIdByPlate: armadaIdByPlate,
-      );
-      if (resolvedArmadaId.isEmpty) continue;
-      row['armada_id'] = resolvedArmadaId;
-      row['armada_manual'] = '';
-      row['armada_is_manual'] = false;
-      changed = true;
-    }
-    for (final row in _details) {
-      final beforeDriver = '${row['nama_supir'] ?? ''}'.trim();
-      final beforeManual = '${row['nama_supir_manual'] ?? ''}'.trim();
-      final beforeIsManual = row['nama_supir_is_manual'] == true;
-      final beforeIsAuto = row['nama_supir_auto'] == true;
-      _applyDefaultDriverForRow(row, armadas: armadas);
-      if (beforeDriver != '${row['nama_supir'] ?? ''}'.trim() ||
-          beforeManual != '${row['nama_supir_manual'] ?? ''}'.trim() ||
-          beforeIsManual != (row['nama_supir_is_manual'] == true) ||
-          beforeIsAuto != (row['nama_supir_auto'] == true)) {
-        changed = true;
-      }
-    }
-    if (changed) {
-      _detailFieldRefreshToken++;
-    }
-  }
-
-  double get _subtotal {
-    return _details.fold<double>(
-      0,
-      (sum, row) => sum + _detailSubtotal(row),
-    );
-  }
-
-  double get _pph => _isCompanyInvoice ? (_subtotal * 0.02).floorToDouble() : 0;
-  double get _totalBayar => max(0, _subtotal - _pph);
-
-  void _addDetail() {
-    setState(() => _details.add(_newDetail()));
-  }
-
-  void _removeDetail(int index) {
-    if (_details.length == 1) return;
-    setState(() => _details.removeAt(index));
   }
 
   Future<void> _save(List<Map<String, dynamic>> armadas) async {
@@ -1141,8 +635,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                       Expanded(
                         child: _buildInvoiceModeDot(
                           label: isEn ? 'Personal' : 'Pribadi',
-                          selected:
-                              _invoiceEntity ==
+                          selected: _invoiceEntity ==
                               Formatters.invoiceEntityPersonal,
                           onTap: () => _switchInvoiceEntity(
                             Formatters.invoiceEntityPersonal,
@@ -1181,8 +674,8 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                     CvantDropdownField<String>(
                       initialValue: selectedCustomerValue,
                       decoration: InputDecoration(
-                        labelText:
-                            _t('Data Customer Tersimpan', 'Saved Customer Data'),
+                        labelText: _t(
+                            'Data Customer Tersimpan', 'Saved Customer Data'),
                       ),
                       items: [
                         ...filteredCustomerOptions.map(
@@ -1274,7 +767,8 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                     final muatValue = '${row['lokasi_muat'] ?? ''}'.trim();
                     final muatManual =
                         '${row['lokasi_muat_manual'] ?? ''}'.trim();
-                    final isMuatManual = muatManual.isNotEmpty ||
+                    final isMuatManual = row['lokasi_muat_is_manual'] == true ||
+                        muatManual.isNotEmpty ||
                         (muatValue.isNotEmpty &&
                             !_defaultMuatOptions.contains(muatValue));
 
@@ -1316,9 +810,11 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                                 if (value == 'Other (Input Manual)') {
                                   row['lokasi_muat'] = '';
                                   row['lokasi_muat_manual'] = '';
+                                  row['lokasi_muat_is_manual'] = true;
                                 } else {
                                   row['lokasi_muat'] = value ?? '';
                                   row['lokasi_muat_manual'] = '';
+                                  row['lokasi_muat_is_manual'] = false;
                                 }
                                 final hargaChanged = _applyAutoHargaPerTon(
                                   row,
@@ -1346,6 +842,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                               onChanged: (value) {
                                 row['lokasi_muat_manual'] = value;
                                 row['lokasi_muat'] = value;
+                                row['lokasi_muat_is_manual'] = true;
                                 final hargaChanged = _applyAutoHargaPerTon(
                                   row,
                                   force: row['harga_auto'] == true,

@@ -140,5 +140,17 @@ class AppColors {
   static Color sidebarSelection(BuildContext context) => isLight(context)
       ? const Color.fromRGBO(91, 140, 255, 0.18)
       : const Color(0x335B8CFF);
+
+  static Color invoiceEntityAccent(String entity) {
+    switch (entity.trim().toLowerCase()) {
+      case 'cv_ant':
+        return success;
+      case 'pt_ant':
+        return cyan;
+      case 'personal':
+      default:
+        return blue;
+    }
+  }
 }
 

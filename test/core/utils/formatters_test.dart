@@ -52,7 +52,8 @@ void main() {
       expect(out, 'EXP-03-2026-0012');
     });
 
-    test('normalizes company income pattern with month into compact format', () {
+    test('normalizes company income pattern with month into compact format',
+        () {
       final out = Formatters.invoiceNumber(
         'INC-03-2026-15',
         '2026-03-11',
@@ -70,7 +71,8 @@ void main() {
       expect(out, 'PT.ANT260401');
     });
 
-    test('normalizes personal income pattern with month into compact format', () {
+    test('normalizes personal income pattern with month into compact format',
+        () {
       final out = Formatters.invoiceNumber(
         'INC-03-2026-15',
         '2026-03-11',
@@ -79,7 +81,9 @@ void main() {
       expect(out, 'BS260315');
     });
 
-    test('normalizes old income pattern using tanggal month into compact format', () {
+    test(
+        'normalizes old income pattern using tanggal month into compact format',
+        () {
       final out = Formatters.invoiceNumber(
         'INC-2026-20',
         '2026-08-01',
@@ -105,8 +109,82 @@ void main() {
     });
 
     test('strips NO: prefix for non-income values', () {
-      final out = Formatters.invoiceNumber('No : EXP-03-2026-0005', '2026-03-11');
+      final out =
+          Formatters.invoiceNumber('No : EXP-03-2026-0005', '2026-03-11');
       expect(out, 'EXP-03-2026-0005');
+    });
+  });
+
+  group('Formatters.invoiceEntityFromInvoiceNumber', () {
+    test('detects CV ANT invoice number', () {
+      expect(
+        Formatters.invoiceEntityFromInvoiceNumber('CV.ANT260401'),
+        Formatters.invoiceEntityCvAnt,
+      );
+    });
+
+    test('detects PT ANT invoice number', () {
+      expect(
+        Formatters.invoiceEntityFromInvoiceNumber('PT.ANT260401'),
+        Formatters.invoiceEntityPtAnt,
+      );
+    });
+
+    test('detects personal invoice number', () {
+      expect(
+        Formatters.invoiceEntityFromInvoiceNumber('BS260401'),
+        Formatters.invoiceEntityPersonal,
+      );
+    });
+
+    test('returns null for unrelated number', () {
+      expect(Formatters.invoiceEntityFromInvoiceNumber('EXP-04-2026-0001'),
+          isNull);
+    });
+  });
+
+  group('Formatters.normalizeInvoiceEntity', () {
+    test('prefers explicit PT ANT entity aliases', () {
+      expect(
+        Formatters.normalizeInvoiceEntity('PT ANT'),
+        Formatters.invoiceEntityPtAnt,
+      );
+      expect(
+        Formatters.normalizeInvoiceEntity('pt.ant'),
+        Formatters.invoiceEntityPtAnt,
+      );
+    });
+
+    test('falls back to invoice number pattern before customer heuristic', () {
+      expect(
+        Formatters.normalizeInvoiceEntity(
+          '',
+          invoiceNumber: 'PT.ANT260401',
+          customerName: 'CV Maju Jaya',
+        ),
+        Formatters.invoiceEntityPtAnt,
+      );
+    });
+
+    test('uses customer name heuristic for company invoices without number',
+        () {
+      expect(
+        Formatters.normalizeInvoiceEntity(
+          '',
+          customerName: 'PT Maju Terus',
+        ),
+        Formatters.invoiceEntityCvAnt,
+      );
+    });
+
+    test('defaults to personal when no company signal exists', () {
+      expect(
+        Formatters.normalizeInvoiceEntity(
+          '',
+          customerName: 'Budi Santoso',
+        ),
+        Formatters.invoiceEntityPersonal,
+      );
     });
   });
 }

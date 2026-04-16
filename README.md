@@ -54,7 +54,7 @@ AS Nusa Trans Mobile solves that by turning the daily workflow into one connecte
 - Add and edit income with multi-detail departure rows
 - Support for armada dropdown and manual armada input
 - Driver sync based on selected armada
-- Company and personal invoice rules
+- Invoice entity support for `Pribadi`, `CV. ANT`, and `PT. ANT`
 - Invoice preview, KOP editing, PDF print, and fixed invoice history
 - Dynamic invoice numbering using business-friendly formats
 
@@ -147,6 +147,19 @@ Then deploy the function:
 ```powershell
 npx supabase functions deploy send-push --project-ref your-supabase-project-ref --use-api
 ```
+
+### Supabase Invoice Entity Patch
+
+If you are upgrading an existing project and want the new `Pribadi / CV. ANT / PT. ANT`
+invoice split to work consistently in list, fix invoice, edit, and print flows,
+run this patch in Supabase SQL Editor:
+
+```sql
+\i supabase/invoice_entity_support.sql
+```
+
+If you are using the dashboard manually through the Supabase web editor, copy the
+contents of `supabase/invoice_entity_support.sql` and run it as `postgres`.
 
 ### Push Smoke Test
 
