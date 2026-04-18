@@ -76,8 +76,10 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
   bool _backfillRunning = false;
   bool _backgroundFixedInvoiceSyncRunning = false;
   bool _backgroundAutoSanguCleanupRunning = false;
+  bool _backgroundIncomePricingBackfillRunning = false;
   bool _backgroundInvoiceNumberNormalizationRunning = false;
   bool _manualArmadaAutoSanguCleanupDone = false;
+  bool _incomePricingBackfillDone = false;
 
   bool get _isEn => LanguageController.language.value == AppLanguage.en;
   bool get _isPengurus => widget.session.isPengurus;
@@ -481,11 +483,34 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
   }
 
   Future<void> _runInvoiceListBackgroundMaintenance() async {
-    await Future.wait<void>([
-      _syncFixedInvoiceCacheInBackground(),
-      _cleanupManualArmadaAutoSanguInBackground(),
-      _normalizeInvoiceNumbersInBackground(),
-    ]);
+    await _syncFixedInvoiceCacheInBackground();
+    await _backfillIncomePricingInBackground();
+    await _cleanupManualArmadaAutoSanguInBackground();
+    await _normalizeInvoiceNumbersInBackground();
+  }
+
+  Future<void> _backfillIncomePricingInBackground() async {
+    if (_incomePricingBackfillDone || _backgroundIncomePricingBackfillRunning) {
+      return;
+    }
+    _backgroundIncomePricingBackfillRunning = true;
+    try {
+      final report = await widget.repository
+          .backfillSpecialIncomePricingForExistingInvoices();
+      _incomePricingBackfillDone = true;
+      if (!mounted || !report.hasChanges) return;
+      setState(() {
+        _future = _load();
+      });
+      if (widget.session.isBackofficeUser) {
+        unawaited(
+            PushNotificationService.instance.refreshMonthlyFinanceReminder());
+      }
+    } catch (_) {
+      // Best effort: update pricing invoice lama tidak boleh menghambat page.
+    } finally {
+      _backgroundIncomePricingBackfillRunning = false;
+    }
   }
 
   Future<void> _normalizeInvoiceNumbersInBackground() async {
@@ -563,6 +588,10 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       setState(() {
         _future = _load();
       });
+      if (widget.session.isBackofficeUser) {
+        unawaited(
+            PushNotificationService.instance.refreshMonthlyFinanceReminder());
+      }
     } catch (_) {
       // Best effort: page list tetap cepat walau cleanup auto sangu gagal.
     } finally {
@@ -574,17 +603,20 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     if (_isAdminOrOwner && runBackfill && !_backfillRunning) {
       _backfillRunning = true;
       try {
+        final pricingReport = await widget.repository
+            .backfillSpecialIncomePricingForExistingInvoices();
         final report = await widget.repository
             .backfillAutoSanguExpensesForExistingInvoices();
-        if (mounted && report.hasFailures) {
+        if (mounted && (pricingReport.hasFailures || report.hasFailures)) {
           _snack(
             _t(
-              'Sebagian auto expense sangu sopir belum berhasil disinkronkan. Coba refresh sekali lagi.',
-              'Some driver allowance auto expenses could not be synced yet. Please refresh once more.',
+              'Sebagian update pricing invoice lama atau auto expense sangu sopir belum berhasil disinkronkan. Coba refresh sekali lagi.',
+              'Some legacy invoice pricing updates or driver allowance auto expenses could not be synced yet. Please refresh once more.',
             ),
             error: true,
           );
         }
+        _incomePricingBackfillDone = true;
       } catch (_) {
         // Best effort: tetap lanjut reload data list.
       } finally {
@@ -595,6 +627,10 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       _future = _load();
     });
     await _future;
+    if (widget.session.isBackofficeUser) {
+      unawaited(
+          PushNotificationService.instance.refreshMonthlyFinanceReminder());
+    }
     if (_isAdminOrOwner) {
       unawaited(_runInvoiceListBackgroundMaintenance());
     }

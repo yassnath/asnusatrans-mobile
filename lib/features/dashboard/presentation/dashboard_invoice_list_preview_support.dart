@@ -70,7 +70,8 @@ extension _AdminInvoiceListViewStatePreviewSupport
                       final row = entry.value;
                       final tonase = _toNum(row['tonase']);
                       final harga = _toNum(row['harga']);
-                      final subtotalDetail = tonase * harga;
+                      final subtotalDetail =
+                          _resolveInvoiceDetailSubtotalShared(row);
                       final driver = '${row['nama_supir'] ?? ''}'.trim();
                       final muatan = '${row['muatan'] ?? ''}'.trim();
                       final plate = _resolveDetailPlateText(
@@ -114,10 +115,10 @@ extension _AdminInvoiceListViewStatePreviewSupport
                             if (driver.isNotEmpty)
                               Text('${_t('Nama Supir', 'Driver')}: $driver'),
                             Text(
-                              '${_t('Tonase', 'Tonnage')}: ${formatInvoiceTonase(tonase)}',
+                              '${_t('Tonase', 'Tonnage')}: ${tonase > 0 ? formatInvoiceTonase(tonase) : '-'}',
                             ),
                             Text(
-                              '${_t('Harga / Ton', 'Price / Ton')}: ${formatInvoiceHargaPerTon(harga)}',
+                              '${_t('Harga / Ton', 'Price / Ton')}: ${harga > 0 ? formatInvoiceHargaPerTon(harga) : '-'}',
                             ),
                             const SizedBox(height: 4),
                             Text(
@@ -492,7 +493,8 @@ extension _AdminInvoiceListViewStatePreviewSupport
           final hasData = index < invoiceDetailList.length;
           final tonase = hasData ? _toNum(row['tonase']) : 0;
           final harga = hasData ? _toNum(row['harga']) : 0;
-          final rowSubtotal = tonase * harga;
+          final rowSubtotal =
+              hasData ? _resolveInvoiceDetailSubtotalShared(row) : 0;
           final armadaStartSource = row['armada_start_date'] ??
               item['armada_start_date'] ??
               row['tanggal'] ??
@@ -509,8 +511,8 @@ extension _AdminInvoiceListViewStatePreviewSupport
             'bongkar': hasData
                 ? _normalizeInvoicePrintLocationLabel(row['lokasi_bongkar'])
                 : '',
-            'tonase': hasData ? formatTonase(tonase) : '',
-            'harga': hasData ? formatHargaPerTon(harga) : '',
+            'tonase': hasData && tonase > 0 ? formatTonase(tonase) : '',
+            'harga': hasData && harga > 0 ? formatHargaPerTon(harga) : '',
             'total': hasData ? formatRupiahNoPrefix(rowSubtotal) : '',
           });
         }
@@ -1321,7 +1323,8 @@ extension _AdminInvoiceListViewStatePreviewSupport
                     const blankCell = '\u00A0';
                     final tonase = hasData ? _toNum(row['tonase']) : 0;
                     final harga = hasData ? _toNum(row['harga']) : 0;
-                    final rowSubtotal = tonase * harga;
+                    final rowSubtotal =
+                        hasData ? _resolveInvoiceDetailSubtotalShared(row) : 0;
                     final armadaStartSource = row['armada_start_date'] ??
                         item['armada_start_date'] ??
                         row['tanggal'] ??
@@ -1398,7 +1401,9 @@ extension _AdminInvoiceListViewStatePreviewSupport
                           minFontSize: 6.5,
                         ),
                         _pdfCell(
-                          hasData ? formatTonase(tonase) : blankCell,
+                          hasData && tonase > 0
+                              ? formatTonase(tonase)
+                              : blankCell,
                           alignCenter: true,
                           hPadding: 4,
                           vPadding: tableRowVPadding,
@@ -1407,7 +1412,9 @@ extension _AdminInvoiceListViewStatePreviewSupport
                           softLimitChars: 8,
                         ),
                         _pdfCell(
-                          hasData ? formatHargaPerTon(harga) : blankCell,
+                          hasData && harga > 0
+                              ? formatHargaPerTon(harga)
+                              : blankCell,
                           alignRight: true,
                           hPadding: 4,
                           vPadding: tableRowVPadding,
@@ -1853,7 +1860,7 @@ extension _AdminInvoiceListViewStatePreviewSupport
       maxPlate = max(maxPlate, plate.length);
       final hargaText = Formatters.rupiah(_toNum(row['harga']));
       final totalText =
-          Formatters.rupiah(_toNum(row['tonase']) * _toNum(row['harga']));
+          Formatters.rupiah(_resolveInvoiceDetailSubtotalShared(row));
       maxHarga = max(maxHarga, hargaText.length);
       maxTotal = max(maxTotal, totalText.length);
     }

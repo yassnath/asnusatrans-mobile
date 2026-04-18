@@ -1,6 +1,71 @@
 part of 'dashboard_repository.dart';
 
 extension DashboardRepositoryDashboardExtension on DashboardRepository {
+  Future<MonthlyFinanceReminderSummary> loadMonthlyFinanceReminderSummary({
+    DateTime? targetMonth,
+  }) async {
+    final focus = targetMonth ?? DateTime.now();
+    final monthStart = DateTime(focus.year, focus.month, 1);
+    final monthEnd = DateTime(focus.year, focus.month + 1, 1);
+
+    try {
+      const invoiceColumns =
+          'id,tanggal,tanggal_kop,total_bayar,total_biaya,pph,created_at,'
+          'armada_start_date,rincian,submission_role,approval_status';
+      final response = await Future.wait<dynamic>([
+        _runInvoiceSelectWithFallback(
+          invoiceColumns,
+          (columns) => _supabase.from('invoices').select(columns),
+        ),
+        _supabase
+            .from('expenses')
+            .select('id,tanggal,total_pengeluaran,rincian,created_at'),
+      ]);
+
+      final currentRole = await _loadCurrentRole();
+      final invoices = _toMapList(response[0]).where((row) {
+        if (currentRole == 'admin' || currentRole == 'owner') {
+          return _isApprovedForBackoffice(row);
+        }
+        return true;
+      }).toList();
+      final expenses = _toMapList(response[1])
+          .map(_normalizeExpenseRow)
+          .where((row) => _expenseTotal(row) > 0)
+          .toList();
+
+      final totalIncome = invoices.fold<double>(0, (sum, invoice) {
+        final date = _invoiceReferenceDate(invoice);
+        if (date == null ||
+            date.isBefore(monthStart) ||
+            !date.isBefore(monthEnd)) {
+          return sum;
+        }
+        return sum + _invoiceTotal(invoice);
+      });
+      final totalExpense = expenses.fold<double>(0, (sum, expense) {
+        final date =
+            Formatters.parseDate(expense['tanggal'] ?? expense['created_at']);
+        if (date == null ||
+            date.isBefore(monthStart) ||
+            !date.isBefore(monthEnd)) {
+          return sum;
+        }
+        return sum + _expenseTotal(expense);
+      });
+
+      return MonthlyFinanceReminderSummary(
+        month: monthStart,
+        totalIncome: totalIncome,
+        totalExpense: totalExpense,
+      );
+    } on PostgrestException catch (e) {
+      throw Exception(
+        'Gagal memuat ringkasan keuangan bulanan: ${e.message}',
+      );
+    }
+  }
+
   Future<DashboardBundle> loadAdminDashboard() async {
     try {
       const invoiceColumns =

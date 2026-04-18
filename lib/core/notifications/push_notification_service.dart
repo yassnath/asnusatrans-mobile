@@ -8,9 +8,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:timezone/data/latest.dart' as tz_data;
+import 'package:timezone/timezone.dart' as tz;
 
 import '../config/app_config.dart';
+import '../utils/formatters.dart';
 import '../../features/auth/models/auth_session.dart';
+import '../../features/dashboard/data/dashboard_repository.dart';
 import '../security/app_security.dart';
 
 enum PushNavigationTarget {
@@ -68,6 +72,9 @@ class PushNotificationService {
   PushNotificationService._();
 
   static final PushNotificationService instance = PushNotificationService._();
+  static const _monthlyFinanceReminderNotificationId = 930517;
+  static const _windowsNotificationGuid =
+      '2f0ee9e1-9fcc-49cc-97a5-7a1f4a8cf3b9';
 
   static const AndroidNotificationChannel _defaultChannel =
       AndroidNotificationChannel(
@@ -96,7 +103,9 @@ class PushNotificationService {
 
   bool _initialized = false;
   bool _localNotificationsReady = false;
+  bool _localNotificationsUnsupported = false;
   bool _pushRuntimeReady = false;
+  bool _timezoneReady = false;
   String? _activeToken;
   AuthSession? _boundSession;
   String? _boundRoleTopic;
@@ -114,6 +123,23 @@ class PushNotificationService {
   Future<void> initialize() async {
     if (_initialized) return;
     _initialized = true;
+
+    if (kIsWeb) return;
+
+    _lifecycleListener ??= AppLifecycleListener(
+      onResume: () {
+        final activeSession = _boundSession;
+        if (activeSession == null) return;
+        if (_pushRuntimeReady) {
+          unawaited(_syncBoundToken());
+        }
+        if (activeSession.isBackofficeUser) {
+          unawaited(refreshMonthlyFinanceReminder());
+        }
+      },
+    );
+
+    await _initializeLocalNotifications();
 
     if (!_supportsPushRuntime) return;
 
@@ -133,14 +159,6 @@ class PushNotificationService {
       );
       return;
     }
-
-    _lifecycleListener ??= AppLifecycleListener(
-      onResume: () {
-        unawaited(_syncBoundToken());
-      },
-    );
-
-    await _initializeLocalNotifications();
 
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
@@ -174,6 +192,12 @@ class PushNotificationService {
   Future<void> bindAuthenticatedSession(AuthSession session) async {
     final previousRole = _boundSession?.normalizedRole;
     _boundSession = session;
+    await _initializeLocalNotifications();
+    if (session.isBackofficeUser) {
+      unawaited(refreshMonthlyFinanceReminder());
+    } else {
+      await _cancelMonthlyFinanceReminder();
+    }
     if (!_pushRuntimeReady) return;
     await _syncRoleTopicSubscription(
       previousRole: previousRole,
@@ -188,6 +212,7 @@ class PushNotificationService {
     final previousRole = _boundSession?.normalizedRole;
     _boundSession = null;
     _cancelTokenRetry();
+    await _cancelMonthlyFinanceReminder();
     if (_pushRuntimeReady) {
       await _syncRoleTopicSubscription(
         previousRole: previousRole,
@@ -261,29 +286,179 @@ class PushNotificationService {
   }
 
   Future<void> _initializeLocalNotifications() async {
-    if (_localNotificationsReady) return;
+    if (_localNotificationsReady || _localNotificationsUnsupported) return;
+    const windowsSettings = WindowsInitializationSettings(
+      appName: 'AS Nusa Trans',
+      appUserModelId: 'SolvixStudio.ASNusaTrans',
+      guid: _windowsNotificationGuid,
+    );
     const androidSettings =
         AndroidInitializationSettings('ic_app_notification');
     const iosSettings = DarwinInitializationSettings();
     const initSettings = InitializationSettings(
       android: androidSettings,
       iOS: iosSettings,
+      windows: windowsSettings,
     );
-    await _localNotifications.initialize(
-      settings: initSettings,
-      onDidReceiveNotificationResponse: (response) {
-        _emitIntentFromPayloadString(response.payload);
-      },
-      onDidReceiveBackgroundNotificationResponse:
-          handleLocalNotificationBackgroundTap,
+    try {
+      await _localNotifications.initialize(
+        settings: initSettings,
+        onDidReceiveNotificationResponse: (response) {
+          _emitIntentFromPayloadString(response.payload);
+        },
+        onDidReceiveBackgroundNotificationResponse:
+            handleLocalNotificationBackgroundTap,
+      );
+
+      final androidPlatform =
+          _localNotifications.resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>();
+      await androidPlatform?.createNotificationChannel(_defaultChannel);
+
+      _localNotificationsReady = true;
+    } catch (error, stackTrace) {
+      _localNotificationsUnsupported = true;
+      AppSecurity.debugLog(
+        'Local notifications are unavailable on this runtime',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
+  Future<void> refreshMonthlyFinanceReminder() async {
+    final session = _boundSession;
+    await _initializeLocalNotifications();
+    await _cancelMonthlyFinanceReminder();
+    if (session == null || !session.isBackofficeUser) return;
+
+    try {
+      _ensureJakartaTimezone();
+      final scheduledDate = _resolveMonthlyFinanceReminderSchedule();
+      final repository = DashboardRepository(Supabase.instance.client);
+      final summary = await repository.loadMonthlyFinanceReminderSummary(
+        targetMonth: scheduledDate,
+      );
+      final reminderBody = _buildMonthlyFinanceReminderBody(summary);
+
+      await _localNotifications.zonedSchedule(
+        id: _monthlyFinanceReminderNotificationId,
+        title: _buildMonthlyFinanceReminderTitle(summary.month),
+        body: reminderBody,
+        scheduledDate: scheduledDate,
+        notificationDetails: _buildMonthlyFinanceReminderDetails(reminderBody),
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        payload: _encodePayload(<String, dynamic>{
+          'target': 'invoice_list',
+          'notification_type': 'monthly_finance_summary',
+          'month':
+              '${summary.month.year.toString().padLeft(4, '0')}-${summary.month.month.toString().padLeft(2, '0')}',
+        }),
+      );
+    } catch (error, stackTrace) {
+      AppSecurity.debugLog(
+        'Failed to refresh monthly finance reminder',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
+  Future<void> _cancelMonthlyFinanceReminder() async {
+    if (!_localNotificationsReady) return;
+    try {
+      await _localNotifications.cancel(
+        id: _monthlyFinanceReminderNotificationId,
+      );
+    } catch (_) {}
+  }
+
+  void _ensureJakartaTimezone() {
+    if (_timezoneReady) return;
+    tz_data.initializeTimeZones();
+    tz.setLocalLocation(tz.getLocation('Asia/Jakarta'));
+    _timezoneReady = true;
+  }
+
+  tz.TZDateTime _resolveMonthlyFinanceReminderSchedule({DateTime? now}) {
+    tz.TZDateTime buildLastDayAtFive(DateTime source) {
+      final lastDay = DateTime(source.year, source.month + 1, 0).day;
+      return tz.TZDateTime(tz.local, source.year, source.month, lastDay, 17);
+    }
+
+    final reference = tz.TZDateTime.from(now ?? DateTime.now(), tz.local);
+    final currentMonthSchedule = buildLastDayAtFive(reference);
+    if (currentMonthSchedule.isAfter(reference)) {
+      return currentMonthSchedule;
+    }
+    final nextMonth = DateTime(reference.year, reference.month + 1, 1);
+    return buildLastDayAtFive(nextMonth);
+  }
+
+  String _buildMonthlyFinanceReminderTitle(DateTime month) {
+    const monthNames = <String>[
+      'Januari',
+      'Februari',
+      'Maret',
+      'April',
+      'Mei',
+      'Juni',
+      'Juli',
+      'Agustus',
+      'September',
+      'Oktober',
+      'November',
+      'Desember',
+    ];
+    return 'Ringkasan Keuangan ${monthNames[month.month - 1]} ${month.year}';
+  }
+
+  String _buildMonthlyFinanceReminderBody(
+    MonthlyFinanceReminderSummary summary,
+  ) {
+    return [
+      'Total pemasukkan: ${_formatSignedRupiah(summary.totalIncome)}',
+      'Total pengeluaran: ${_formatSignedRupiah(summary.totalExpense)}',
+      'Laba pendapatan: ${_formatSignedRupiah(summary.netProfit)}',
+    ].join('\n');
+  }
+
+  String _formatSignedRupiah(num value) {
+    final amount = value.toDouble();
+    if (amount < 0) {
+      return '-${Formatters.rupiah(amount.abs())}';
+    }
+    return Formatters.rupiah(amount);
+  }
+
+  NotificationDetails _buildMonthlyFinanceReminderDetails(String body) {
+    return NotificationDetails(
+      android: AndroidNotificationDetails(
+        _defaultChannel.id,
+        _defaultChannel.name,
+        channelDescription: _defaultChannel.description,
+        importance: Importance.max,
+        priority: Priority.high,
+        icon: 'ic_app_notification',
+        largeIcon: const DrawableResourceAndroidBitmap(
+          'ic_app_notification',
+        ),
+        styleInformation: BigTextStyleInformation(body),
+        playSound: true,
+        enableVibration: true,
+        category: AndroidNotificationCategory.reminder,
+      ),
+      iOS: const DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+      ),
+      windows: WindowsNotificationDetails(
+        subtitle: 'Reminder akhir bulan pukul 17.00 WIB',
+        duration: WindowsNotificationDuration.long,
+        timestamp: DateTime.now(),
+      ),
     );
-
-    final androidPlatform =
-        _localNotifications.resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>();
-    await androidPlatform?.createNotificationChannel(_defaultChannel);
-
-    _localNotificationsReady = true;
   }
 
   Future<void> _requestNotificationPermission() async {

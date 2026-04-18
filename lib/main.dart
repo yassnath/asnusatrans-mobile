@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app.dart';
@@ -34,6 +37,7 @@ Future<void> main() async {
         detectSessionInUri: !disableWindowsDeepLinkObserver,
       ),
     );
+    await _ensureBundledIconFontsReady();
     await ThemeController.init();
     await LanguageController.init();
     await PushNotificationService.instance.initialize();
@@ -50,6 +54,69 @@ Future<void> main() async {
   }
 
   runApp(CvantApp(startupError: startupError));
+}
+
+Future<void> _ensureBundledIconFontsReady() async {
+  if (kIsWeb || defaultTargetPlatform != TargetPlatform.windows) {
+    return;
+  }
+
+  Future<ByteData?> loadFontData(String assetPath) async {
+    final normalizedPath = assetPath.replaceAll('/', Platform.pathSeparator);
+    final executableDir = File(Platform.resolvedExecutable).parent.path;
+    final currentDir = Directory.current.path;
+    final fileCandidates = <String>[
+      [executableDir, 'data', 'flutter_assets', normalizedPath]
+          .join(Platform.pathSeparator),
+      [currentDir, 'data', 'flutter_assets', normalizedPath]
+          .join(Platform.pathSeparator),
+      [currentDir, normalizedPath].join(Platform.pathSeparator),
+    ];
+
+    for (final candidate in fileCandidates) {
+      final file = File(candidate);
+      if (!file.existsSync()) continue;
+      final bytes = await file.readAsBytes();
+      if (bytes.isNotEmpty) {
+        return ByteData.sublistView(bytes);
+      }
+    }
+
+    try {
+      return await rootBundle.load(assetPath);
+    } catch (error, stackTrace) {
+      AppSecurity.debugLog(
+        'Failed to load icon font asset $assetPath',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return null;
+    }
+  }
+
+  Future<void> loadFont(String family, String assetPath) async {
+    try {
+      final fontData = await loadFontData(assetPath);
+      if (fontData == null) return;
+      final loader = FontLoader(family);
+      loader.addFont(Future<ByteData>.value(fontData));
+      await loader.load();
+    } catch (error, stackTrace) {
+      AppSecurity.debugLog(
+        'Failed to eagerly load bundled font $family',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
+  await Future.wait<void>([
+    loadFont('MaterialIcons', 'fonts/MaterialIcons-Regular.otf'),
+    loadFont(
+      'CupertinoIcons',
+      'packages/cupertino_icons/assets/CupertinoIcons.ttf',
+    ),
+  ]);
 }
 
 void _installFrameworkErrorFilters() {

@@ -12,7 +12,7 @@ extension _AdminCreateIncomeViewStateSupport on _AdminCreateIncomeViewState {
     if (value is num) {
       final number = value.toDouble();
       if (!number.isFinite) return '';
-      return number.floor().toString();
+      return _formatEditableNumberShared(number);
     }
     final raw = value.toString().trim();
     if (raw.isEmpty || raw.toLowerCase() == 'null') return '';
@@ -33,7 +33,7 @@ extension _AdminCreateIncomeViewStateSupport on _AdminCreateIncomeViewState {
     }
     final parsed = double.tryParse(candidate);
     if (parsed != null) {
-      return parsed.floor().toString();
+      return _formatEditableNumberShared(parsed);
     }
     return raw;
   }
@@ -58,80 +58,40 @@ extension _AdminCreateIncomeViewStateSupport on _AdminCreateIncomeViewState {
     return false;
   }
 
-  String _normalizeLokasiKey(String value) {
-    return value
-        .toLowerCase()
-        .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-  }
-
-  bool _lokasiKeyMatches(String inputKey, String ruleKey) {
-    if (inputKey.isEmpty || ruleKey.isEmpty) return false;
-    if (inputKey == ruleKey) return true;
-
-    final inputCompact = inputKey.replaceAll(' ', '');
-    final ruleCompact = ruleKey.replaceAll(' ', '');
-    if (inputCompact.isNotEmpty && inputCompact == ruleCompact) return true;
-
-    final inputTokens = inputKey.split(' ').where((part) => part.isNotEmpty);
-    final ruleTokens = ruleKey.split(' ').where((part) => part.isNotEmpty);
-    final inputList = inputTokens.toList(growable: false);
-    final ruleList = ruleTokens.toList(growable: false);
-
-    if (inputList.contains(ruleKey) || ruleList.contains(inputKey)) {
-      return true;
-    }
-    if (ruleList.length == 1 && ruleList.first.length >= 2) {
-      return inputList.contains(ruleList.first);
-    }
-    if (inputList.length == 1 && inputList.first.length >= 2) {
-      return ruleList.contains(inputList.first);
-    }
-
-    if (inputList.length < 2 || ruleList.isEmpty) {
-      return false;
-    }
-
-    final shorter = inputList.length <= ruleList.length ? inputList : ruleList;
-    final longer = inputList.length <= ruleList.length ? ruleList : inputList;
-    return shorter.length >= 2 &&
-        shorter.every((token) => longer.contains(token));
-  }
-
   double? _resolveHargaPerTon({
+    String? customerName,
     required String lokasiMuat,
     required String lokasiBongkar,
+    String? muatan,
   }) {
-    if (_hargaPerTonRules.isEmpty) return null;
-    final bongkarKey = _normalizeLokasiKey(lokasiBongkar);
-    if (bongkarKey.isEmpty) return null;
-    final muatKey = _normalizeLokasiKey(lokasiMuat);
+    final matchedRule = _resolveHargaRuleShared(
+      rules: _hargaPerTonRules,
+      customerName: customerName ?? _customer.text.trim(),
+      lokasiMuat: lokasiMuat,
+      lokasiBongkar: lokasiBongkar,
+    );
+    return _resolveHargaPerTonValueShared(
+      matchedRule,
+      muatan: muatan ?? '',
+    );
+  }
 
-    Map<String, dynamic>? exactMatch;
-    Map<String, dynamic>? fallbackMatch;
-
-    for (final rule in _hargaPerTonRules) {
-      final ruleBongkar =
-          _normalizeLokasiKey('${rule['lokasi_bongkar'] ?? ''}'.trim());
-      if (!_lokasiKeyMatches(bongkarKey, ruleBongkar)) continue;
-
-      final ruleMuat =
-          _normalizeLokasiKey('${rule['lokasi_muat'] ?? ''}'.trim());
-      if (muatKey.isNotEmpty &&
-          ruleMuat.isNotEmpty &&
-          _lokasiKeyMatches(muatKey, ruleMuat)) {
-        exactMatch = rule;
-        break;
-      }
-      fallbackMatch ??= rule;
-    }
-
-    final matchedRule = exactMatch ?? fallbackMatch;
-    if (matchedRule == null) return null;
-    final resolved =
-        _toNum(matchedRule['harga_per_ton'] ?? matchedRule['harga']);
-    return resolved > 0 ? resolved : null;
+  double? _resolveFlatSubtotal({
+    String? customerName,
+    required String lokasiMuat,
+    required String lokasiBongkar,
+    String? muatan,
+  }) {
+    final matchedRule = _resolveHargaRuleShared(
+      rules: _hargaPerTonRules,
+      customerName: customerName ?? _customer.text.trim(),
+      lokasiMuat: lokasiMuat,
+      lokasiBongkar: lokasiBongkar,
+    );
+    return _resolveHargaFlatTotalShared(
+      matchedRule,
+      muatan: muatan ?? '',
+    );
   }
 
   bool _applyAutoHargaPerTon(
@@ -139,30 +99,57 @@ extension _AdminCreateIncomeViewStateSupport on _AdminCreateIncomeViewState {
     bool force = false,
   }) {
     final previousHarga = '${row['harga'] ?? ''}'.trim();
+    final previousSubtotal = '${row['subtotal'] ?? ''}'.trim();
     final wasAuto = row['harga_auto'] == true;
+    final wasAutoSubtotal = row['subtotal_auto'] == true;
     final harga = _resolveHargaPerTon(
+      customerName: _customer.text.trim(),
       lokasiMuat: '${row['lokasi_muat'] ?? ''}',
       lokasiBongkar: '${row['lokasi_bongkar'] ?? ''}',
+      muatan: '${row['muatan'] ?? ''}',
     );
-    if (harga == null || harga <= 0) {
-      if (force && wasAuto && previousHarga.isNotEmpty) {
+    final flatSubtotal = _resolveFlatSubtotal(
+      customerName: _customer.text.trim(),
+      lokasiMuat: '${row['lokasi_muat'] ?? ''}',
+      lokasiBongkar: '${row['lokasi_bongkar'] ?? ''}',
+      muatan: '${row['muatan'] ?? ''}',
+    );
+    final hasAutoHarga = harga != null && harga > 0;
+    final hasFlatSubtotal = flatSubtotal != null && flatSubtotal > 0;
+    if (!hasAutoHarga && !hasFlatSubtotal) {
+      if (force &&
+          (wasAuto || wasAutoSubtotal) &&
+          (previousHarga.isNotEmpty || previousSubtotal.isNotEmpty)) {
         row['harga'] = '';
+        row['subtotal'] = '';
         row['harga_auto'] = true;
+        row['subtotal_auto'] = false;
         return true;
       }
       return false;
     }
 
     final currentHarga = _toNum(row['harga']);
+    final currentSubtotal = _toNum(row['subtotal']);
     final isAuto = row['harga_auto'] == true;
-    if (!force && currentHarga > 0 && !isAuto) {
+    final isAutoSubtotal = row['subtotal_auto'] == true;
+    if (!force &&
+        ((currentHarga > 0 && !isAuto) ||
+            (currentSubtotal > 0 && !isAutoSubtotal))) {
       return false;
     }
 
-    final nextHarga = _safeNumberInputText(harga);
+    final nextHarga = hasAutoHarga ? _safeNumberInputText(harga) : '';
+    final nextSubtotal =
+        hasFlatSubtotal ? _safeNumberInputText(flatSubtotal) : '';
     row['harga'] = nextHarga;
+    row['subtotal'] = nextSubtotal;
     row['harga_auto'] = true;
-    return previousHarga != nextHarga || !wasAuto;
+    row['subtotal_auto'] = hasFlatSubtotal;
+    return previousHarga != nextHarga ||
+        previousSubtotal != nextSubtotal ||
+        !wasAuto ||
+        wasAutoSubtotal != hasFlatSubtotal;
   }
 
   bool _isKnownDriverOption(String value) {
@@ -391,12 +378,14 @@ extension _AdminCreateIncomeViewStateSupport on _AdminCreateIncomeViewState {
       'armada_end_date': '',
       'tonase': '',
       'harga': '',
+      'subtotal': '',
       'harga_auto': true,
+      'subtotal_auto': false,
     };
   }
 
   double _detailSubtotal(Map<String, dynamic> row) {
-    return _toNum(row['tonase']) * _toNum(row['harga']);
+    return _resolveInvoiceDetailSubtotalShared(row);
   }
 
   String? _nullableInputText(dynamic value) {

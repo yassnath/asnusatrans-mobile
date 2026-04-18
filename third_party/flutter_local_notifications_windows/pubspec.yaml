@@ -21,4 +21,5 @@ flutter:
     implements: flutter_local_notifications
     platforms:
       windows:
+        ffiPlugin: true
         dartPluginClass: FlutterLocalNotificationsWindows

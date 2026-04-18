@@ -519,6 +519,10 @@ class _DashboardPageState extends State<DashboardPage> {
       _recentActivitiesNotifier.value = List<ActivityItem>.from(
         bundle.recentActivities,
       );
+      if (widget.session.isBackofficeUser) {
+        unawaited(
+            PushNotificationService.instance.refreshMonthlyFinanceReminder());
+      }
     }).catchError((_) {});
   }
 
@@ -841,15 +845,6 @@ class _DashboardPageState extends State<DashboardPage> {
                 child: CircleAvatar(
                   radius: 18,
                   backgroundColor: AppColors.surfaceSoft(context),
-                  backgroundImage: widget.session.isPengurus
-                      ? null
-                      : (isCustomer
-                          ? const AssetImage('assets/images/iconapk.png')
-                          : AssetImage(
-                              widget.session.isOwner
-                                  ? 'assets/images/pp-owner.webp'
-                                  : 'assets/images/pp-admin.webp',
-                            )),
                   child: widget.session.isPengurus
                       ? Text(
                           'P',
@@ -858,7 +853,30 @@ class _DashboardPageState extends State<DashboardPage> {
                             fontWeight: FontWeight.w800,
                           ),
                         )
-                      : null,
+                      : ClipOval(
+                          child: CvantAssetImage(
+                            assetPath: isCustomer
+                                ? 'assets/images/iconapk.png'
+                                : (widget.session.isOwner
+                                    ? 'assets/images/pp-owner.webp'
+                                    : 'assets/images/pp-admin.webp'),
+                            fallbackAssetPath: 'assets/images/iconapk.png',
+                            width: 36,
+                            height: 36,
+                            fit: BoxFit.cover,
+                            placeholder: Container(
+                              width: 36,
+                              height: 36,
+                              color: AppColors.surfaceSoft(context),
+                              alignment: Alignment.center,
+                              child: Icon(
+                                Icons.person,
+                                color: AppColors.textMutedFor(context),
+                                size: 18,
+                              ),
+                            ),
+                          ),
+                        ),
                 ),
               ),
             ],

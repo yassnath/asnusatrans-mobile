@@ -1168,6 +1168,252 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
     return false;
   }
 
+  String _normalizeIncomePricingText(String value) {
+    return value
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  bool _incomePricingLocationMatches(String inputKey, String ruleKey) {
+    if (inputKey.isEmpty || ruleKey.isEmpty) return false;
+    if (inputKey == ruleKey) return true;
+
+    final inputCompact = inputKey.replaceAll(' ', '');
+    final ruleCompact = ruleKey.replaceAll(' ', '');
+    if (inputCompact.isNotEmpty && inputCompact == ruleCompact) return true;
+
+    final inputList = inputKey
+        .split(' ')
+        .where((part) => part.isNotEmpty)
+        .toList(growable: false);
+    final ruleList = ruleKey
+        .split(' ')
+        .where((part) => part.isNotEmpty)
+        .toList(growable: false);
+
+    if (inputList.contains(ruleKey) || ruleList.contains(inputKey)) {
+      return true;
+    }
+    if (ruleList.length == 1 && ruleList.first.length >= 2) {
+      return inputList.contains(ruleList.first);
+    }
+    if (inputList.length == 1 && inputList.first.length >= 2) {
+      return ruleList.contains(inputList.first);
+    }
+
+    if (inputList.length < 2 || ruleList.isEmpty) return false;
+    final shorter = inputList.length <= ruleList.length ? inputList : ruleList;
+    final longer = inputList.length <= ruleList.length ? ruleList : inputList;
+    return shorter.length >= 2 &&
+        shorter.every((token) => longer.contains(token));
+  }
+
+  bool _incomePricingCustomerMatches(String customerName, String ruleCustomer) {
+    final inputKey = _normalizeCompanyText(customerName);
+    final ruleKey = _normalizeCompanyText(ruleCustomer);
+    if (ruleKey.isEmpty) return true;
+    if (inputKey.isEmpty) return false;
+    if (inputKey == ruleKey) return true;
+    if (inputKey.contains(ruleKey) || ruleKey.contains(inputKey)) {
+      return true;
+    }
+
+    final inputTokens = inputKey
+        .split(' ')
+        .where((part) => part.isNotEmpty)
+        .toList(growable: false);
+    final ruleTokens = ruleKey
+        .split(' ')
+        .where((part) => part.isNotEmpty)
+        .toList(growable: false);
+    if (inputTokens.isEmpty || ruleTokens.isEmpty) return false;
+    return ruleTokens.every(inputTokens.contains);
+  }
+
+  Map<String, dynamic>? _findHargaPerTonRuleMatch(
+    List<Map<String, dynamic>> rules, {
+    required String customerName,
+    required String pickup,
+    required String destination,
+  }) {
+    if (rules.isEmpty) return null;
+    final destinationKey = _normalizeIncomePricingText(destination);
+    if (destinationKey.isEmpty) return null;
+    final pickupKey = _normalizeIncomePricingText(pickup);
+
+    int specificityScore(String value) {
+      if (value.isEmpty) return 0;
+      final tokenCount =
+          value.split(' ').where((part) => part.isNotEmpty).length;
+      return (tokenCount * 100) + value.length;
+    }
+
+    int customerScore(String ruleCustomer) {
+      final normalizedRuleCustomer = _normalizeCompanyText(ruleCustomer);
+      if (normalizedRuleCustomer.isEmpty) return 100;
+      if (!_incomePricingCustomerMatches(customerName, ruleCustomer)) {
+        return -1;
+      }
+      final normalizedCustomerName = _normalizeCompanyText(customerName);
+      if (normalizedCustomerName == normalizedRuleCustomer) {
+        return 5000 + specificityScore(normalizedRuleCustomer);
+      }
+      return 4200 + specificityScore(normalizedRuleCustomer);
+    }
+
+    int lokasiScore(String inputKey, String ruleKey) {
+      if (ruleKey.isEmpty) return 120;
+      if (inputKey.isEmpty) return 0;
+      if (!_incomePricingLocationMatches(inputKey, ruleKey)) return 0;
+      final inputCompact = inputKey.replaceAll(' ', '');
+      final ruleCompact = ruleKey.replaceAll(' ', '');
+      if (inputKey == ruleKey || inputCompact == ruleCompact) {
+        return 1500 + specificityScore(ruleKey);
+      }
+      return 900 + specificityScore(ruleKey);
+    }
+
+    Map<String, dynamic>? bestRule;
+    var bestScore = -1;
+    for (final rule in rules) {
+      final ruleBongkarKey =
+          _normalizeIncomePricingText('${rule['lokasi_bongkar'] ?? ''}');
+      if (!_incomePricingLocationMatches(destinationKey, ruleBongkarKey)) {
+        continue;
+      }
+
+      final currentCustomerScore =
+          customerScore('${rule['customer_name'] ?? ''}');
+      if (currentCustomerScore < 0) continue;
+
+      final ruleMuatKey =
+          _normalizeIncomePricingText('${rule['lokasi_muat'] ?? ''}');
+      if (pickupKey.isNotEmpty &&
+          ruleMuatKey.isNotEmpty &&
+          !_incomePricingLocationMatches(pickupKey, ruleMuatKey)) {
+        continue;
+      }
+
+      final priority = int.tryParse('${rule['priority'] ?? ''}') ??
+          _num(rule['priority']).toInt();
+      final score = currentCustomerScore +
+          lokasiScore(pickupKey, ruleMuatKey) +
+          lokasiScore(destinationKey, ruleBongkarKey) +
+          priority;
+      if (score > bestScore) {
+        bestScore = score;
+        bestRule = rule;
+      }
+    }
+    return bestRule;
+  }
+
+  double? _resolveHargaPerTonRuleNominal(
+    Map<String, dynamic>? rule, {
+    required String muatan,
+  }) {
+    if (rule == null) return null;
+    final base = _num(rule['harga_per_ton'] ?? rule['harga']);
+    if (base <= 0) return null;
+    return _isTolakanCargo(muatan) ? base / 2 : base;
+  }
+
+  double? _resolveHargaPerTonRuleFlatTotal(
+    Map<String, dynamic>? rule, {
+    required String muatan,
+  }) {
+    if (rule == null) return null;
+    final base = _num(rule['flat_total'] ?? rule['subtotal'] ?? rule['total']);
+    if (base <= 0) return null;
+    return _isTolakanCargo(muatan) ? base / 2 : base;
+  }
+
+  bool _isSpecialIncomePricingBackfillCandidate(
+    Map<String, dynamic>? rule, {
+    required String destination,
+  }) {
+    if (rule == null) return false;
+    final destinationKey = _normalizeIncomePricingText(destination);
+    if (destinationKey.contains('batang')) return true;
+    return _num(rule['flat_total']) > 0;
+  }
+
+  Map<String, dynamic>? _applySpecialIncomePricingRuleToDetail(
+    Map<String, dynamic> detail, {
+    required List<Map<String, dynamic>> rules,
+    required String customerName,
+    String? fallbackPickup,
+    String? fallbackDestination,
+  }) {
+    final pickup = '${detail['lokasi_muat'] ?? fallbackPickup ?? ''}'.trim();
+    final destination =
+        '${detail['lokasi_bongkar'] ?? fallbackDestination ?? ''}'.trim();
+    final matchedRule = _findHargaPerTonRuleMatch(
+      rules,
+      customerName: customerName,
+      pickup: pickup,
+      destination: destination,
+    );
+    if (!_isSpecialIncomePricingBackfillCandidate(
+      matchedRule,
+      destination: destination,
+    )) {
+      return null;
+    }
+
+    final muatan = '${detail['muatan'] ?? ''}'.trim();
+    final nextHarga = _resolveHargaPerTonRuleNominal(
+      matchedRule,
+      muatan: muatan,
+    );
+    final nextFlatTotal = _resolveHargaPerTonRuleFlatTotal(
+      matchedRule,
+      muatan: muatan,
+    );
+    final nextDetail = Map<String, dynamic>.from(detail);
+    var changed = false;
+
+    void clearExplicitTotals() {
+      for (final key in const <String>['subtotal', 'total', 'jumlah']) {
+        if (!nextDetail.containsKey(key)) continue;
+        final currentValue = nextDetail[key];
+        if (currentValue == null) continue;
+        if ('$currentValue'.trim().isEmpty) continue;
+        nextDetail.remove(key);
+        changed = true;
+      }
+    }
+
+    if (nextFlatTotal != null && nextFlatTotal > 0) {
+      clearExplicitTotals();
+      final currentHarga = _num(nextDetail['harga']);
+      if (currentHarga != 0) {
+        nextDetail['harga'] = 0;
+        changed = true;
+      }
+      final currentSubtotal = _num(nextDetail['subtotal']);
+      if ((currentSubtotal - nextFlatTotal).abs() > 0.0001) {
+        nextDetail['subtotal'] = nextFlatTotal;
+        changed = true;
+      }
+      return changed ? nextDetail : null;
+    }
+
+    if (nextHarga == null || nextHarga <= 0) {
+      return null;
+    }
+
+    clearExplicitTotals();
+    final currentHarga = _num(nextDetail['harga']);
+    if ((currentHarga - nextHarga).abs() > 0.0001) {
+      nextDetail['harga'] = nextHarga;
+      changed = true;
+    }
+    return changed ? nextDetail : null;
+  }
+
   int _romanToMonth(String roman) {
     const map = <String, int>{
       'I': 1,

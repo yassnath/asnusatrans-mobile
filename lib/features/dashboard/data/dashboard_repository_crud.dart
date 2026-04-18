@@ -185,6 +185,7 @@ extension DashboardRepositoryCrudExtension on DashboardRepository {
             fallbackPickup: detailPickup,
             fallbackDestination: detailDestination,
             fallbackArmadaId: detailArmadaId,
+            fallbackCargo: detailMuatan,
           );
         }
         if (effectiveSubmissionRole == 'pengurus' &&
@@ -250,6 +251,7 @@ extension DashboardRepositoryCrudExtension on DashboardRepository {
         fallbackPickup: pickup,
         fallbackDestination: destination,
         fallbackArmadaId: armadaId,
+        fallbackCargo: muatan,
       );
     }
     if (effectiveSubmissionRole == 'pengurus' &&
@@ -846,6 +848,7 @@ extension DashboardRepositoryCrudExtension on DashboardRepository {
           fallbackPickup: pickup,
           fallbackDestination: destination,
           fallbackArmadaId: armadaId,
+          fallbackCargo: muatan,
         );
       }
       await _syncArmadaStatusNowBestEffort();

@@ -631,7 +631,7 @@ extension DashboardRepositoryFetchExtension on DashboardRepository {
       final res = await _supabase
           .from('harga_per_ton_rules')
           .select(
-            'id,lokasi_muat,lokasi_bongkar,harga_per_ton,is_active,priority,created_at,updated_at',
+            'id,customer_name,lokasi_muat,lokasi_bongkar,harga_per_ton,flat_total,is_active,priority,created_at,updated_at',
           )
           .eq('is_active', true)
           .order('priority', ascending: false)

@@ -49,6 +49,37 @@ class AutoSanguBackfillReport {
   bool get hasFailures => failedInvoices > 0;
 }
 
+class IncomePricingBackfillReport {
+  const IncomePricingBackfillReport({
+    required this.processedInvoices,
+    required this.updatedInvoices,
+    required this.skippedInvoices,
+    required this.failedInvoices,
+  });
+
+  final int processedInvoices;
+  final int updatedInvoices;
+  final int skippedInvoices;
+  final int failedInvoices;
+
+  bool get hasFailures => failedInvoices > 0;
+  bool get hasChanges => updatedInvoices > 0;
+}
+
+class MonthlyFinanceReminderSummary {
+  const MonthlyFinanceReminderSummary({
+    required this.month,
+    required this.totalIncome,
+    required this.totalExpense,
+  });
+
+  final DateTime month;
+  final double totalIncome;
+  final double totalExpense;
+
+  double get netProfit => totalIncome - totalExpense;
+}
+
 class _AutoSanguSyncResult {
   const _AutoSanguSyncResult({
     this.created = 0,
@@ -787,7 +818,32 @@ class DashboardRepository {
     String? namaSupir,
   }) {
     if (details != null && details.isNotEmpty) {
-      return details.map((row) => Map<String, dynamic>.from(row)).toList();
+      return details.map((row) {
+        final next = Map<String, dynamic>.from(row);
+
+        void fillText(String key, String? fallback) {
+          final current = '${next[key] ?? ''}'.trim();
+          final fallbackText = (fallback ?? '').trim();
+          if (current.isEmpty && fallbackText.isNotEmpty) {
+            next[key] = fallbackText;
+          }
+        }
+
+        void fillDate(String key, DateTime? fallback) {
+          if (fallback == null) return;
+          if (Formatters.parseDate(next[key]) != null) return;
+          next[key] = _dateOnly(fallback);
+        }
+
+        fillText('lokasi_muat', pickup);
+        fillText('lokasi_bongkar', destination);
+        fillText('armada_id', armadaId);
+        fillDate('armada_start_date', armadaStartDate);
+        fillDate('armada_end_date', armadaEndDate);
+        fillText('muatan', muatan);
+        fillText('nama_supir', namaSupir);
+        return next;
+      }).toList();
     }
 
     final hasFallback = (pickup?.trim().isNotEmpty == true) ||
@@ -880,6 +936,7 @@ class DashboardRepository {
     String? fallbackPickup,
     String? fallbackDestination,
     String? fallbackArmadaId,
+    String? fallbackCargo,
     List<Map<String, dynamic>>? preloadedRules,
     Map<String, String>? preloadedPlateById,
   }) async {
@@ -940,7 +997,7 @@ class DashboardRepository {
             .trim();
       }
 
-      final preservedAmountByName = <String, double>{};
+      final preservedBaseAmountByName = <String, double>{};
       for (final row in existingAutoRows) {
         final detailRows = _toMapList(row['rincian']);
         for (final detail in detailRows) {
@@ -950,7 +1007,12 @@ class DashboardRepository {
           if (key.isEmpty) continue;
           final amount = _num(detail['jumlah'] ?? detail['amount']);
           if (amount > 0) {
-            preservedAmountByName[key] = amount;
+            final detailCargo = _firstNonEmptyText([
+              detail['muatan'],
+            ]);
+            final baseAmount =
+                _isTolakanCargo(detailCargo) ? amount * 2 : amount;
+            preservedBaseAmountByName[key] = baseAmount;
           }
         }
       }
@@ -992,10 +1054,19 @@ class DashboardRepository {
         if (!hasDepartureData) {
           continue;
         }
-        final match = _findSanguRuleMatch(
-          rules,
+        final effectiveCargo = _firstNonEmptyText([
+          detail['muatan'],
+          fallbackCargo,
+        ]);
+        final resolvedRoute = _resolveAutoSanguRouteForCargo(
           pickup: pickup,
           destination: bongkar,
+          cargo: effectiveCargo,
+        );
+        final match = _findSanguRuleMatch(
+          rules,
+          pickup: resolvedRoute.pickup,
+          destination: resolvedRoute.destination,
         );
 
         final plate = _resolvePlateTextFromDetail(
@@ -1004,15 +1075,20 @@ class DashboardRepository {
           fallbackArmadaId: effectiveArmadaId,
         );
         final plateLabel = plate.isEmpty ? '-' : plate;
-        final pickupLabel = pickup.isEmpty ? '-' : pickup;
-        final bongkarLabel = bongkar.isEmpty ? '-' : bongkar;
+        final pickupLabel =
+            resolvedRoute.pickup.isEmpty ? '-' : resolvedRoute.pickup;
+        final bongkarLabel =
+            resolvedRoute.destination.isEmpty ? '-' : resolvedRoute.destination;
         final detailName = '$plateLabel ($pickupLabel-$bongkarLabel)';
         final detailKey = normalizeDetailKey(detailName);
         final matchedNominal = _num(match?['nominal'] ?? 0);
-        final preservedNominal = preservedAmountByName[detailKey] ?? 0;
+        final preservedBaseNominal = preservedBaseAmountByName[detailKey] ?? 0;
+        final isTolakan = _isTolakanCargo(effectiveCargo);
         final effectiveNominal = matchedNominal > 0
-            ? matchedNominal
-            : (preservedNominal > 0 ? preservedNominal : 0);
+            ? (isTolakan ? matchedNominal / 2 : matchedNominal)
+            : (preservedBaseNominal > 0
+                ? (isTolakan ? preservedBaseNominal / 2 : preservedBaseNominal)
+                : 0);
         if (effectiveNominal <= 0) {
           // Hindari memasukkan nominal yang tidak valid agar total tidak meleset.
           continue;
@@ -1022,6 +1098,9 @@ class DashboardRepository {
         expenseDetails.add(<String, dynamic>{
           'nama': detailName,
           'nama_supir': singleDriverName,
+          'lokasi_muat': resolvedRoute.pickup,
+          'lokasi_bongkar': resolvedRoute.destination,
+          'muatan': effectiveCargo,
           'jumlah': effectiveNominal,
         });
       }
@@ -1108,7 +1187,9 @@ class DashboardRepository {
     try {
       final invoices = _toMapList(
         await _runInvoiceSelectWithFallback(
-          'id,no_invoice,invoice_entity,tanggal,tanggal_kop,lokasi_muat,lokasi_bongkar,armada_id,armada_start_date,rincian,nama_pelanggan,submission_role,approval_status',
+          'id,no_invoice,invoice_entity,tanggal,tanggal_kop,lokasi_muat,'
+          'lokasi_bongkar,armada_id,armada_start_date,muatan,rincian,'
+          'nama_pelanggan,submission_role,approval_status',
           (columns) => _supabase.from('invoices').select(columns),
         ),
       ).where(_isApprovedForBackoffice).toList();
@@ -1202,6 +1283,7 @@ class DashboardRepository {
           fallbackPickup: '${invoice['lokasi_muat'] ?? ''}',
           fallbackDestination: '${invoice['lokasi_bongkar'] ?? ''}',
           fallbackArmadaId: '${invoice['armada_id'] ?? ''}',
+          fallbackCargo: '${invoice['muatan'] ?? ''}',
           preloadedRules: rules,
           preloadedPlateById: plateById,
         );
@@ -1219,6 +1301,156 @@ class DashboardRepository {
       createdExpenses: createdExpenses,
       updatedExpenses: updatedExpenses,
       deletedExpenses: deletedExpenses,
+      skippedInvoices: skippedInvoices,
+      failedInvoices: failedInvoices,
+    );
+  }
+
+  Future<IncomePricingBackfillReport>
+      backfillSpecialIncomePricingForExistingInvoices() async {
+    var processedInvoices = 0;
+    var updatedInvoices = 0;
+    var skippedInvoices = 0;
+    var failedInvoices = 0;
+    try {
+      final rules = await fetchHargaPerTonRules();
+      if (rules.isEmpty) {
+        return const IncomePricingBackfillReport(
+          processedInvoices: 0,
+          updatedInvoices: 0,
+          skippedInvoices: 0,
+          failedInvoices: 0,
+        );
+      }
+
+      final invoices = _toMapList(
+        await _runInvoiceSelectWithFallback(
+          'id,no_invoice,invoice_entity,tanggal,tanggal_kop,nama_pelanggan,'
+          'lokasi_muat,lokasi_bongkar,armada_id,armada_start_date,armada_end_date,'
+          'tonase,harga,muatan,nama_supir,total_biaya,pph,total_bayar,rincian,'
+          'submission_role,approval_status',
+          (columns) => _supabase.from('invoices').select(columns),
+        ),
+      ).where(_isApprovedForBackoffice).toList();
+
+      for (final invoice in invoices) {
+        final invoiceId = '${invoice['id'] ?? ''}'.trim();
+        if (invoiceId.isEmpty) continue;
+        processedInvoices++;
+        try {
+          final customerName = '${invoice['nama_pelanggan'] ?? ''}'.trim();
+          final fallbackPickup = '${invoice['lokasi_muat'] ?? ''}'.trim();
+          final fallbackDestination =
+              '${invoice['lokasi_bongkar'] ?? ''}'.trim();
+          final details = _buildEffectiveIncomeDetails(
+            details: _toMapList(invoice['rincian']),
+            pickup: fallbackPickup,
+            destination: fallbackDestination,
+            armadaId: '${invoice['armada_id'] ?? ''}',
+            armadaStartDate: Formatters.parseDate(invoice['armada_start_date']),
+            armadaEndDate: Formatters.parseDate(invoice['armada_end_date']),
+            tonase: _num(invoice['tonase']),
+            harga: _num(invoice['harga']),
+            muatan: '${invoice['muatan'] ?? ''}',
+            namaSupir: '${invoice['nama_supir'] ?? ''}',
+          );
+          if (details.isEmpty) {
+            skippedInvoices++;
+            continue;
+          }
+
+          final nextDetails = <Map<String, dynamic>>[];
+          var changed = false;
+          for (final detail in details) {
+            final updatedDetail = _applySpecialIncomePricingRuleToDetail(
+              detail,
+              rules: rules,
+              customerName: customerName,
+              fallbackPickup: fallbackPickup,
+              fallbackDestination: fallbackDestination,
+            );
+            if (updatedDetail != null) {
+              nextDetails.add(updatedDetail);
+              changed = true;
+            } else {
+              nextDetails.add(Map<String, dynamic>.from(detail));
+            }
+          }
+
+          if (!changed) {
+            skippedInvoices++;
+            continue;
+          }
+
+          final totalBiaya = nextDetails.fold<double>(
+            0,
+            (sum, detail) => sum + _resolveIncomeDetailTotal(detail),
+          );
+          if (totalBiaya <= 0) {
+            skippedInvoices++;
+            continue;
+          }
+
+          final first = nextDetails.first;
+          final normalizedEntity = _resolveInvoiceEntity(
+            invoiceEntity: '${invoice['invoice_entity'] ?? ''}'.trim(),
+            invoiceNumber: invoice['no_invoice'],
+            customerName: customerName,
+            isCompany: _isCompanyCustomerName(customerName),
+          );
+          final includePph =
+              Formatters.isCompanyInvoiceEntity(normalizedEntity);
+          final pphValue =
+              includePph ? max(0, (totalBiaya * 0.02).floorToDouble()) : 0.0;
+          final totalBayarValue = max(0, totalBiaya - pphValue);
+          final resolvedDriverNames = _resolveDriverNames(details: nextDetails);
+
+          String? nullableText(dynamic value) {
+            final text = '${value ?? ''}'.trim();
+            return text.isEmpty ? null : text;
+          }
+
+          final resolvedPickup = nullableText(first['lokasi_muat']) ??
+              nullableText(fallbackPickup);
+          final resolvedDestination = nullableText(first['lokasi_bongkar']) ??
+              nullableText(fallbackDestination);
+          final resolvedArmadaId = nullableText(first['armada_id']) ??
+              nullableText(invoice['armada_id']);
+          final resolvedArmadaStartDate =
+              nullableText(first['armada_start_date']) ??
+                  nullableText(invoice['armada_start_date']);
+          final resolvedArmadaEndDate =
+              nullableText(first['armada_end_date']) ??
+                  nullableText(invoice['armada_end_date']);
+
+          await _updateInvoiceWithFallback(invoiceId, <String, dynamic>{
+            'lokasi_muat': resolvedPickup,
+            'lokasi_bongkar': resolvedDestination,
+            'armada_id': resolvedArmadaId,
+            'armada_start_date': resolvedArmadaStartDate,
+            'armada_end_date': resolvedArmadaEndDate,
+            'tonase': _num(first['tonase']),
+            'harga': _num(first['harga']),
+            'muatan': nullableText(first['muatan']),
+            'nama_supir': resolvedDriverNames,
+            'total_biaya': totalBiaya,
+            'pph': pphValue,
+            'total_bayar': totalBayarValue,
+            'rincian': nextDetails,
+            'updated_at': DateTime.now().toIso8601String(),
+          });
+          updatedInvoices++;
+        } catch (_) {
+          failedInvoices++;
+        }
+      }
+    } catch (_) {
+      failedInvoices++;
+    }
+
+    return IncomePricingBackfillReport(
+      processedInvoices: processedInvoices,
+      updatedInvoices: updatedInvoices,
       skippedInvoices: skippedInvoices,
       failedInvoices: failedInvoices,
     );
@@ -1325,6 +1557,21 @@ class DashboardRepository {
       }
     }
     if (bestRule != null && bestScore > 0) return bestRule;
+
+    final batangToLangon =
+        pickupNorm == 'batang' && destinationNorm == 'langon';
+    final langonToBatang =
+        pickupNorm == 'langon' && destinationNorm == 'batang';
+    if (batangToLangon || langonToBatang) {
+      return <String, dynamic>{
+        'tempat': batangToLangon ? 'BATANG - T. LANGON' : 'T. LANGON - BATANG',
+        'lokasi_muat': batangToLangon ? 'BATANG' : 'T. LANGON',
+        'lokasi_bongkar': batangToLangon ? 'T. LANGON' : 'BATANG',
+        'nominal': 3400000,
+        '__muat_norm': batangToLangon ? 'batang' : 'langon',
+        '__bongkar_norm': batangToLangon ? 'langon' : 'batang',
+      };
+    }
 
     // Fallback khusus: lokasi bongkar Purwodadi.
     // Tetap dianjurkan menambahkan rule di tabel sangu_driver_rules,
@@ -1446,6 +1693,11 @@ class DashboardRepository {
         (normalized.contains('ksi') && normalized.contains('singosari'))) {
       return 'singosari';
     }
+    if (normalized == 'langon' ||
+        normalized == 't langon' ||
+        normalized == 'tlangon') {
+      return 'langon';
+    }
     if (normalized.contains('cj') && normalized.contains('mojoagung')) {
       return 'mojoagung';
     }
@@ -1477,6 +1729,40 @@ class DashboardRepository {
     if (normalized.contains('tim')) return 'tim';
     if (normalized.contains('aspal')) return 'aspal';
     return normalized;
+  }
+
+  bool _isTolakanCargo(String value) {
+    final normalized = value
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    return normalized.contains('tolakan');
+  }
+
+  ({String pickup, String destination}) _resolveAutoSanguRouteForCargo({
+    required String pickup,
+    required String destination,
+    required String cargo,
+  }) {
+    final cleanedPickup = pickup.trim();
+    final cleanedDestination = destination.trim();
+    if (!_isTolakanCargo(cargo)) {
+      return (pickup: cleanedPickup, destination: cleanedDestination);
+    }
+
+    final pickupNorm = _normalizeSanguPlace(cleanedPickup);
+    final destinationNorm = _normalizeSanguPlace(cleanedDestination);
+    final isLangonToBatang =
+        pickupNorm == 'langon' && destinationNorm == 'batang';
+    if (!isLangonToBatang) {
+      return (pickup: cleanedPickup, destination: cleanedDestination);
+    }
+
+    return (
+      pickup: cleanedDestination,
+      destination: cleanedPickup,
+    );
   }
 
   Future<void> _setArmadaStatusBestEffort(

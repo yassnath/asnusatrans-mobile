@@ -106,9 +106,7 @@ extension _AdminInvoiceListViewStatePrintGroupSupport
       customerName: customerName,
     );
     double detailSubtotal(Map<String, dynamic> row) {
-      final explicit = _toNum(row['subtotal']);
-      if (explicit > 0) return explicit;
-      return _toNum(row['tonase']) * _toNum(row['harga']);
+      return _resolveInvoiceDetailSubtotalShared(row);
     }
 
     final subtotal = mergedDetails.fold<double>(

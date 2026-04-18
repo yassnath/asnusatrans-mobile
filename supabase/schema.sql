@@ -588,22 +588,32 @@ execute function public.set_updated_at();
 -- Rule harga per ton berdasarkan lokasi bongkar (opsional lokasi muat).
 create table if not exists public.harga_per_ton_rules (
   id uuid primary key default gen_random_uuid(),
+  customer_name text,
   lokasi_muat text,
   lokasi_bongkar text not null,
   harga_per_ton numeric(14,2) not null default 0,
+  flat_total numeric(14,2),
   priority int not null default 0,
   is_active boolean not null default true,
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
 );
 
-create unique index if not exists harga_per_ton_rules_route_lower_unique
+alter table public.harga_per_ton_rules
+  add column if not exists customer_name text,
+  add column if not exists flat_total numeric(14,2);
+
+drop index if exists harga_per_ton_rules_route_lower_unique;
+create unique index if not exists harga_per_ton_rules_route_customer_lower_unique
   on public.harga_per_ton_rules (
+    lower(coalesce(customer_name, '')),
     lower(coalesce(lokasi_muat, '')),
     lower(lokasi_bongkar)
   );
 create index if not exists harga_per_ton_rules_bongkar_lower_idx
   on public.harga_per_ton_rules (lower(lokasi_bongkar));
+create index if not exists harga_per_ton_rules_customer_lower_idx
+  on public.harga_per_ton_rules (lower(coalesce(customer_name, '')));
 create index if not exists harga_per_ton_rules_priority_idx
   on public.harga_per_ton_rules (priority desc, created_at desc);
 
@@ -1238,9 +1248,11 @@ $$;
 create or replace function public.get_income_form_harga_per_ton_rules()
 returns table (
   id uuid,
+  customer_name text,
   lokasi_muat text,
   lokasi_bongkar text,
   harga_per_ton numeric,
+  flat_total numeric,
   is_active boolean,
   priority integer,
   created_at timestamptz,
@@ -1258,9 +1270,11 @@ begin
   return query
   select
     h.id,
+    h.customer_name,
     h.lokasi_muat,
     h.lokasi_bongkar,
     h.harga_per_ton,
+    h.flat_total,
     h.is_active,
     h.priority,
     h.created_at,

@@ -34,68 +34,51 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
     } catch (_) {}
     final armadaIdByPlate = _buildArmadaIdByPlate(armadas);
 
-    String normalizeLokasiKey(String value) {
-      return value
-          .toLowerCase()
-          .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
-          .replaceAll(RegExp(r'\s+'), ' ')
-          .trim();
-    }
-
-    bool lokasiKeyMatches(String inputKey, String ruleKey) {
-      if (inputKey.isEmpty || ruleKey.isEmpty) return false;
-      if (inputKey == ruleKey) return true;
-
-      final inputList = inputKey
-          .split(' ')
-          .where((part) => part.isNotEmpty)
-          .toList(growable: false);
-      final ruleList = ruleKey
-          .split(' ')
-          .where((part) => part.isNotEmpty)
-          .toList(growable: false);
-
-      if (inputList.length < 2 || ruleList.isEmpty) {
-        return false;
-      }
-
-      final shorter =
-          inputList.length <= ruleList.length ? inputList : ruleList;
-      final longer = inputList.length <= ruleList.length ? ruleList : inputList;
-      return shorter.length >= 2 &&
-          shorter.every((token) => longer.contains(token));
-    }
-
-    double? resolveHargaPerTon({
+    Map<String, dynamic>? resolveHargaRule({
+      required String customerName,
       required String lokasiMuat,
       required String lokasiBongkar,
     }) {
-      if (hargaPerTonRules.isEmpty) return null;
-      final bongkarKey = normalizeLokasiKey(lokasiBongkar);
-      if (bongkarKey.isEmpty) return null;
-      final muatKey = normalizeLokasiKey(lokasiMuat);
+      return _resolveHargaRuleShared(
+        rules: hargaPerTonRules,
+        customerName: customerName,
+        lokasiMuat: lokasiMuat,
+        lokasiBongkar: lokasiBongkar,
+      );
+    }
 
-      Map<String, dynamic>? exactMatch;
-      Map<String, dynamic>? fallbackMatch;
-      for (final rule in hargaPerTonRules) {
-        final ruleBongkar =
-            normalizeLokasiKey('${rule['lokasi_bongkar'] ?? ''}'.trim());
-        if (!lokasiKeyMatches(bongkarKey, ruleBongkar)) continue;
-        final ruleMuat =
-            normalizeLokasiKey('${rule['lokasi_muat'] ?? ''}'.trim());
-        if (muatKey.isNotEmpty &&
-            ruleMuat.isNotEmpty &&
-            lokasiKeyMatches(muatKey, ruleMuat)) {
-          exactMatch = rule;
-          break;
-        }
-        fallbackMatch ??= rule;
-      }
+    double? resolveHargaPerTon({
+      required String customerName,
+      required String lokasiMuat,
+      required String lokasiBongkar,
+      String? muatan,
+    }) {
+      final matched = resolveHargaRule(
+        customerName: customerName,
+        lokasiMuat: lokasiMuat,
+        lokasiBongkar: lokasiBongkar,
+      );
+      return _resolveHargaPerTonValueShared(
+        matched,
+        muatan: muatan ?? '',
+      );
+    }
 
-      final matched = exactMatch ?? fallbackMatch;
-      if (matched == null) return null;
-      final resolved = _toNum(matched['harga_per_ton'] ?? matched['harga']);
-      return resolved > 0 ? resolved : null;
+    double? resolveFlatSubtotal({
+      required String customerName,
+      required String lokasiMuat,
+      required String lokasiBongkar,
+      String? muatan,
+    }) {
+      final matched = resolveHargaRule(
+        customerName: customerName,
+        lokasiMuat: lokasiMuat,
+        lokasiBongkar: lokasiBongkar,
+      );
+      return _resolveHargaFlatTotalShared(
+        matched,
+        muatan: muatan ?? '',
+      );
     }
 
     bool applyAutoHargaPerTon(
@@ -103,28 +86,55 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
       bool force = false,
     }) {
       final previousHarga = '${row['harga'] ?? ''}'.trim();
+      final previousSubtotal = '${row['subtotal'] ?? ''}'.trim();
       final wasAuto = row['harga_auto'] == true;
+      final wasAutoSubtotal = row['subtotal_auto'] == true;
       final harga = resolveHargaPerTon(
+        customerName: customer.text.trim(),
         lokasiMuat: '${row['lokasi_muat'] ?? ''}',
         lokasiBongkar: '${row['lokasi_bongkar'] ?? ''}',
+        muatan: '${row['muatan'] ?? ''}',
       );
-      if (harga == null || harga <= 0) {
-        if (force && wasAuto && previousHarga.isNotEmpty) {
+      final flatSubtotal = resolveFlatSubtotal(
+        customerName: customer.text.trim(),
+        lokasiMuat: '${row['lokasi_muat'] ?? ''}',
+        lokasiBongkar: '${row['lokasi_bongkar'] ?? ''}',
+        muatan: '${row['muatan'] ?? ''}',
+      );
+      final hasAutoHarga = harga != null && harga > 0;
+      final hasFlatSubtotal = flatSubtotal != null && flatSubtotal > 0;
+      if (!hasAutoHarga && !hasFlatSubtotal) {
+        if (force &&
+            (wasAuto || wasAutoSubtotal) &&
+            (previousHarga.isNotEmpty || previousSubtotal.isNotEmpty)) {
           row['harga'] = '';
+          row['subtotal'] = '';
           row['harga_auto'] = true;
+          row['subtotal_auto'] = false;
           return true;
         }
         return false;
       }
       final currentHarga = _toNum(row['harga']);
+      final currentSubtotal = _toNum(row['subtotal']);
       final isAuto = row['harga_auto'] == true;
-      if (!force && currentHarga > 0 && !isAuto) {
+      final isAutoSubtotal = row['subtotal_auto'] == true;
+      if (!force &&
+          ((currentHarga > 0 && !isAuto) ||
+              (currentSubtotal > 0 && !isAutoSubtotal))) {
         return false;
       }
-      final nextHarga = harga.floor().toString();
+      final nextHarga = hasAutoHarga ? _formatEditableNumberShared(harga) : '';
+      final nextSubtotal =
+          hasFlatSubtotal ? _formatEditableNumberShared(flatSubtotal) : '';
       row['harga'] = nextHarga;
+      row['subtotal'] = nextSubtotal;
       row['harga_auto'] = true;
-      return previousHarga != nextHarga || !wasAuto;
+      row['subtotal_auto'] = hasFlatSubtotal;
+      return previousHarga != nextHarga ||
+          previousSubtotal != nextSubtotal ||
+          !wasAuto ||
+          wasAutoSubtotal != hasFlatSubtotal;
     }
 
     Map<String, dynamic> mapDetailRow(Map<String, dynamic> row) {
@@ -142,12 +152,24 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
       final muatIsManual = muatText.isNotEmpty &&
           !_AdminInvoiceListViewState._defaultMuatOptions.contains(muatText);
       final hargaText = _formatEditableNumber(row['harga']);
+      final subtotalText = _formatEditableNumber(row['subtotal']);
       final driverText = '${row['nama_supir'] ?? ''}'.trim();
       final isDriverManual =
           driverText.isNotEmpty && !_isKnownDriverOption(driverText);
-      final resolvedHarga = resolveHargaPerTon(
+      final resolvedRule = resolveHargaRule(
+        customerName: customer.text.trim(),
         lokasiMuat: muatText,
         lokasiBongkar: '${row['lokasi_bongkar'] ?? ''}',
+      );
+      final resolvedHarga = resolveHargaPerTon(
+        customerName: customer.text.trim(),
+        lokasiMuat: muatText,
+        lokasiBongkar: '${row['lokasi_bongkar'] ?? ''}',
+        muatan: '${row['muatan'] ?? ''}',
+      );
+      final resolvedSubtotal = _resolveHargaFlatTotalShared(
+        resolvedRule,
+        muatan: '${row['muatan'] ?? ''}',
       );
       final mappedRow = <String, dynamic>{
         'lokasi_muat': muatText,
@@ -166,9 +188,11 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
         'armada_end_date': _toInputDate(row['armada_end_date']),
         'tonase': _formatEditableNumber(row['tonase']),
         'harga': hargaText,
-        'harga_auto': resolvedHarga != null &&
-            resolvedHarga > 0 &&
-            _toNum(hargaText) == resolvedHarga.floorToDouble(),
+        'subtotal': subtotalText,
+        'harga_auto':
+            resolvedHarga != null && _toNum(hargaText) == resolvedHarga,
+        'subtotal_auto': resolvedSubtotal != null &&
+            _toNum(subtotalText) == resolvedSubtotal,
       };
       final defaultDriver =
           _resolveDefaultDriverForRow(mappedRow, armadas: armadas)?.trim() ??
@@ -193,7 +217,7 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
           ];
 
     double detailSubtotal(Map<String, dynamic> row) {
-      return _toNum(row['tonase']) * _toNum(row['harga']);
+      return _resolveInvoiceDetailSubtotalShared(row);
     }
 
     if (!mounted) return;
@@ -273,7 +297,22 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                         ),
                         const SizedBox(height: 10),
                         _dialogField(
-                            customer, _t('Nama Customer', 'Customer Name')),
+                          customer,
+                          _t('Nama Customer', 'Customer Name'),
+                          onChanged: (_) {
+                            var changed = false;
+                            for (final row in details) {
+                              changed =
+                                  applyAutoHargaPerTon(row, force: true) ||
+                                      changed;
+                            }
+                            setDialogState(() {
+                              if (changed) {
+                                editHargaFieldRefreshToken++;
+                              }
+                            });
+                          },
+                        ),
                         const SizedBox(height: 8),
                         _dialogField(
                           email,
@@ -372,7 +411,8 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                       }
                                       final hargaChanged = applyAutoHargaPerTon(
                                         row,
-                                        force: row['harga_auto'] == true,
+                                        force: row['harga_auto'] == true ||
+                                            row['subtotal_auto'] == true,
                                       );
                                       if (hargaChanged) {
                                         editHargaFieldRefreshToken++;
@@ -399,7 +439,8 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                       row['lokasi_muat_is_manual'] = true;
                                       final hargaChanged = applyAutoHargaPerTon(
                                         row,
-                                        force: row['harga_auto'] == true,
+                                        force: row['harga_auto'] == true ||
+                                            row['subtotal_auto'] == true,
                                       );
                                       setDialogState(() {
                                         if (hargaChanged) {
@@ -440,7 +481,16 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                   decoration: InputDecoration(
                                     hintText: _t('Muatan', 'Cargo'),
                                   ),
-                                  onChanged: (value) => row['muatan'] = value,
+                                  onChanged: (value) {
+                                    row['muatan'] = value;
+                                    final hargaChanged =
+                                        applyAutoHargaPerTon(row, force: true);
+                                    setDialogState(() {
+                                      if (hargaChanged) {
+                                        editHargaFieldRefreshToken++;
+                                      }
+                                    });
+                                  },
                                 ),
                                 const SizedBox(height: 8),
                                 CvantDropdownField<String>(
@@ -732,7 +782,9 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                         ),
                                         onChanged: (value) {
                                           row['harga'] = value;
+                                          row['subtotal'] = '';
                                           row['harga_auto'] = false;
+                                          row['subtotal_auto'] = false;
                                           setDialogState(() {});
                                         },
                                       ),
@@ -785,7 +837,9 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                 'armada_end_date': '',
                                 'tonase': '',
                                 'harga': '',
+                                'subtotal': '',
                                 'harga_auto': true,
+                                'subtotal_auto': false,
                               },
                             );
                             editDetailFieldRefreshToken++;
@@ -1042,6 +1096,7 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                                       ),
                                             'tonase': _toNum(row['tonase']),
                                             'harga': _toNum(row['harga']),
+                                            'subtotal': _toNum(row['subtotal']),
                                           };
                                         }).toList();
                                         final driverNames = detailsPayload
@@ -1563,12 +1618,14 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
     TextInputType? type,
     int maxLines = 1,
     bool readOnly = false,
+    ValueChanged<String>? onChanged,
   }) {
     return TextField(
       controller: controller,
       keyboardType: type,
       maxLines: maxLines,
       readOnly: readOnly,
+      onChanged: onChanged,
       decoration: InputDecoration(labelText: label),
     );
   }
@@ -1660,9 +1717,7 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
   }
 
   String _formatEditableNumber(dynamic value) {
-    final number = _toNum(value);
-    if (number == 0) return '';
-    return number.floor().toString();
+    return _formatEditableNumberShared(value);
   }
 
   void _snack(String msg, {bool error = false}) {

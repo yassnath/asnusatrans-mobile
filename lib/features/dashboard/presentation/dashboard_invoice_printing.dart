@@ -145,9 +145,7 @@ List<Map<String, dynamic>> _expandInvoicePrintDetailsForPdf(
   );
 
   double detailSubtotal(Map<String, dynamic> row) {
-    final explicit = _toNum(row['subtotal']);
-    if (explicit > 0) return explicit;
-    return _toNum(row['tonase']) * _toNum(row['harga']);
+    return _resolveInvoiceDetailSubtotalShared(row);
   }
 
   final subtotal = mergedDetails.fold<double>(
@@ -282,7 +280,7 @@ Map<int, pw.TableColumnWidth> _buildDashboardIncomeTableColumnWidths(
     maxPlate = max(maxPlate, plate.length);
     final hargaText = Formatters.rupiah(_toNum(row['harga']));
     final totalText =
-        Formatters.rupiah(_toNum(row['tonase']) * _toNum(row['harga']));
+        Formatters.rupiah(_resolveInvoiceDetailSubtotalShared(row));
     maxHarga = max(maxHarga, hargaText.length);
     maxTotal = max(maxTotal, totalText.length);
   }
@@ -551,7 +549,8 @@ Future<bool> _printDashboardInvoicePdf(
         final hasData = index < invoiceDetailList.length;
         final tonase = hasData ? _toNum(row['tonase']) : 0;
         final harga = hasData ? _toNum(row['harga']) : 0;
-        final rowSubtotal = tonase * harga;
+        final rowSubtotal =
+            hasData ? _resolveInvoiceDetailSubtotalShared(row) : 0;
         final armadaStartSource = row['armada_start_date'] ??
             item['armada_start_date'] ??
             row['tanggal'] ??
@@ -567,8 +566,8 @@ Future<bool> _printDashboardInvoicePdf(
           'bongkar': hasData
               ? _normalizeInvoicePrintLocationLabel(row['lokasi_bongkar'])
               : '',
-          'tonase': hasData ? formatTonase(tonase) : '',
-          'harga': hasData ? formatHargaPerTon(harga) : '',
+          'tonase': hasData && tonase > 0 ? formatTonase(tonase) : '',
+          'harga': hasData && harga > 0 ? formatHargaPerTon(harga) : '',
           'total': hasData ? formatRupiahNoPrefix(rowSubtotal) : '',
         });
       }
@@ -1378,7 +1377,8 @@ Future<bool> _printDashboardInvoicePdf(
                   const blankCell = '\u00A0';
                   final tonase = hasData ? _toNum(row['tonase']) : 0;
                   final harga = hasData ? _toNum(row['harga']) : 0;
-                  final rowSubtotal = tonase * harga;
+                  final rowSubtotal =
+                      hasData ? _resolveInvoiceDetailSubtotalShared(row) : 0;
                   final armadaStartSource = row['armada_start_date'] ??
                       item['armada_start_date'] ??
                       row['tanggal'] ??
@@ -1455,7 +1455,9 @@ Future<bool> _printDashboardInvoicePdf(
                         minFontSize: 6.5,
                       ),
                       _dashboardPdfCell(
-                        hasData ? formatTonase(tonase) : blankCell,
+                        hasData && tonase > 0
+                            ? formatTonase(tonase)
+                            : blankCell,
                         alignCenter: true,
                         hPadding: 4,
                         vPadding: tableRowVPadding,
@@ -1464,7 +1466,9 @@ Future<bool> _printDashboardInvoicePdf(
                         softLimitChars: 8,
                       ),
                       _dashboardPdfCell(
-                        hasData ? formatHargaPerTon(harga) : blankCell,
+                        hasData && harga > 0
+                            ? formatHargaPerTon(harga)
+                            : blankCell,
                         alignRight: true,
                         hPadding: 4,
                         vPadding: tableRowVPadding,

@@ -210,6 +210,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
 
     Map<String, dynamic> toDetailRow(Map<String, dynamic> option) {
       final hargaText = _safeNumberInputText(option['harga']);
+      final subtotalText = _safeNumberInputText(option['subtotal']);
       final driverText = _safeInputText(option['nama_supir']);
       final isDriverManual =
           driverText.isNotEmpty && !_isKnownDriverOption(driverText);
@@ -236,7 +237,9 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
         'armada_end_date': _safeInputText(option['armada_end_date']),
         'tonase': _safeNumberInputText(option['tonase']),
         'harga': hargaText,
+        'subtotal': subtotalText,
         'harga_auto': hargaText.isEmpty,
+        'subtotal_auto': subtotalText.isNotEmpty && hargaText.isEmpty,
       };
       final defaultDriver =
           _resolveDefaultDriverForRow(row, armadas: armadas)?.trim() ?? '';
@@ -403,6 +406,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
             : '${row['armada_end_date']}',
         'tonase': _toNum(row['tonase']),
         'harga': _toNum(row['harga']),
+        'subtotal': _toNum(row['subtotal']),
       };
     }).toList();
     final driverNames = detailsPayload
@@ -733,6 +737,19 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                       labelText: _t('Nama Customer', 'Customer Name'),
                       hintText: _t('Nama pelanggan', 'Customer name'),
                     ),
+                    onChanged: (_) {
+                      var hargaChanged = false;
+                      for (final row in _details) {
+                        hargaChanged =
+                            _applyAutoHargaPerTon(row, force: true) ||
+                                hargaChanged;
+                      }
+                      setState(() {
+                        if (hargaChanged) {
+                          _hargaFieldRefreshToken++;
+                        }
+                      });
+                    },
                   ),
                   const SizedBox(height: 10),
                   TextField(
@@ -818,7 +835,8 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                                 }
                                 final hargaChanged = _applyAutoHargaPerTon(
                                   row,
-                                  force: row['harga_auto'] == true,
+                                  force: row['harga_auto'] == true ||
+                                      row['subtotal_auto'] == true,
                                 );
                                 if (hargaChanged) {
                                   _hargaFieldRefreshToken++;
@@ -845,7 +863,8 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                                 row['lokasi_muat_is_manual'] = true;
                                 final hargaChanged = _applyAutoHargaPerTon(
                                   row,
-                                  force: row['harga_auto'] == true,
+                                  force: row['harga_auto'] == true ||
+                                      row['subtotal_auto'] == true,
                                 );
                                 setState(() {
                                   if (hargaChanged) {
@@ -886,7 +905,16 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                             decoration: InputDecoration(
                               hintText: _t('Muatan', 'Cargo'),
                             ),
-                            onChanged: (value) => row['muatan'] = value,
+                            onChanged: (value) {
+                              row['muatan'] = value;
+                              final hargaChanged =
+                                  _applyAutoHargaPerTon(row, force: true);
+                              setState(() {
+                                if (hargaChanged) {
+                                  _hargaFieldRefreshToken++;
+                                }
+                              });
+                            },
                           ),
                           const SizedBox(height: 8),
                           CvantDropdownField<String>(
@@ -1171,7 +1199,9 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                                   ),
                                   onChanged: (value) {
                                     row['harga'] = value;
+                                    row['subtotal'] = '';
                                     row['harga_auto'] = false;
+                                    row['subtotal_auto'] = false;
                                     setState(() {});
                                   },
                                 ),

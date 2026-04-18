@@ -53,3 +53,6 @@ backup/
 **/*.bak
 **/*.dump
 **/*.sql
+!supabase/seed_harga_per_ton_rules.sql
+!supabase/patch_income_harga_rules_20260417.sql
+!supabase/patch_sangu_batang_langon_20260418.sql

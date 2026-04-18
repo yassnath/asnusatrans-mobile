@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/widgets/page_fade_in.dart';
+import '../../../core/widgets/cvant_logo.dart';
 import '../../../core/notifications/push_notification_service.dart';
 import '../../dashboard/data/dashboard_repository.dart';
 import '../../dashboard/presentation/dashboard_page.dart';
@@ -239,19 +240,12 @@ class _SplashScreenState extends State<_SplashScreen>
               children: [
                 AnimatedBuilder(
                   animation: _controller,
-                  child: Image.asset(
-                    'assets/images/iconapk.png',
+                  child: const CvantAssetImage(
+                    assetPath: 'assets/images/iconapk.png',
+                    fallbackAssetPath: 'assets/images/logo.webp',
                     width: 112,
                     height: 112,
                     fit: BoxFit.contain,
-                    errorBuilder: (context, error, stackTrace) {
-                      return Image.asset(
-                        'assets/images/logo.webp',
-                        width: 112,
-                        height: 112,
-                        fit: BoxFit.contain,
-                      );
-                    },
                   ),
                   builder: (context, child) {
                     return Opacity(
