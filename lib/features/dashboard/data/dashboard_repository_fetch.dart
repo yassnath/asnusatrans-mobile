@@ -6,7 +6,7 @@ extension DashboardRepositoryFetchExtension on DashboardRepository {
       const invoiceColumns =
           'id,no_invoice,invoice_entity,tanggal,tanggal_kop,lokasi_kop,nama_pelanggan,email,no_telp,due_date,'
           'lokasi_muat,lokasi_bongkar,armada_start_date,armada_end_date,'
-          'tonase,harga,muatan,nama_supir,status,total_bayar,total_biaya,pph,diterima_oleh,'
+          'tonase,harga,muatan,nama_supir,status,paid_at,total_bayar,total_biaya,pph,diterima_oleh,'
           'customer_id,armada_id,order_id,rincian,created_at,updated_at,created_by,'
           'submission_role,approval_status,approval_requested_at,approval_requested_by,'
           'approved_at,approved_by,rejected_at,rejected_by,edit_request_status,'
@@ -40,7 +40,7 @@ extension DashboardRepositoryFetchExtension on DashboardRepository {
       const invoiceColumns =
           'id,no_invoice,invoice_entity,tanggal,tanggal_kop,lokasi_kop,nama_pelanggan,email,no_telp,due_date,'
           'lokasi_muat,lokasi_bongkar,armada_start_date,armada_end_date,'
-          'tonase,harga,muatan,nama_supir,status,total_bayar,total_biaya,pph,diterima_oleh,'
+          'tonase,harga,muatan,nama_supir,status,paid_at,total_bayar,total_biaya,pph,diterima_oleh,'
           'customer_id,armada_id,order_id,rincian,created_at,updated_at,created_by,'
           'submission_role,approval_status,approval_requested_at,approval_requested_by,'
           'approved_at,approved_by,rejected_at,rejected_by,edit_request_status,'
@@ -73,7 +73,7 @@ extension DashboardRepositoryFetchExtension on DashboardRepository {
       const invoiceColumns =
           'id,no_invoice,invoice_entity,tanggal,tanggal_kop,lokasi_kop,nama_pelanggan,email,no_telp,due_date,'
           'lokasi_muat,lokasi_bongkar,armada_start_date,armada_end_date,'
-          'tonase,harga,muatan,nama_supir,status,total_bayar,total_biaya,pph,diterima_oleh,'
+          'tonase,harga,muatan,nama_supir,status,paid_at,total_bayar,total_biaya,pph,diterima_oleh,'
           'customer_id,armada_id,order_id,rincian,created_at,updated_at,created_by,'
           'submission_role,approval_status,approval_requested_at,approval_requested_by,'
           'approved_at,approved_by,rejected_at,rejected_by,edit_request_status,'

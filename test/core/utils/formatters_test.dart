@@ -36,6 +36,18 @@ void main() {
     });
   });
 
+  group('Formatters.dMyShort', () {
+    test('formats valid date using short month invoice style', () {
+      expect(Formatters.dMyShort('2026-03-10'), '10-Mar-26');
+      expect(Formatters.dMyShort('2026-10-01'), '01-Oct-26');
+    });
+
+    test('returns dash for invalid date', () {
+      expect(Formatters.dMyShort(''), '-');
+      expect(Formatters.dMyShort(null), '-');
+    });
+  });
+
   group('Formatters.invoiceNumber', () {
     test('returns dash for empty value', () {
       expect(Formatters.invoiceNumber('', '2026-03-11'), '-');

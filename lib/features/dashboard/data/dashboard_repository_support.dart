@@ -1307,7 +1307,12 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
         bestRule = rule;
       }
     }
-    return bestRule;
+    return bestRule ??
+        resolveBuiltInIncomePricingRule(
+          customerName: customerName,
+          pickup: pickup,
+          destination: destination,
+        );
   }
 
   double? _resolveHargaPerTonRuleNominal(
@@ -1315,9 +1320,10 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
     required String muatan,
   }) {
     if (rule == null) return null;
-    final base = _num(rule['harga_per_ton'] ?? rule['harga']);
-    if (base <= 0) return null;
-    return _isTolakanCargo(muatan) ? base / 2 : base;
+    return resolveTolakanAdjustedPositiveValue(
+      rule['harga_per_ton'] ?? rule['harga'],
+      cargo: muatan,
+    );
   }
 
   double? _resolveHargaPerTonRuleFlatTotal(
@@ -1325,9 +1331,10 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
     required String muatan,
   }) {
     if (rule == null) return null;
-    final base = _num(rule['flat_total'] ?? rule['subtotal'] ?? rule['total']);
-    if (base <= 0) return null;
-    return _isTolakanCargo(muatan) ? base / 2 : base;
+    return resolveTolakanAdjustedPositiveValue(
+      rule['flat_total'] ?? rule['subtotal'] ?? rule['total'],
+      cargo: muatan,
+    );
   }
 
   bool _isSpecialIncomePricingBackfillCandidate(
@@ -1337,6 +1344,7 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
     if (rule == null) return false;
     final destinationKey = _normalizeIncomePricingText(destination);
     if (destinationKey.contains('batang')) return true;
+    if (destinationKey.contains('gempol')) return true;
     return _num(rule['flat_total']) > 0;
   }
 

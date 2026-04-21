@@ -32,6 +32,9 @@ import '../../auth/data/biometric_login_service.dart';
 import '../../auth/models/auth_session.dart';
 import '../data/dashboard_repository.dart';
 import '../models/dashboard_models.dart';
+import '../utils/income_pricing_rule_logic.dart';
+import '../utils/report_grouping_logic.dart';
+import '../utils/tolakan_logic.dart';
 import 'widgets/armada_overview_card.dart';
 import 'widgets/customer_orders_card.dart';
 import 'widgets/income_expense_chart_card.dart';
@@ -94,6 +97,254 @@ String formatInvoiceTonase(dynamic value) {
 
 String formatInvoiceHargaPerTon(dynamic value) {
   return Formatters.decimalFixed(_toNum(value), decimalDigits: 1);
+}
+
+class _DashboardPdfFontBundle {
+  const _DashboardPdfFontBundle({
+    required this.regular,
+    required this.bold,
+    required this.italic,
+    required this.boldItalic,
+    required this.title,
+  });
+
+  final pw.Font regular;
+  final pw.Font bold;
+  final pw.Font italic;
+  final pw.Font boldItalic;
+  final pw.Font title;
+}
+
+Future<_DashboardPdfFontBundle>? _dashboardPdfFontBundleFuture;
+
+pw.ThemeData _dashboardPdfTheme(_DashboardPdfFontBundle fonts) {
+  return pw.ThemeData.withFont(
+    base: fonts.regular,
+    bold: fonts.bold,
+    italic: fonts.italic,
+    boldItalic: fonts.boldItalic,
+  );
+}
+
+Future<_DashboardPdfFontBundle> _loadDashboardPdfFontBundle() {
+  return _dashboardPdfFontBundleFuture ??= _createDashboardPdfFontBundle();
+}
+
+Future<_DashboardPdfFontBundle> _createDashboardPdfFontBundle() async {
+  try {
+    final regular = await _loadPdfFontAsset('assets/fonts/Inter-Regular.ttf');
+    final italic = await _loadPdfFontAsset('assets/fonts/Inter-Italic.ttf');
+    return _DashboardPdfFontBundle(
+      regular: regular,
+      bold: regular,
+      italic: italic,
+      boldItalic: italic,
+      title: regular,
+    );
+  } catch (_) {
+    final regular = pw.Font.helvetica();
+    final bold = pw.Font.helveticaBold();
+    final italic = pw.Font.helveticaOblique();
+    final boldItalic = pw.Font.helveticaBoldOblique();
+    return _DashboardPdfFontBundle(
+      regular: regular,
+      bold: bold,
+      italic: italic,
+      boldItalic: boldItalic,
+      title: bold,
+    );
+  }
+}
+
+Future<pw.Font> _loadPdfFontAsset(String assetPath) async {
+  final bytes = await _loadBinaryAssetWithFileFallback(assetPath);
+  return pw.Font.ttf(ByteData.sublistView(bytes));
+}
+
+Future<Uint8List> _loadBinaryAssetWithFileFallback(String assetPath) async {
+  final bundledFile = _resolveBundledAssetFileForPdf(assetPath);
+  if (bundledFile != null) {
+    return bundledFile.readAsBytes();
+  }
+  final data = await rootBundle.load(assetPath);
+  return data.buffer.asUint8List();
+}
+
+Future<String> _loadTextAssetWithFileFallback(String assetPath) async {
+  final bundledFile = _resolveBundledAssetFileForPdf(assetPath);
+  if (bundledFile != null) {
+    return bundledFile.readAsString();
+  }
+  return rootBundle.loadString(assetPath);
+}
+
+File? _resolveBundledAssetFileForPdf(String relativeAssetPath) {
+  if (kIsWeb) return null;
+  final normalizedRelative =
+      relativeAssetPath.replaceAll('/', Platform.pathSeparator);
+  final candidatePaths = <String>[
+    _joinBundledAssetPath(
+      Directory.current.path,
+      'data',
+      'flutter_assets',
+      normalizedRelative,
+    ),
+    _joinBundledAssetPath(
+      File(Platform.resolvedExecutable).parent.path,
+      'data',
+      'flutter_assets',
+      normalizedRelative,
+    ),
+    _joinBundledAssetPath(Directory.current.path, normalizedRelative),
+  ];
+
+  for (final candidate in candidatePaths) {
+    final file = File(candidate);
+    if (file.existsSync()) {
+      return file;
+    }
+  }
+  return null;
+}
+
+String _joinBundledAssetPath(String base, String next,
+    [String? third, String? fourth]) {
+  final segments = <String>[
+    base,
+    next,
+    if (third != null) third,
+    if (fourth != null) fourth,
+  ].where((segment) => segment.isNotEmpty).toList(growable: false);
+  return segments.join(Platform.pathSeparator);
+}
+
+Future<void> _cleanupOldWindowsPrintArtifacts(Directory directory) async {
+  if (!await directory.exists()) return;
+  final now = DateTime.now();
+  try {
+    await for (final entity in directory.list(followLinks: false)) {
+      if (entity is! File) continue;
+      try {
+        final stat = await entity.stat();
+        if (now.difference(stat.modified) > const Duration(days: 2)) {
+          await entity.delete();
+        }
+      } catch (_) {}
+    }
+  } catch (_) {}
+}
+
+Future<bool> _tryInvokeWindowsPdfPrintVerb(File pdfFile) async {
+  final result = await Process.run(
+    'powershell',
+    <String>[
+      '-NoProfile',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-Command',
+      r'''
+$path = $args[0]
+
+function Try-StartPrintVerb {
+  param(
+    [string]$Verb,
+    [string[]]$ArgumentList = @()
+  )
+
+  try {
+    if ($ArgumentList.Count -gt 0) {
+      Start-Process -FilePath $path -Verb $Verb -ArgumentList $ArgumentList -ErrorAction Stop | Out-Null
+    } else {
+      Start-Process -FilePath $path -Verb $Verb -ErrorAction Stop | Out-Null
+    }
+    return $true
+  } catch {
+    return $false
+  }
+}
+
+if (Try-StartPrintVerb -Verb 'Print') {
+  exit 0
+}
+
+$defaultPrinter = $null
+try {
+  $defaultPrinter = Get-CimInstance Win32_Printer | Where-Object { $_.Default } | Select-Object -ExpandProperty Name -First 1
+} catch {
+  $defaultPrinter = $null
+}
+
+if ($defaultPrinter -and (Try-StartPrintVerb -Verb 'PrintTo' -ArgumentList @($defaultPrinter))) {
+  exit 0
+}
+
+try {
+  $shell = New-Object -ComObject Shell.Application
+  $folder = Split-Path -Path $path
+  $name = Split-Path -Path $path -Leaf
+  $item = $shell.Namespace($folder).ParseName($name)
+  if ($null -eq $item) { exit 1 }
+
+  foreach ($verb in @('Print', 'PrintTo')) {
+    try {
+      $item.InvokeVerb($verb)
+      Start-Sleep -Milliseconds 250
+      exit 0
+    } catch {}
+  }
+} catch {}
+
+exit 1
+''',
+      pdfFile.path,
+    ],
+  );
+  return result.exitCode == 0;
+}
+
+Future<bool> _dispatchPdfBytesToPrinter({
+  required Uint8List bytes,
+  required String name,
+}) async {
+  if (!kIsWeb && Platform.isWindows) {
+    final artifactDir = Directory(
+      _joinBundledAssetPath(Directory.systemTemp.path, 'cvant_print_jobs'),
+    );
+    if (!await artifactDir.exists()) {
+      await artifactDir.create(recursive: true);
+    }
+    unawaited(_cleanupOldWindowsPrintArtifacts(artifactDir));
+    final safeBaseName = name.toLowerCase().endsWith('.pdf') ? name : '$name.pdf';
+    final safeName = safeBaseName.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+    final file = File(
+      _joinBundledAssetPath(
+        artifactDir.path,
+        '${DateTime.now().millisecondsSinceEpoch}_$safeName',
+      ),
+    );
+    await file.writeAsBytes(bytes, flush: true);
+    if (await _tryInvokeWindowsPdfPrintVerb(file)) {
+      return true;
+    }
+    final opened = await launchUrl(
+      Uri.file(file.path),
+      mode: LaunchMode.externalApplication,
+    );
+    if (!opened) {
+      AppSecurity.debugLog(
+        'Windows PDF print/open fallback failed',
+        error: file.path,
+      );
+      throw Exception('Windows could not start a PDF print or open action.');
+    }
+    return true;
+  }
+
+  await Printing.layoutPdf(
+    name: name,
+    onLayout: (_) async => bytes,
+  );
+  return true;
 }
 
 Uint8List _trimWhiteMarginsFromPng(

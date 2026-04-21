@@ -418,8 +418,9 @@ Future<bool> _printDashboardInvoicePdf(
     );
     pw.MemoryImage? kopLogo;
     try {
-      final logoBytes = await rootBundle.load('assets/images/iconapk.png');
-      kopLogo = pw.MemoryImage(logoBytes.buffer.asUint8List());
+      final logoBytes =
+          await _loadBinaryAssetWithFileFallback('assets/images/iconapk.png');
+      kopLogo = pw.MemoryImage(logoBytes);
     } catch (_) {
       kopLogo = null;
     }
@@ -428,8 +429,8 @@ Future<bool> _printDashboardInvoicePdf(
       final kopAsset = resolvedInvoiceEntity == Formatters.invoiceEntityPtAnt
           ? 'assets/images/kopsuratpt.png'
           : 'assets/images/kopsurat.jpeg';
-      final kopBytes = await rootBundle.load(kopAsset);
-      companyKopImage = pw.MemoryImage(kopBytes.buffer.asUint8List());
+      final kopBytes = await _loadBinaryAssetWithFileFallback(kopAsset);
+      companyKopImage = pw.MemoryImage(kopBytes);
     } catch (_) {
       companyKopImage = null;
     }
@@ -612,6 +613,7 @@ Future<bool> _printDashboardInvoicePdf(
       );
     }
 
+    final pdfFonts = await _loadDashboardPdfFontBundle();
     late final pw.Font invoiceTitleFont;
     try {
       invoiceTitleFont = await PdfGoogleFonts.archivoBlack();
@@ -854,7 +856,7 @@ Future<bool> _printDashboardInvoicePdf(
                     : pw.FittedBox(
                         fit: pw.BoxFit.scaleDown,
                         child: pw.Text(
-                          leftText.replaceAll(' ', '\u00A0'),
+                          leftText,
                           maxLines: 1,
                           textAlign: pw.TextAlign.center,
                           style: const pw.TextStyle(
@@ -873,7 +875,7 @@ Future<bool> _printDashboardInvoicePdf(
                     fit: pw.BoxFit.scaleDown,
                     alignment: pw.Alignment.centerRight,
                     child: pw.Text(
-                      label.replaceAll(' ', '\u00A0'),
+                      label,
                       textAlign: pw.TextAlign.right,
                       maxLines: 1,
                       style: textStyle,
@@ -964,7 +966,7 @@ Future<bool> _printDashboardInvoicePdf(
                 fit: pw.BoxFit.scaleDown,
                 alignment: pw.Alignment.centerRight,
                 child: pw.Text(
-                  text.replaceAll(' ', '\u00A0'),
+                  text,
                   textAlign: pw.TextAlign.right,
                   maxLines: 1,
                   style: labelStyle,
@@ -983,7 +985,7 @@ Future<bool> _printDashboardInvoicePdf(
                       child: pw.FittedBox(
                         fit: pw.BoxFit.scaleDown,
                         child: pw.Text(
-                          leftText.replaceAll(' ', '\u00A0'),
+                          leftText,
                           maxLines: 1,
                           textAlign: pw.TextAlign.center,
                           style: const pw.TextStyle(
@@ -1129,6 +1131,7 @@ Future<bool> _printDashboardInvoicePdf(
                           child: pw.Text(
                             'NO : $invoiceNumber',
                             style: pw.TextStyle(
+                              font: pw.Font.helveticaBold(),
                               fontSize: compact ? 10 : 11,
                               fontWeight: pw.FontWeight.bold,
                               color: PdfColors.black,
@@ -1174,10 +1177,11 @@ Future<bool> _printDashboardInvoicePdf(
                               child: pw.FittedBox(
                                 fit: pw.BoxFit.scaleDown,
                                 child: pw.Text(
-                                  customerName.replaceAll(' ', '\u00A0'),
+                                  customerName,
                                   maxLines: 1,
                                   textAlign: pw.TextAlign.center,
                                   style: pw.TextStyle(
+                                    font: pw.Font.helveticaBoldOblique(),
                                     fontSize: infoFont,
                                     fontWeight: pw.FontWeight.bold,
                                     fontStyle: pw.FontStyle.italic,
@@ -1206,11 +1210,11 @@ Future<bool> _printDashboardInvoicePdf(
                           child: pw.FittedBox(
                             fit: pw.BoxFit.scaleDown,
                             child: pw.Text(
-                              (kopLocationUpper ?? '-')
-                                  .replaceAll(' ', '\u00A0'),
+                              (kopLocationUpper ?? '-'),
                               maxLines: 1,
                               textAlign: pw.TextAlign.center,
                               style: pw.TextStyle(
+                                font: pw.Font.helveticaBoldOblique(),
                                 fontSize: infoFont,
                                 fontWeight: pw.FontWeight.bold,
                                 fontStyle: pw.FontStyle.italic,
@@ -1374,7 +1378,7 @@ Future<bool> _printDashboardInvoicePdf(
                 ...List<pw.TableRow>.generate(printableRows.length, (index) {
                   final row = printableRows[index];
                   final hasData = index < invoiceDetailList.length;
-                  const blankCell = '\u00A0';
+                  const blankCell = '';
                   final tonase = hasData ? _toNum(row['tonase']) : 0;
                   final harga = hasData ? _toNum(row['harga']) : 0;
                   final rowSubtotal =
@@ -1573,6 +1577,7 @@ Future<bool> _printDashboardInvoicePdf(
                               child: pw.Text(
                                 'A N T O K',
                                 style: pw.TextStyle(
+                                  font: pw.Font.helveticaBold(),
                                   fontSize: signatureTextFontSize,
                                   fontWeight: pw.FontWeight.bold,
                                   decoration: pw.TextDecoration.none,
@@ -1613,7 +1618,7 @@ Future<bool> _printDashboardInvoicePdf(
                     pw.SizedBox(height: summaryBoxGap),
                     (isCompanyInvoice
                         ? pw.Transform.translate(
-                            offset: const PdfPoint(-0.5, -5),
+                            offset: const PdfPoint(-1.8, -5),
                             child: pw.Column(
                               crossAxisAlignment: pw.CrossAxisAlignment.stretch,
                               children: [
@@ -1637,6 +1642,7 @@ Future<bool> _printDashboardInvoicePdf(
                                     'Rekening BCA a/c 6155345601 a/n CV AS NUSA TRANS\nNPWP 096.775.534.9-617.000',
                                     textAlign: pw.TextAlign.center,
                                     style: pw.TextStyle(
+                                      font: pw.Font.helveticaBoldOblique(),
                                       fontSize: infoFont,
                                       color: PdfColors.blue700,
                                       fontWeight: pw.FontWeight.bold,
@@ -1648,7 +1654,7 @@ Future<bool> _printDashboardInvoicePdf(
                             ),
                           )
                         : pw.Transform.translate(
-                            offset: const PdfPoint(-1, -3),
+                            offset: const PdfPoint(-2.3, -3),
                             child: pw.Container(
                               alignment: pw.Alignment.center,
                               padding: const pw.EdgeInsets.symmetric(
@@ -1665,6 +1671,7 @@ Future<bool> _printDashboardInvoicePdf(
                                 'Rekening BCA a/c 1730290001 a/n BUDI SUKAMTO',
                                 textAlign: pw.TextAlign.center,
                                 style: pw.TextStyle(
+                                  font: pw.Font.helveticaBoldOblique(),
                                   fontSize: infoFont,
                                   color: PdfColors.blue700,
                                   fontWeight: pw.FontWeight.bold,
@@ -1751,6 +1758,7 @@ Future<bool> _printDashboardInvoicePdf(
                               textAlign: pw.TextAlign.center,
                               maxLines: 1,
                               style: pw.TextStyle(
+                                font: pw.Font.helveticaBold(),
                                 fontSize: signatureTextFontSize,
                                 fontWeight: pw.FontWeight.bold,
                                 decoration: pw.TextDecoration.none,
@@ -1794,7 +1802,7 @@ Future<bool> _printDashboardInvoicePdf(
     final tableRenderInfo = usePortrait
         ? fullExcelTableImage?.renderSource
         : compactExcelTableImage?.renderSource;
-    final doc = pw.Document();
+    final doc = pw.Document(theme: _dashboardPdfTheme(pdfFonts));
 
     if (usePortrait) {
       doc.addPage(
@@ -1857,9 +1865,9 @@ Future<bool> _printDashboardInvoicePdf(
       renderInfo: tableRenderInfo,
     );
     if (!confirmed) return false;
-    await Printing.layoutPdf(
+    await _dispatchPdfBytesToPrinter(
+      bytes: pdfBytes,
       name: pdfName,
-      onLayout: (_) async => pdfBytes,
     );
     if (markAsFixed) {
       await host.markInvoicesFixed(
@@ -1999,8 +2007,9 @@ extension _AdminInvoiceListViewPrinting on _DashboardInvoicePrintHost {
       final tempDir = await Directory.systemTemp.createTemp(
         'cvant_invoice_excel_',
       );
-      final templateBytes =
-          await rootBundle.load('assets/templates/invoice_table_template.xlsx');
+      final templateBytes = await _loadBinaryAssetWithFileFallback(
+        'assets/templates/invoice_table_template.xlsx',
+      );
       final templatePath =
           '${tempDir.path}${Platform.pathSeparator}invoice_table_template.xlsx';
       final payloadPath =
@@ -2011,11 +2020,12 @@ extension _AdminInvoiceListViewPrinting on _DashboardInvoicePrintHost {
           '${tempDir.path}${Platform.pathSeparator}render_invoice_table.ps1';
 
       await File(templatePath).writeAsBytes(
-        templateBytes.buffer.asUint8List(),
+        templateBytes,
         flush: true,
       );
-      final scriptContent = await rootBundle
-          .loadString('tooling/windows/render_invoice_table.ps1');
+      final scriptContent = await _loadTextAssetWithFileFallback(
+        'tooling/windows/render_invoice_table.ps1',
+      );
       await File(scriptPath).writeAsString(scriptContent, flush: true);
       await File(payloadPath).writeAsString(
         jsonEncode({
@@ -2155,6 +2165,7 @@ extension _AdminInvoiceListViewPrinting on _DashboardInvoicePrintHost {
     final sortedRows = _sortRowsByBongkarAsc(rows);
 
     try {
+      final pdfFonts = await _loadDashboardPdfFontBundle();
       const tableWidth = 608.0;
       const headerHeight = 21.0;
       const bodyHeight = 16.0;
@@ -2318,7 +2329,7 @@ extension _AdminInvoiceListViewPrinting on _DashboardInvoicePrintHost {
                   final row = index < sortedRows.length
                       ? sortedRows[index]
                       : const <String, String>{};
-                  const blankCell = '\u00A0';
+                  const blankCell = '';
 
                   String value(String key) {
                     final text = (row[key] ?? '').trim();
@@ -2506,7 +2517,7 @@ extension _AdminInvoiceListViewPrinting on _DashboardInvoicePrintHost {
         }
       }
 
-      final doc = pw.Document();
+      final doc = pw.Document(theme: _dashboardPdfTheme(pdfFonts));
       doc.addPage(
         pw.Page(
           pageFormat: PdfPageFormat(pageWidth, pageHeight),

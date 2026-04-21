@@ -229,10 +229,6 @@ bool _incomeCustomerKeyMatchesShared(String customerName, String ruleCustomer) {
   return ruleTokens.every(inputTokens.contains);
 }
 
-bool _isTolakanCargoShared(String value) {
-  return _normalizeIncomeRuleTextShared(value).contains('tolakan');
-}
-
 String _formatEditableNumberShared(dynamic value) {
   final number = _toNum(value);
   if (number == 0) return '';
@@ -326,7 +322,12 @@ Map<String, dynamic>? _resolveHargaRuleShared({
       bestRule = rule;
     }
   }
-  return bestRule;
+  return bestRule ??
+      resolveBuiltInIncomePricingRule(
+        customerName: customerName,
+        pickup: lokasiMuat,
+        destination: lokasiBongkar,
+      );
 }
 
 double? _resolveHargaPerTonValueShared(
@@ -334,9 +335,10 @@ double? _resolveHargaPerTonValueShared(
   required String muatan,
 }) {
   if (rule == null) return null;
-  final base = _toNum(rule['harga_per_ton'] ?? rule['harga']);
-  if (base <= 0) return null;
-  return _isTolakanCargoShared(muatan) ? base / 2 : base;
+  return resolveTolakanAdjustedPositiveValue(
+    rule['harga_per_ton'] ?? rule['harga'],
+    cargo: muatan,
+  );
 }
 
 double? _resolveHargaFlatTotalShared(
@@ -344,7 +346,8 @@ double? _resolveHargaFlatTotalShared(
   required String muatan,
 }) {
   if (rule == null) return null;
-  final base = _toNum(rule['flat_total'] ?? rule['subtotal'] ?? rule['total']);
-  if (base <= 0) return null;
-  return _isTolakanCargoShared(muatan) ? base / 2 : base;
+  return resolveTolakanAdjustedPositiveValue(
+    rule['flat_total'] ?? rule['subtotal'] ?? rule['total'],
+    cargo: muatan,
+  );
 }

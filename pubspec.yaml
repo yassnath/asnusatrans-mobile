@@ -31,6 +31,8 @@ dependencies:
 dependency_overrides:
   app_links:
     path: third_party/app_links
+  printing:
+    path: third_party/printing
   flutter_local_notifications_windows:
     path: third_party/flutter_local_notifications_windows
   flutter_secure_storage_windows:

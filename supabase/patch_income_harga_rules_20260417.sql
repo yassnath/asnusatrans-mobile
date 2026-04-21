@@ -17,7 +17,13 @@ create index if not exists harga_per_ton_rules_customer_lower_idx
 
 delete from public.harga_per_ton_rules
 where lower(coalesce(customer_name, '')) in ('', 'pt bornava indobara mandiri', 'giono')
-  and lower(coalesce(lokasi_bongkar, '')) in ('batang', 'nganjuk driyo');
+  and (
+    lower(coalesce(lokasi_bongkar, '')) = 'batang'
+    or (
+      lower(coalesce(customer_name, '')) = 'giono'
+      and lower(coalesce(lokasi_bongkar, '')) in ('nganjuk driyo', 'driyo')
+    )
+  );
 
 insert into public.harga_per_ton_rules (
   customer_name,
@@ -31,6 +37,6 @@ insert into public.harga_per_ton_rules (
 values
   (null, null, 'Batang', 235.00, null, 100, true),
   ('PT Bornava Indobara Mandiri', null, 'Batang', 225.00, null, 200, true),
-  ('Giono', null, 'Nganjuk Driyo', 0.00, 1600000.00, 250, true);
+  ('Giono', 'Nganjuk', 'Driyo', 0.00, 1600000.00, 250, true);
 
 commit;

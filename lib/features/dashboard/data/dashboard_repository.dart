@@ -5,6 +5,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/security/app_security.dart';
 import '../../../core/utils/formatters.dart';
 import '../models/dashboard_models.dart';
+import '../utils/income_pricing_rule_logic.dart';
+import '../utils/sangu_rule_logic.dart';
+import '../utils/tolakan_logic.dart';
 
 part 'dashboard_repository_dashboard.dart';
 part 'dashboard_repository_fetch.dart';
@@ -123,6 +126,7 @@ class DashboardRepository {
   static const _optionalInvoiceColumns = <String>{
     'no_invoice',
     'invoice_entity',
+    'paid_at',
     ..._invoiceWorkflowColumns,
   };
   static const _optionalExpenseColumns = <String>{
@@ -1010,8 +1014,10 @@ class DashboardRepository {
             final detailCargo = _firstNonEmptyText([
               detail['muatan'],
             ]);
-            final baseAmount =
-                _isTolakanCargo(detailCargo) ? amount * 2 : amount;
+            final baseAmount = resolveTolakanBaseValue(
+              amount,
+              cargo: detailCargo,
+            );
             preservedBaseAmountByName[key] = baseAmount;
           }
         }
@@ -1027,11 +1033,11 @@ class DashboardRepository {
 
       final expenseDetails = <Map<String, dynamic>>[];
       for (final detail in details) {
-        final pickup = _firstNonEmptyText([
+        final originalPickup = _firstNonEmptyText([
           detail['lokasi_muat'],
           fallbackPickup,
         ]);
-        final bongkar = _firstNonEmptyText([
+        final originalDestination = _firstNonEmptyText([
           detail['lokasi_bongkar'],
           fallbackDestination,
         ]);
@@ -1046,8 +1052,8 @@ class DashboardRepository {
           detail['armada_label'],
           detail['armada'],
         ]);
-        final hasDepartureData = pickup.isNotEmpty ||
-            bongkar.isNotEmpty ||
+        final hasDepartureData = originalPickup.isNotEmpty ||
+            originalDestination.isNotEmpty ||
             effectiveArmadaId.isNotEmpty ||
             effectiveArmadaManual.isNotEmpty ||
             effectiveArmadaLabel.isNotEmpty;
@@ -1058,16 +1064,35 @@ class DashboardRepository {
           detail['muatan'],
           fallbackCargo,
         ]);
-        final resolvedRoute = _resolveAutoSanguRouteForCargo(
-          pickup: pickup,
-          destination: bongkar,
+        final baseRoute = (
+          pickup: originalPickup.trim(),
+          destination: originalDestination.trim(),
+        );
+        final displayRoute = resolveTolakanDisplayRoute(
+          pickup: baseRoute.pickup,
+          destination: baseRoute.destination,
           cargo: effectiveCargo,
         );
-        final match = _findSanguRuleMatch(
+        final baseMatch = _findSanguRuleMatch(
           rules,
-          pickup: resolvedRoute.pickup,
-          destination: resolvedRoute.destination,
+          pickup: baseRoute.pickup,
+          destination: baseRoute.destination,
         );
+        final match = baseMatch ??
+            (displayRoute.pickup == baseRoute.pickup &&
+                    displayRoute.destination == baseRoute.destination
+                ? null
+                : _findSanguRuleMatch(
+                    rules,
+                    pickup: displayRoute.pickup,
+                    destination: displayRoute.destination,
+                  ));
+
+        if (baseRoute.pickup.isEmpty &&
+            baseRoute.destination.isEmpty &&
+            match == null) {
+          continue;
+        }
 
         final plate = _resolvePlateTextFromDetail(
           detail,
@@ -1076,14 +1101,14 @@ class DashboardRepository {
         );
         final plateLabel = plate.isEmpty ? '-' : plate;
         final pickupLabel =
-            resolvedRoute.pickup.isEmpty ? '-' : resolvedRoute.pickup;
+            displayRoute.pickup.isEmpty ? '-' : displayRoute.pickup;
         final bongkarLabel =
-            resolvedRoute.destination.isEmpty ? '-' : resolvedRoute.destination;
+            displayRoute.destination.isEmpty ? '-' : displayRoute.destination;
         final detailName = '$plateLabel ($pickupLabel-$bongkarLabel)';
         final detailKey = normalizeDetailKey(detailName);
         final matchedNominal = _num(match?['nominal'] ?? 0);
         final preservedBaseNominal = preservedBaseAmountByName[detailKey] ?? 0;
-        final isTolakan = _isTolakanCargo(effectiveCargo);
+        final isTolakan = isTolakanCargo(effectiveCargo);
         final effectiveNominal = matchedNominal > 0
             ? (isTolakan ? matchedNominal / 2 : matchedNominal)
             : (preservedBaseNominal > 0
@@ -1098,8 +1123,8 @@ class DashboardRepository {
         expenseDetails.add(<String, dynamic>{
           'nama': detailName,
           'nama_supir': singleDriverName,
-          'lokasi_muat': resolvedRoute.pickup,
-          'lokasi_bongkar': resolvedRoute.destination,
+          'lokasi_muat': displayRoute.pickup,
+          'lokasi_bongkar': displayRoute.destination,
           'muatan': effectiveCargo,
           'jumlah': effectiveNominal,
         });
@@ -1487,8 +1512,8 @@ class DashboardRepository {
               'lokasi_muat': muat,
               'lokasi_bongkar': bongkar,
               'nominal': nominal,
-              '__muat_norm': _normalizeSanguPlace(muat),
-              '__bongkar_norm': _normalizeSanguPlace(bongkar),
+              '__muat_norm': normalizeSanguPlace(muat),
+              '__bongkar_norm': normalizeSanguPlace(bongkar),
             };
           })
           .whereType<Map<String, dynamic>>()
@@ -1505,9 +1530,17 @@ class DashboardRepository {
     required String pickup,
     required String destination,
   }) {
-    final pickupNorm = _normalizeSanguPlace(pickup);
-    final destinationNorm = _normalizeSanguPlace(destination);
+    final pickupNorm = normalizeSanguPlace(pickup);
+    final destinationNorm = normalizeSanguPlace(destination);
     if (pickupNorm.isEmpty && destinationNorm.isEmpty) return null;
+
+    final prioritizedRouteRule = resolvePrioritizedSanguRouteRule(
+      pickup: pickup,
+      destination: destination,
+    );
+    if (prioritizedRouteRule != null) {
+      return prioritizedRouteRule;
+    }
 
     bool containsEither(String left, String right) {
       if (left.isEmpty || right.isEmpty) return false;
@@ -1524,9 +1557,6 @@ class DashboardRepository {
         if (containsEither(pickupNorm, muatNorm) &&
             containsEither(destinationNorm, bongkarNorm)) {
           return 300;
-        }
-        if (pickupNorm == muatNorm || destinationNorm == bongkarNorm) {
-          return 180;
         }
         return 0;
       }
@@ -1558,21 +1588,6 @@ class DashboardRepository {
     }
     if (bestRule != null && bestScore > 0) return bestRule;
 
-    final batangToLangon =
-        pickupNorm == 'batang' && destinationNorm == 'langon';
-    final langonToBatang =
-        pickupNorm == 'langon' && destinationNorm == 'batang';
-    if (batangToLangon || langonToBatang) {
-      return <String, dynamic>{
-        'tempat': batangToLangon ? 'BATANG - T. LANGON' : 'T. LANGON - BATANG',
-        'lokasi_muat': batangToLangon ? 'BATANG' : 'T. LANGON',
-        'lokasi_bongkar': batangToLangon ? 'T. LANGON' : 'BATANG',
-        'nominal': 3400000,
-        '__muat_norm': batangToLangon ? 'batang' : 'langon',
-        '__bongkar_norm': batangToLangon ? 'langon' : 'batang',
-      };
-    }
-
     // Fallback khusus: lokasi bongkar Purwodadi.
     // Tetap dianjurkan menambahkan rule di tabel sangu_driver_rules,
     // tapi fallback ini menjaga agar auto expense tetap terbentuk.
@@ -1598,6 +1613,17 @@ class DashboardRepository {
         'nominal': 1050000,
         '__muat_norm': '',
         '__bongkar_norm': 'pare',
+      };
+    }
+
+    if (destinationNorm == 'gempol') {
+      return <String, dynamic>{
+        'tempat': 'Gempol',
+        'lokasi_muat': '',
+        'lokasi_bongkar': 'Gempol',
+        'nominal': 690000,
+        '__muat_norm': '',
+        '__bongkar_norm': 'gempol',
       };
     }
 
@@ -1672,97 +1698,6 @@ class DashboardRepository {
         (bongkarTokens * 500) +
         (muatNorm.length * 10) +
         bongkarNorm.length;
-  }
-
-  String _normalizeSanguPlace(String value) {
-    final normalized = value
-        .toLowerCase()
-        .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-    if (normalized.isEmpty) return normalized;
-    if (normalized.contains('purwodadi')) return 'purwodadi';
-    if (normalized.contains('pare')) return 'pare';
-    if (normalized.contains('sudali') || normalized.contains('soedali')) {
-      return 'sudali';
-    }
-    if (normalized.contains('kedawung') || normalized.contains('dawung')) {
-      return 'kedawung';
-    }
-    if (normalized.contains('singosari') ||
-        (normalized.contains('ksi') && normalized.contains('singosari'))) {
-      return 'singosari';
-    }
-    if (normalized == 'langon' ||
-        normalized == 't langon' ||
-        normalized == 'tlangon') {
-      return 'langon';
-    }
-    if (normalized.contains('cj') && normalized.contains('mojoagung')) {
-      return 'mojoagung';
-    }
-    if (normalized.contains('mojoagung')) return 'mojoagung';
-    if (normalized.contains('bricon') && normalized.contains('mojo')) {
-      return 'bricon';
-    }
-    if (normalized.contains('bricon')) return 'bricon';
-    if (normalized.contains('kletek') && normalized.contains('bmc')) {
-      return 'kletek';
-    }
-    if (normalized.contains('safelock')) return 'safelock';
-    if (normalized.contains('tuban') || normalized.contains('jenu')) {
-      return 'tuban jenu';
-    }
-    if (normalized.contains('kediri')) return 'kediri';
-    if (normalized.contains('sragen')) return 'sragen';
-    if (normalized.contains('bimoli')) return 'bimoli';
-    if (normalized.contains('batang')) return 'batang';
-    if (normalized.contains('kig')) return 'kig';
-    if (normalized.contains('kendal')) return 'kendal';
-    if (normalized.contains('gema')) return 'gema';
-    if (normalized.contains('mkp')) return 'mkp';
-    if (normalized.contains('sgm')) return 'sgm';
-    if (normalized.contains('molindo')) return 'molindo';
-    if (normalized.contains('muncar')) return 'muncar';
-    if (normalized.contains('tongas')) return 'tongas';
-    if (normalized.contains('tanggulangin')) return 'tanggulangin';
-    if (normalized.contains('tim')) return 'tim';
-    if (normalized.contains('aspal')) return 'aspal';
-    return normalized;
-  }
-
-  bool _isTolakanCargo(String value) {
-    final normalized = value
-        .toLowerCase()
-        .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-    return normalized.contains('tolakan');
-  }
-
-  ({String pickup, String destination}) _resolveAutoSanguRouteForCargo({
-    required String pickup,
-    required String destination,
-    required String cargo,
-  }) {
-    final cleanedPickup = pickup.trim();
-    final cleanedDestination = destination.trim();
-    if (!_isTolakanCargo(cargo)) {
-      return (pickup: cleanedPickup, destination: cleanedDestination);
-    }
-
-    final pickupNorm = _normalizeSanguPlace(cleanedPickup);
-    final destinationNorm = _normalizeSanguPlace(cleanedDestination);
-    final isLangonToBatang =
-        pickupNorm == 'langon' && destinationNorm == 'batang';
-    if (!isLangonToBatang) {
-      return (pickup: cleanedPickup, destination: cleanedDestination);
-    }
-
-    return (
-      pickup: cleanedDestination,
-      destination: cleanedPickup,
-    );
   }
 
   Future<void> _setArmadaStatusBestEffort(

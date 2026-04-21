@@ -390,8 +390,9 @@ extension _AdminInvoiceListViewStatePreviewSupport
       );
       pw.MemoryImage? kopLogo;
       try {
-        final logoBytes = await rootBundle.load('assets/images/iconapk.png');
-        kopLogo = pw.MemoryImage(logoBytes.buffer.asUint8List());
+        final logoBytes =
+            await _loadBinaryAssetWithFileFallback('assets/images/iconapk.png');
+        kopLogo = pw.MemoryImage(logoBytes);
       } catch (_) {
         kopLogo = null;
       }
@@ -400,8 +401,8 @@ extension _AdminInvoiceListViewStatePreviewSupport
         final kopAsset = resolvedInvoiceEntity == Formatters.invoiceEntityPtAnt
             ? 'assets/images/kopsuratpt.png'
             : 'assets/images/kopsurat.jpeg';
-        final kopBytes = await rootBundle.load(kopAsset);
-        companyKopImage = pw.MemoryImage(kopBytes.buffer.asUint8List());
+        final kopBytes = await _loadBinaryAssetWithFileFallback(kopAsset);
+        companyKopImage = pw.MemoryImage(kopBytes);
       } catch (_) {
         companyKopImage = null;
       }
@@ -557,6 +558,7 @@ extension _AdminInvoiceListViewStatePreviewSupport
         );
       }
 
+      final pdfFonts = await _loadDashboardPdfFontBundle();
       late final pw.Font invoiceTitleFont;
       try {
         invoiceTitleFont = await PdfGoogleFonts.archivoBlack();
@@ -798,7 +800,7 @@ extension _AdminInvoiceListViewStatePreviewSupport
                       : pw.FittedBox(
                           fit: pw.BoxFit.scaleDown,
                           child: pw.Text(
-                            leftText.replaceAll(' ', '\u00A0'),
+                            leftText,
                             maxLines: 1,
                             textAlign: pw.TextAlign.center,
                             style: const pw.TextStyle(
@@ -817,7 +819,7 @@ extension _AdminInvoiceListViewStatePreviewSupport
                       fit: pw.BoxFit.scaleDown,
                       alignment: pw.Alignment.centerRight,
                       child: pw.Text(
-                        label.replaceAll(' ', '\u00A0'),
+                        label,
                         textAlign: pw.TextAlign.right,
                         maxLines: 1,
                         style: textStyle,
@@ -908,7 +910,7 @@ extension _AdminInvoiceListViewStatePreviewSupport
                   fit: pw.BoxFit.scaleDown,
                   alignment: pw.Alignment.centerRight,
                   child: pw.Text(
-                    text.replaceAll(' ', '\u00A0'),
+                    text,
                     textAlign: pw.TextAlign.right,
                     maxLines: 1,
                     style: labelStyle,
@@ -927,7 +929,7 @@ extension _AdminInvoiceListViewStatePreviewSupport
                         child: pw.FittedBox(
                           fit: pw.BoxFit.scaleDown,
                           child: pw.Text(
-                            leftText.replaceAll(' ', '\u00A0'),
+                            leftText,
                             maxLines: 1,
                             textAlign: pw.TextAlign.center,
                             style: const pw.TextStyle(
@@ -1073,6 +1075,7 @@ extension _AdminInvoiceListViewStatePreviewSupport
                             child: pw.Text(
                               'NO : $invoiceNumber',
                               style: pw.TextStyle(
+                                font: pw.Font.helveticaBold(),
                                 fontSize: compact ? 10 : 11,
                                 fontWeight: pw.FontWeight.bold,
                                 color: PdfColors.black,
@@ -1119,10 +1122,11 @@ extension _AdminInvoiceListViewStatePreviewSupport
                                 child: pw.FittedBox(
                                   fit: pw.BoxFit.scaleDown,
                                   child: pw.Text(
-                                    customerName.replaceAll(' ', '\u00A0'),
+                                    customerName,
                                     maxLines: 1,
                                     textAlign: pw.TextAlign.center,
                                     style: pw.TextStyle(
+                                      font: pw.Font.helveticaBoldOblique(),
                                       fontSize: infoFont,
                                       fontWeight: pw.FontWeight.bold,
                                       fontStyle: pw.FontStyle.italic,
@@ -1152,11 +1156,11 @@ extension _AdminInvoiceListViewStatePreviewSupport
                             child: pw.FittedBox(
                               fit: pw.BoxFit.scaleDown,
                               child: pw.Text(
-                                (kopLocationUpper ?? '-')
-                                    .replaceAll(' ', '\u00A0'),
+                                (kopLocationUpper ?? '-'),
                                 maxLines: 1,
                                 textAlign: pw.TextAlign.center,
                                 style: pw.TextStyle(
+                                  font: pw.Font.helveticaBoldOblique(),
                                   fontSize: infoFont,
                                   fontWeight: pw.FontWeight.bold,
                                   fontStyle: pw.FontStyle.italic,
@@ -1320,7 +1324,7 @@ extension _AdminInvoiceListViewStatePreviewSupport
                   ...List<pw.TableRow>.generate(printableRows.length, (index) {
                     final row = printableRows[index];
                     final hasData = index < invoiceDetailList.length;
-                    const blankCell = '\u00A0';
+                    const blankCell = '';
                     final tonase = hasData ? _toNum(row['tonase']) : 0;
                     final harga = hasData ? _toNum(row['harga']) : 0;
                     final rowSubtotal =
@@ -1525,6 +1529,7 @@ extension _AdminInvoiceListViewStatePreviewSupport
                                 child: pw.Text(
                                   'A N T O K',
                                   style: pw.TextStyle(
+                                    font: pw.Font.helveticaBold(),
                                     fontSize: signatureTextFontSize,
                                     fontWeight: pw.FontWeight.bold,
                                     decoration: pw.TextDecoration.none,
@@ -1565,7 +1570,7 @@ extension _AdminInvoiceListViewStatePreviewSupport
                       pw.SizedBox(height: summaryBoxGap),
                       (isCompanyInvoice
                           ? pw.Transform.translate(
-                              offset: const PdfPoint(-0.5, -5),
+                              offset: const PdfPoint(-1.8, -5),
                               child: pw.Column(
                                 crossAxisAlignment:
                                     pw.CrossAxisAlignment.stretch,
@@ -1590,6 +1595,7 @@ extension _AdminInvoiceListViewStatePreviewSupport
                                       'Rekening BCA a/c 6155345601 a/n CV AS NUSA TRANS\nNPWP 096.775.534.9-617.000',
                                       textAlign: pw.TextAlign.center,
                                       style: pw.TextStyle(
+                                        font: pw.Font.helveticaBoldOblique(),
                                         fontSize: infoFont,
                                         color: PdfColors.blue700,
                                         fontWeight: pw.FontWeight.bold,
@@ -1601,7 +1607,7 @@ extension _AdminInvoiceListViewStatePreviewSupport
                               ),
                             )
                           : pw.Transform.translate(
-                              offset: const PdfPoint(-1, -3),
+                              offset: const PdfPoint(-2.3, -3),
                               child: pw.Container(
                                 alignment: pw.Alignment.center,
                                 padding: const pw.EdgeInsets.symmetric(
@@ -1618,6 +1624,7 @@ extension _AdminInvoiceListViewStatePreviewSupport
                                   'Rekening BCA a/c 1730290001 a/n BUDI SUKAMTO',
                                   textAlign: pw.TextAlign.center,
                                   style: pw.TextStyle(
+                                    font: pw.Font.helveticaBoldOblique(),
                                     fontSize: infoFont,
                                     color: PdfColors.blue700,
                                     fontWeight: pw.FontWeight.bold,
@@ -1705,6 +1712,7 @@ extension _AdminInvoiceListViewStatePreviewSupport
                                 textAlign: pw.TextAlign.center,
                                 maxLines: 1,
                                 style: pw.TextStyle(
+                                  font: pw.Font.helveticaBold(),
                                   fontSize: signatureTextFontSize,
                                   fontWeight: pw.FontWeight.bold,
                                   decoration: pw.TextDecoration.none,
@@ -1748,7 +1756,7 @@ extension _AdminInvoiceListViewStatePreviewSupport
       final tableRenderInfo = usePortrait
           ? fullExcelTableImage?.renderSource
           : compactExcelTableImage?.renderSource;
-      final doc = pw.Document();
+      final doc = pw.Document(theme: _dashboardPdfTheme(pdfFonts));
 
       if (usePortrait) {
         doc.addPage(
@@ -1811,9 +1819,9 @@ extension _AdminInvoiceListViewStatePreviewSupport
         renderInfo: tableRenderInfo,
       );
       if (!confirmed) return false;
-      await Printing.layoutPdf(
+      await _dispatchPdfBytesToPrinter(
+        bytes: pdfBytes,
         name: pdfName,
-        onLayout: (_) async => pdfBytes,
       );
       if (markAsFixed) {
         await _markInvoicesAsFixed(
@@ -2158,7 +2166,12 @@ extension _AdminInvoiceListViewStatePreviewSupport
                   pw.SizedBox(height: compact ? 72 : 102),
                   pw.Text(
                     'A N T O K',
-                    style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                    style: pw.TextStyle(
+                      font: pw.Font.helveticaBold(),
+                      fontSize: 12.0,
+                      fontWeight: pw.FontWeight.bold,
+                      decoration: pw.TextDecoration.none,
+                    ),
                   ),
                 ],
               ),

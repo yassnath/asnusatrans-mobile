@@ -10,6 +10,10 @@ set(BINARY_NAME "cvant_mobile")
 # versions of CMake.
 cmake_policy(VERSION 3.14...3.25)
 
+# Pin pdfium for the printing plugin to a Windows-stable release.
+set(PDFIUM_VERSION "4929" CACHE STRING "" FORCE)
+set(PDFIUM_ARCH "x64" CACHE STRING "" FORCE)
+
 # Define build configuration option.
 get_property(IS_MULTICONFIG GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
 if(IS_MULTICONFIG)

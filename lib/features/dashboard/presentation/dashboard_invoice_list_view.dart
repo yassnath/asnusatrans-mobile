@@ -61,7 +61,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
   static const _invoiceListColumns =
       'id,no_invoice,invoice_entity,tanggal,tanggal_kop,lokasi_kop,nama_pelanggan,email,no_telp,due_date,'
       'lokasi_muat,lokasi_bongkar,armada_start_date,armada_end_date,'
-      'tonase,harga,muatan,nama_supir,status,total_bayar,total_biaya,pph,diterima_oleh,'
+      'tonase,harga,muatan,nama_supir,status,paid_at,total_bayar,total_biaya,pph,diterima_oleh,'
       'customer_id,armada_id,order_id,rincian,created_at,updated_at,created_by,'
       'submission_role,approval_status,approval_requested_at,approval_requested_by,'
       'approved_at,approved_by,rejected_at,rejected_by,edit_request_status,'
@@ -1985,9 +1985,242 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
   }
 
   Future<void> _openReportSummary({
-    required List<Map<String, dynamic>> incomes,
     required List<Map<String, dynamic>> expenses,
   }) async {
+    final fixedInvoiceBatches = await _loadFixedInvoiceBatches();
+    final fixedBatchByInvoiceId = <String, _FixedInvoiceBatch>{};
+    for (final batch in fixedInvoiceBatches) {
+      for (final invoiceId in batch.invoiceIds) {
+        final cleanedId = invoiceId.trim();
+        if (cleanedId.isEmpty) continue;
+        fixedBatchByInvoiceId.putIfAbsent(cleanedId, () => batch);
+      }
+    }
+    final reportFixedInvoiceIds = <String>{
+      ...fixedBatchByInvoiceId.keys,
+      ...await _loadLocalFixedInvoiceIds(),
+    };
+    final fixedIncomeInvoices = reportFixedInvoiceIds.isEmpty
+        ? <Map<String, dynamic>>[]
+        : await widget.repository.fetchInvoicesByIds(reportFixedInvoiceIds);
+    final reportIncomeInvoices = fixedIncomeInvoices.where((item) {
+      final id = '${item['id'] ?? ''}'.trim();
+      if (id.isNotEmpty && _locallyRemovedRowIds.contains(id)) return false;
+      if (_isPengurus) return _isOwnedByCurrentUser(item);
+      if (_isAdminOrOwner) return _isPengurusIncomeApproved(item);
+      return true;
+    }).toList();
+
+    _FixedInvoiceBatch? resolveFixedBatch(Map<String, dynamic> invoice) {
+      final invoiceId = '${invoice['id'] ?? ''}'.trim();
+      if (invoiceId.isEmpty) return null;
+      return fixedBatchByInvoiceId[invoiceId];
+    }
+
+    String resolveIncomeReportStatus(Map<String, dynamic> invoice) {
+      final batch = resolveFixedBatch(invoice);
+      final status = '${batch?.status ?? invoice['status'] ?? 'Unpaid'}'.trim();
+      return status.isEmpty ? 'Unpaid' : status;
+    }
+
+    String resolveIncomeReportCustomerName(Map<String, dynamic> invoice) {
+      final batch = resolveFixedBatch(invoice);
+      final customerName =
+          '${batch?.customerName ?? invoice['nama_pelanggan'] ?? '-'}'.trim();
+      return customerName.isEmpty ? '-' : customerName;
+    }
+
+    dynamic resolveIncomeReportDate(Map<String, dynamic> invoice) {
+      final batch = resolveFixedBatch(invoice);
+      if ((batch?.kopDate ?? '').trim().isNotEmpty) {
+        return batch!.kopDate;
+      }
+      return resolveIncomeReportInvoiceDate(invoice);
+    }
+
+    String resolveIncomeReportPaidAt(Map<String, dynamic> invoice) {
+      final batch = resolveFixedBatch(invoice);
+      return '${batch?.paidAt ?? invoice['paid_at'] ?? ''}'.trim();
+    }
+
+    String resolveIncomeReportInvoiceNumber(Map<String, dynamic> invoice) {
+      final batch = resolveFixedBatch(invoice);
+      if ((batch?.invoiceNumber ?? '').trim().isNotEmpty) {
+        return batch!.invoiceNumber;
+      }
+      return Formatters.invoiceNumber(
+        invoice['no_invoice'],
+        resolveIncomeReportDate(invoice),
+        customerName: resolveIncomeReportCustomerName(invoice),
+      );
+    }
+
+    bool isIncomeReportPaid(Map<String, dynamic> invoice) {
+      final paidAt = resolveIncomeReportPaidAt(invoice);
+      if (paidAt.isNotEmpty) return true;
+      final status = resolveIncomeReportStatus(invoice).trim().toLowerCase();
+      return status.contains('paid') && !status.contains('unpaid');
+    }
+
+    double parseEditableReportAmount(dynamic value) {
+      final raw = '${value ?? ''}'.trim();
+      if (raw.isEmpty) return 0;
+      final cleaned = raw
+          .replaceAll(RegExp(r'[^0-9,.-]'), '')
+          .replaceAll('.', '')
+          .replaceAll(',', '.');
+      return double.tryParse(cleaned) ?? 0;
+    }
+
+    String formatEditableReportAmount(num value) {
+      final number = value.toDouble();
+      if (!number.isFinite || number <= 0) return '';
+      return Formatters.decimal(number, useGrouping: true);
+    }
+
+    double resolveSingleInvoiceJumlah(Map<String, dynamic> invoice) {
+      final jumlah = _toNum(invoice['total_biaya']);
+      if (jumlah > 0) return jumlah;
+      final total = _toNum(invoice['total_bayar']);
+      if (total > 0) return total;
+      return 0;
+    }
+
+    double resolveSingleInvoicePph(Map<String, dynamic> invoice) {
+      final isCompany = _resolveIsCompanyInvoice(
+        invoiceNumber: resolveIncomeReportInvoiceNumber(invoice),
+        customerName: resolveIncomeReportCustomerName(invoice),
+      );
+      if (!isCompany) return 0;
+      return _toNum(invoice['pph']);
+    }
+
+    double resolveSingleInvoiceTotal(Map<String, dynamic> invoice) {
+      final totalBayar = _toNum(invoice['total_bayar']);
+      if (totalBayar > 0) return totalBayar;
+      final jumlah = resolveSingleInvoiceJumlah(invoice);
+      final pph = resolveSingleInvoicePph(invoice);
+      final fallback = jumlah - pph;
+      return fallback > 0 ? fallback : jumlah;
+    }
+
+    dynamic resolveSingleInvoiceDepartureDate(Map<String, dynamic> invoice) {
+      final details = _toDetailList(invoice['rincian']);
+      final detailDates = details
+          .map((detail) => Formatters.parseDate(detail['armada_start_date']))
+          .whereType<DateTime>()
+          .toList(growable: false);
+      if (detailDates.isNotEmpty) {
+        detailDates.sort((a, b) => a.compareTo(b));
+        return detailDates.first.toIso8601String();
+      }
+      return invoice['armada_start_date'] ??
+          invoice['tanggal_kop'] ??
+          invoice['tanggal'] ??
+          invoice['created_at'];
+    }
+
+    String summarizeInvoiceDestinations(List<Map<String, dynamic>> invoices) {
+      final tujuan = <String>{};
+      for (final invoice in invoices) {
+        final details = _toDetailList(invoice['rincian']);
+        for (final detail in details) {
+          final destination = '${detail['lokasi_bongkar'] ?? ''}'.trim();
+          if (destination.isNotEmpty) {
+            tujuan.add(destination);
+          }
+        }
+        final fallback = '${invoice['lokasi_bongkar'] ?? ''}'.trim();
+        if (fallback.isNotEmpty) {
+          tujuan.add(fallback);
+        }
+      }
+      return tujuan.isEmpty ? '-' : tujuan.join(' | ');
+    }
+
+    final reportIncomeSources = <Map<String, dynamic>>[];
+    final invoiceById = <String, Map<String, dynamic>>{
+      for (final item in reportIncomeInvoices)
+        '${item['id'] ?? ''}'.trim(): item,
+    };
+    final consumedInvoiceIds = <String>{};
+
+    for (final batch in fixedInvoiceBatches) {
+      final batchItems = batch.invoiceIds
+          .map((id) => invoiceById[id.trim()])
+          .whereType<Map<String, dynamic>>()
+          .toList(growable: false);
+      if (batchItems.isEmpty) continue;
+
+      consumedInvoiceIds.addAll(
+        batchItems
+            .map((item) => '${item['id'] ?? ''}'.trim())
+            .where((id) => id.isNotEmpty),
+      );
+
+      final customerName = batch.customerName.trim().isEmpty
+          ? resolveIncomeReportCustomerName(batchItems.first)
+          : batch.customerName.trim();
+      final invoiceNumber = batch.invoiceNumber.trim().isEmpty
+          ? resolveIncomeReportInvoiceNumber(batchItems.first)
+          : batch.invoiceNumber.trim();
+      final reportDate = (batch.kopDate ?? '').trim().isEmpty
+          ? resolveIncomeReportDate(batchItems.first)
+          : batch.kopDate;
+      final paidAt = (batch.paidAt ?? '').trim();
+      final status =
+          batch.status.trim().isEmpty ? 'Unpaid' : batch.status.trim();
+      final jumlah = batchItems.fold<double>(
+        0,
+        (sum, item) => sum + resolveSingleInvoiceJumlah(item),
+      );
+      final pph = batchItems.fold<double>(
+        0,
+        (sum, item) => sum + resolveSingleInvoicePph(item),
+      );
+      final total = batchItems.fold<double>(
+        0,
+        (sum, item) => sum + resolveSingleInvoiceTotal(item),
+      );
+      final departureDate = batchItems
+          .map(resolveSingleInvoiceDepartureDate)
+          .map(Formatters.parseDate)
+          .whereType<DateTime>()
+          .fold<DateTime?>(null, (prev, current) {
+        if (prev == null || current.isBefore(prev)) return current;
+        return prev;
+      });
+
+      reportIncomeSources.add({
+        'id': batch.batchId,
+        'no_invoice': invoiceNumber,
+        'invoice_entity': batchItems.first['invoice_entity'],
+        'nama_pelanggan': customerName,
+        'status': status,
+        'tanggal_kop': reportDate,
+        'paid_at': paidAt,
+        'total_biaya': jumlah,
+        'pph': pph,
+        'total_bayar': total,
+        'rincian': batchItems
+            .expand((item) => _toDetailList(item['rincian']))
+            .toList(),
+        'lokasi_bongkar': summarizeInvoiceDestinations(batchItems),
+        '__batch_items': batchItems,
+        '__batch_invoice_ids': batch.invoiceIds,
+        '__batch_id': batch.batchId,
+        '__departure_date': departureDate?.toIso8601String(),
+      });
+    }
+
+    for (final item in reportIncomeInvoices) {
+      final invoiceId = '${item['id'] ?? ''}'.trim();
+      if (invoiceId.isNotEmpty && consumedInvoiceIds.contains(invoiceId)) {
+        continue;
+      }
+      reportIncomeSources.add(Map<String, dynamic>.from(item));
+    }
+
     List<Map<String, dynamic>> buildRows({
       required DateTime start,
       required DateTime end,
@@ -2016,62 +2249,10 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         return _matchesKeywordInAnyColumn(source, q);
       }
 
-      String resolveTujuan(
-        Map<String, dynamic> source, {
-        Map<String, dynamic>? detail,
-      }) {
-        final detailDestination = '${detail?['lokasi_bongkar'] ?? ''}'.trim();
-        if (detailDestination.isNotEmpty) {
-          return detailDestination;
-        }
-
-        final details = _toDetailList(source['rincian']);
-        final tujuan = <String>{};
-        for (final row in details) {
-          final destination = '${row['lokasi_bongkar'] ?? ''}'.trim();
-          if (destination.isNotEmpty) {
-            tujuan.add(destination);
-          }
-        }
-        if (tujuan.isNotEmpty) {
-          return tujuan.join(' | ');
-        }
-        final fallback = '${source['lokasi_bongkar'] ?? ''}'.trim();
-        return fallback.isEmpty ? '-' : fallback;
-      }
-
-      dynamic resolveKeberangkatanDate(
-        Map<String, dynamic> source, {
-        Map<String, dynamic>? detail,
-      }) {
-        return detail?['armada_start_date'] ??
-            source['armada_start_date'] ??
-            source['tanggal_kop'] ??
-            source['tanggal'] ??
-            source['created_at'];
-      }
-
-      double resolveDetailSubtotal(
-        Map<String, dynamic> source, {
-        Map<String, dynamic>? detail,
-        int detailCount = 1,
-      }) {
-        final subtotalFromDetail = _toNum(detail?['subtotal']);
-        if (subtotalFromDetail > 0) return subtotalFromDetail;
-        final tonase = _toNum(detail?['tonase'] ?? source['tonase']);
-        final harga = _toNum(detail?['harga'] ?? source['harga']);
-        final computed = tonase * harga;
-        if (computed > 0) return computed;
-        final invoiceSubtotal = _toNum(source['total_biaya']);
-        if (invoiceSubtotal <= 0) return 0;
-        if (detailCount <= 1) return invoiceSubtotal;
-        return invoiceSubtotal / detailCount;
-      }
-
       bool incomeKindAllowed(Map<String, dynamic> source) {
         if (customerKind == 'all') return true;
-        final customerName = '${source['nama_pelanggan'] ?? ''}'.trim();
-        final invoiceNumber = '${source['no_invoice'] ?? ''}'.trim();
+        final customerName = resolveIncomeReportCustomerName(source);
+        final invoiceNumber = resolveIncomeReportInvoiceNumber(source);
         final entity = _resolveInvoiceEntity(
           invoiceNumber: invoiceNumber,
           customerName: customerName,
@@ -2090,78 +2271,44 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       }
 
       if (includeIncome) {
-        for (final item in incomes) {
-          final status = '${item['status'] ?? 'Waiting'}';
+        for (final item in reportIncomeSources) {
+          final status = resolveIncomeReportStatus(item);
           if (!statusAllowed(status)) continue;
           if (!incomeKindAllowed(item)) continue;
-          final customerName = '${item['nama_pelanggan'] ?? '-'}';
-          final invoiceNumber = Formatters.invoiceNumber(
-            item['no_invoice'],
-            item['tanggal_kop'] ?? item['tanggal'],
+          final customerName = resolveIncomeReportCustomerName(item);
+          final reportDate = resolveIncomeReportDate(item);
+          final paidAt = resolveIncomeReportPaidAt(item);
+          final invoiceNumber = resolveIncomeReportInvoiceNumber(item);
+          final invoiceSortKey = buildIncomeReportInvoiceSortKey(
+            invoiceNumber: invoiceNumber,
+            invoiceDate: reportDate,
             customerName: customerName,
+            invoiceEntity: item['invoice_entity'],
           );
-          final isCompanyInvoice = _resolveIsCompanyInvoice(
-            invoiceNumber: item['no_invoice'],
-            customerName: customerName,
-          );
-
-          final detailRows = _toDetailList(item['rincian']);
-          if (detailRows.isNotEmpty) {
-            for (var i = 0; i < detailRows.length; i++) {
-              final detail = detailRows[i];
-              final rowSource = <String, dynamic>{...item, ...detail};
-              final rowDate = resolveKeberangkatanDate(item, detail: detail);
-              if (!inRange(rowDate)) continue;
-              if (!keywordAllowed(rowSource)) continue;
-
-              final subtotal = resolveDetailSubtotal(
-                item,
-                detail: detail,
-                detailCount: detailRows.length,
-              );
-              final pph = isCompanyInvoice
-                  ? max(0.0, (subtotal * 0.02).floorToDouble())
-                  : 0.0;
-              final total =
-                  isCompanyInvoice ? max(0.0, subtotal - pph) : subtotal;
-
-              rows.add({
-                '__key':
-                    'income:${item['id'] ?? item['no_invoice'] ?? item['created_at'] ?? rows.length}:$i',
-                '__type': 'Income',
-                '__number': invoiceNumber,
-                '__date': rowDate,
-                '__name': customerName,
-                '__customer': customerName,
-                '__status': status,
-                '__amount': total,
-                '__jumlah': subtotal,
-                '__pph': pph,
-                '__total': total,
-                '__tujuan': resolveTujuan(item, detail: detail),
-                '__income': total,
-                '__expense': 0.0,
-              });
-            }
-            continue;
-          }
-
-          final rowDate = resolveKeberangkatanDate(item);
-          if (!inRange(rowDate)) continue;
-          if (!keywordAllowed(item)) continue;
-
-          final subtotal = _toNum(item['total_biaya']);
-          final pph = isCompanyInvoice ? _toNum(item['pph']) : 0.0;
-          final total = isCompanyInvoice
-              ? _toNum(item['total_bayar'] ?? item['total_biaya'])
-              : subtotal;
+          final rowSource = <String, dynamic>{
+            ...item,
+            'nama_pelanggan': customerName,
+            'no_invoice': invoiceNumber,
+            'status': status,
+            'tanggal_kop': reportDate,
+            'paid_at': paidAt,
+          };
+          if (!inRange(reportDate)) continue;
+          if (!keywordAllowed(rowSource)) continue;
+          final subtotal = resolveSingleInvoiceJumlah(item);
+          final pph = resolveSingleInvoicePph(item);
+          final total = resolveSingleInvoiceTotal(item);
 
           rows.add({
             '__key':
                 'income:${item['id'] ?? item['no_invoice'] ?? item['created_at'] ?? rows.length}',
             '__type': 'Income',
             '__number': invoiceNumber,
-            '__date': rowDate,
+            '__invoice_sort': invoiceSortKey,
+            '__date': reportDate,
+            '__departure_date': item['__departure_date'] ??
+                resolveSingleInvoiceDepartureDate(item),
+            '__paid_at': paidAt,
             '__name': customerName,
             '__customer': customerName,
             '__status': status,
@@ -2169,7 +2316,10 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
             '__jumlah': subtotal,
             '__pph': pph,
             '__total': total,
-            '__tujuan': resolveTujuan(item),
+            '__tujuan': '${item['lokasi_bongkar'] ?? '-'}'.trim(),
+            '__paid_locked': isIncomeReportPaid(item),
+            '__bayar_default': isIncomeReportPaid(item) ? total : 0.0,
+            '__sisa_default': isIncomeReportPaid(item) ? 0.0 : total,
             '__income': total,
             '__expense': 0.0,
           });
@@ -2199,10 +2349,19 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
             '__pph': 0.0,
             '__total': amount,
             '__tujuan': '-',
+            '__paid_locked': false,
+            '__bayar_default': 0.0,
+            '__sisa_default': 0.0,
             '__income': 0.0,
             '__expense': amount,
           });
         }
+      }
+
+      if (includeIncome && !includeExpense) {
+        return sortIncomeReportRowsByInvoice(
+          rows.where((row) => '${row['__type']}' == 'Income').toList(),
+        );
       }
 
       rows.sort((a, b) {
@@ -2212,10 +2371,11 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
             DateTime.fromMillisecondsSinceEpoch(0);
         return bDate.compareTo(aDate);
       });
+
       return rows;
     }
 
-    Future<void> printReportPdf({
+    Future<bool> printReportPdf({
       required DateTime start,
       required DateTime end,
       required List<Map<String, dynamic>> rows,
@@ -2226,6 +2386,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       required String customerKind,
       required String orientation,
     }) async {
+      final incomeInvoiceReport = includeIncome && !includeExpense;
+
       String monthName(int month) {
         const id = [
           'Januari',
@@ -2270,30 +2432,55 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       final reportHeader = () {
         if (includeIncome && includeExpense) {
           return _t(
-            'Laporan (Pemasukkan dan Pengeluaran)',
-            'Report (Income and Expense)',
+            'Laporan (Pemasukkan Fix Invoice dan Pengeluaran)',
+            'Report (Fixed Invoice Income and Expense)',
           );
         }
         if (includeIncome) {
+          if (incomeInvoiceReport) {
+            if (customerKind == Formatters.invoiceEntityCvAnt) {
+              return _t(
+                'Laporan Pemasukkan Fix Invoice per Invoice (CV. ANT)',
+                'Fixed Invoice Income Report by Invoice (CV. ANT)',
+              );
+            }
+            if (customerKind == Formatters.invoiceEntityPtAnt) {
+              return _t(
+                'Laporan Pemasukkan Fix Invoice per Invoice (PT. ANT)',
+                'Fixed Invoice Income Report by Invoice (PT. ANT)',
+              );
+            }
+            if (customerKind == Formatters.invoiceEntityPersonal) {
+              return _t(
+                'Laporan Pemasukkan Fix Invoice per Invoice (Pribadi)',
+                'Fixed Invoice Income Report by Invoice (Personal)',
+              );
+            }
+            return _t(
+              'Laporan Pemasukkan Fix Invoice per Invoice',
+              'Fixed Invoice Income Report by Invoice',
+            );
+          }
           if (customerKind == Formatters.invoiceEntityCvAnt) {
             return _t(
-              'Laporan Pemasukkan (CV. ANT)',
-              'Income Report (CV. ANT)',
+              'Laporan Pemasukkan Fix Invoice (CV. ANT)',
+              'Fixed Invoice Income Report (CV. ANT)',
             );
           }
           if (customerKind == Formatters.invoiceEntityPtAnt) {
             return _t(
-              'Laporan Pemasukkan (PT. ANT)',
-              'Income Report (PT. ANT)',
+              'Laporan Pemasukkan Fix Invoice (PT. ANT)',
+              'Fixed Invoice Income Report (PT. ANT)',
             );
           }
           if (customerKind == Formatters.invoiceEntityPersonal) {
             return _t(
-              'Laporan Pemasukkan (Pribadi)',
-              'Income Report (Personal)',
+              'Laporan Pemasukkan Fix Invoice (Pribadi)',
+              'Fixed Invoice Income Report (Personal)',
             );
           }
-          return _t('Laporan Pemasukkan', 'Income Report');
+          return _t(
+              'Laporan Pemasukkan Fix Invoice', 'Fixed Invoice Income Report');
         }
         if (customerKind == Formatters.invoiceEntityCvAnt) {
           return _t(
@@ -2316,210 +2503,525 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         return _t('Laporan Pengeluaran', 'Expense Report');
       }();
 
-      await Printing.layoutPdf(
-        onLayout: (format) async {
-          final companyMode = customerKind == Formatters.invoiceEntityCvAnt ||
-              customerKind == Formatters.invoiceEntityPtAnt;
-          final maxNumberLen = rows
-              .map((row) => '${row['__number'] ?? '-'}'.length)
-              .fold<int>(0, (maxLen, len) => max(maxLen, len));
-          final maxCustomerLen = rows
-              .map((row) =>
-                  '${row['__customer'] ?? row['__name'] ?? '-'}'.length)
-              .fold<int>(0, (maxLen, len) => max(maxLen, len));
-          final maxTujuanLen = rows
-              .map((row) => '${row['__tujuan'] ?? '-'}'.length)
-              .fold<int>(0, (maxLen, len) => max(maxLen, len));
+      final reportScopeLabel = includeIncome && includeExpense
+          ? _t('Income Fix Invoice + Expense', 'Fixed Invoice Income + Expense')
+          : includeIncome
+              ? incomeInvoiceReport
+                  ? _t(
+                      'Income Fix Invoice per Invoice',
+                      'Fixed Invoice Income by Invoice',
+                    )
+                  : _t('Income Fix Invoice', 'Fixed Invoice Income')
+              : _t('Expense', 'Expense');
+      final orientationLabel = _t('Portrait', 'Portrait');
+      final previewInfo =
+          '$reportScopeLabel • ${_t('Periode', 'Period')}: $periodLabel • ${_t('Orientasi', 'Orientation')}: $orientationLabel • ${rows.length} ${_t(incomeInvoiceReport ? 'invoice' : 'data', incomeInvoiceReport ? 'invoices' : 'rows')}';
 
-          final autoLandscape = rows.length > 18 ||
-              maxNumberLen > 24 ||
-              maxCustomerLen > 18 ||
-              maxTujuanLen > 14;
-          final isLandscape = orientation == 'landscape'
-              ? true
-              : orientation == 'portrait'
-                  ? false
-                  : autoLandscape;
+      Future<Uint8List> buildReportPdfBytes(PdfPageFormat format) async {
+        final useIncomeInvoiceTable = includeIncome && !includeExpense;
+        final companyMode = customerKind == Formatters.invoiceEntityCvAnt ||
+            customerKind == Formatters.invoiceEntityPtAnt ||
+            rows.any((row) => _toNum(row['__pph']) > 0);
+        final showIncomePphColumn = useIncomeInvoiceTable
+            ? customerKind == Formatters.invoiceEntityCvAnt ||
+                customerKind == Formatters.invoiceEntityPtAnt ||
+                (customerKind != Formatters.invoiceEntityPersonal &&
+                    rows.any((row) => _toNum(row['__pph']) > 0))
+            : companyMode;
+        String formatReportDate(dynamic value) => Formatters.dMyShort(value);
+        String formatReportAmount(num value) => _formatRupiahNoPrefix(value);
+        String formatOptionalEditableAmount(
+          Map<String, dynamic> row,
+          String textKey,
+          String valueKey,
+        ) {
+          final explicit = '${row[textKey] ?? ''}'.trim();
+          final value = _toNum(row[valueKey]);
+          if (explicit.isEmpty && value <= 0) return '';
+          return formatReportAmount(value);
+        }
+        int textMeasure(String value) {
+          final normalized = value.replaceAll('\r', '');
+          return normalized
+              .split('\n')
+              .map((line) => line.trim().length)
+              .fold<int>(0, (longest, len) => max(longest, len));
+        }
 
-          double headerFont = isLandscape ? 9 : 8.5;
-          double cellFont = isLandscape ? 8 : 7.5;
-          if (maxNumberLen > 34 || rows.length > 28) {
-            headerFont -= 0.5;
-            cellFont -= 0.5;
+        Map<int, pw.TableColumnWidth> buildDynamicColumnWidths({
+          required List<String> headers,
+          required List<List<String>> data,
+          required Set<int> dateColumns,
+          required Set<int> numericColumns,
+          required Set<int> priorityTextColumns,
+        }) {
+          final widths = <int, pw.TableColumnWidth>{};
+          for (var index = 0; index < headers.length; index++) {
+            var longest = textMeasure(headers[index]).toDouble();
+            for (final row in data) {
+              if (index >= row.length) continue;
+              longest = max(longest, textMeasure(row[index]).toDouble());
+            }
+
+            if (index == 0) {
+              longest = max(longest, 3);
+            } else if (dateColumns.contains(index)) {
+              longest = max(longest, 9);
+            } else if (numericColumns.contains(index)) {
+              longest = max(longest, 9);
+            } else {
+              longest = max(longest, 7);
+            }
+
+            if (priorityTextColumns.contains(index)) {
+              longest *= 1.2;
+            } else if (!numericColumns.contains(index) &&
+                !dateColumns.contains(index) &&
+                index != 0) {
+              longest *= 1.08;
+            }
+
+            final minWeight = index == 0
+                ? 3.2
+                : dateColumns.contains(index)
+                    ? 8.5
+                    : numericColumns.contains(index)
+                        ? 8.5
+                        : 7.0;
+            final maxWeight = priorityTextColumns.contains(index)
+                ? 34.0
+                : numericColumns.contains(index)
+                    ? 16.0
+                    : dateColumns.contains(index)
+                        ? 11.5
+                        : 20.0;
+            widths[index] = pw.FlexColumnWidth(
+              longest.clamp(minWeight, maxWeight).toDouble(),
+            );
           }
-          if (maxNumberLen > 48 || rows.length > 44) {
-            headerFont -= 0.5;
-            cellFont -= 0.5;
-          }
-          headerFont = headerFont.clamp(7.0, 10.0).toDouble();
-          cellFont = cellFont.clamp(6.5, 9.0).toDouble();
+          return widths;
+        }
 
-          final pageFormat = isLandscape ? format.landscape : format;
+        final maxNumberLen = rows
+            .map((row) => '${row['__number'] ?? '-'}'.length)
+            .fold<int>(0, (maxLen, len) => max(maxLen, len));
+        final maxCustomerLen = rows
+            .map((row) => '${row['__customer'] ?? row['__name'] ?? '-'}'.length)
+            .fold<int>(0, (maxLen, len) => max(maxLen, len));
+        final maxPaidAtLen = rows.map((row) {
+          final paidAt = '${row['__paid_at'] ?? ''}'.trim();
+          return paidAt.isEmpty ? 0 : formatReportDate(paidAt).length;
+        }).fold<int>(0, (maxLen, len) => max(maxLen, len));
 
-          String fitCell(String value, int maxLen) {
-            final text = value.trim();
-            if (text.length <= maxLen) return text;
-            return '${text.substring(0, maxLen - 1)}...';
-          }
+        double headerFont = 8.0;
+        double cellFont = 7.0;
+        if (maxNumberLen > 28 || maxCustomerLen > 24 || rows.length > 24) {
+          headerFont -= 0.5;
+          cellFont -= 0.5;
+        }
+        if (maxNumberLen > 40 || maxPaidAtLen > 12 || rows.length > 36) {
+          headerFont -= 0.5;
+          cellFont -= 0.5;
+        }
+        if (useIncomeInvoiceTable) {
+          headerFont -= 0.4;
+          cellFont -= 0.4;
+        }
+        headerFont = headerFont.clamp(7.0, 8.5).toDouble();
+        cellFont = cellFont.clamp(6.2, 7.5).toDouble();
 
-          final customerMaxLen = isLandscape ? 26 : 18;
-          final tujuanMaxLen = isLandscape ? 22 : 16;
+        final pageFormat = format;
+        final pdfFonts = await _loadDashboardPdfFontBundle();
+        late final pw.Font reportTitleFont;
+        try {
+          reportTitleFont = await PdfGoogleFonts.archivoBlack();
+        } catch (_) {
+          reportTitleFont = pw.Font.helveticaBold();
+        }
 
-          final headers = companyMode
-              ? const [
-                  'NO',
-                  'TANGGAL',
-                  'CUSTOMER',
-                  'JUMLAH',
-                  'PPH',
-                  'TOTAL',
-                  'TUJUAN'
-                ]
-              : const [
-                  'NO',
-                  'TANGGAL',
-                  'CUSTOMER',
-                  'JUMLAH',
-                  'TOTAL',
-                  'TUJUAN'
-                ];
-          final columnWidths = companyMode
-              ? <int, pw.TableColumnWidth>{
-                  0: const pw.FlexColumnWidth(0.5),
-                  1: const pw.FlexColumnWidth(0.95),
-                  2: const pw.FlexColumnWidth(1.55),
-                  3: const pw.FlexColumnWidth(1.05),
-                  4: const pw.FlexColumnWidth(0.9),
-                  5: const pw.FlexColumnWidth(1.05),
-                  6: const pw.FlexColumnWidth(1.4),
-                }
-              : <int, pw.TableColumnWidth>{
-                  0: const pw.FlexColumnWidth(0.5),
-                  1: const pw.FlexColumnWidth(0.95),
-                  2: const pw.FlexColumnWidth(1.7),
-                  3: const pw.FlexColumnWidth(1.15),
-                  4: const pw.FlexColumnWidth(1.15),
-                  5: const pw.FlexColumnWidth(1.55),
-                };
-          final cellAlignments = <int, pw.Alignment>{
-            for (int i = 0; i < headers.length; i++) i: pw.Alignment.center,
-          };
-          final tableData = List<List<String>>.generate(rows.length, (index) {
-            final row = rows[index];
-            if (companyMode) {
+        pw.MemoryImage? reportLogo;
+        try {
+          final logoBytes =
+              await _loadBinaryAssetWithFileFallback('assets/images/iconapk.png');
+          reportLogo = pw.MemoryImage(logoBytes);
+        } catch (_) {
+          reportLogo = null;
+        }
+
+        final headers = useIncomeInvoiceTable
+            ? showIncomePphColumn
+                ? const [
+                    'NO',
+                    'TANGGAL',
+                    'CUSTOMER',
+                    'JUMLAH',
+                    'PPH',
+                    'TOTAL',
+                    'TGL BAYAR',
+                    'BAYAR',
+                    'SISA',
+                  ]
+                : const [
+                    'NO',
+                    'TANGGAL',
+                    'CUSTOMER',
+                    'JUMLAH',
+                    'TOTAL',
+                    'TGL BAYAR',
+                    'BAYAR',
+                    'SISA',
+                  ]
+            : companyMode
+                ? const [
+                    'NO',
+                    'TANGGAL',
+                    'CUSTOMER',
+                    'JUMLAH',
+                    'PPH',
+                    'TOTAL',
+                    'TUJUAN'
+                  ]
+                : const [
+                    'NO',
+                    'TANGGAL',
+                    'CUSTOMER',
+                    'JUMLAH',
+                    'TOTAL',
+                    'TUJUAN'
+                  ];
+        final tableData = List<List<String>>.generate(rows.length, (index) {
+          final row = rows[index];
+          if (useIncomeInvoiceTable) {
+            final paidAt = '${row['__paid_at'] ?? ''}'.trim();
+            if (showIncomePphColumn) {
               return [
                 '${index + 1}',
-                Formatters.dmy(row['__date']),
-                fitCell('${row['__customer'] ?? row['__name'] ?? '-'}',
-                    customerMaxLen),
-                Formatters.rupiah(_toNum(row['__jumlah'])),
-                Formatters.rupiah(_toNum(row['__pph'])),
-                Formatters.rupiah(_toNum(row['__total'])),
-                fitCell('${row['__tujuan'] ?? '-'}', tujuanMaxLen),
+                formatReportDate(row['__date']),
+                '${row['__customer'] ?? row['__name'] ?? '-'}'.trim(),
+                formatReportAmount(_toNum(row['__jumlah'])),
+                formatReportAmount(_toNum(row['__pph'])),
+                formatReportAmount(_toNum(row['__total'])),
+                paidAt.isEmpty ? '' : formatReportDate(paidAt),
+                formatOptionalEditableAmount(row, '__bayar_text', '__bayar'),
+                formatOptionalEditableAmount(row, '__sisa_text', '__sisa'),
               ];
             }
             return [
               '${index + 1}',
-              Formatters.dmy(row['__date']),
-              fitCell('${row['__customer'] ?? row['__name'] ?? '-'}',
-                  customerMaxLen),
-              Formatters.rupiah(_toNum(row['__jumlah'])),
-              Formatters.rupiah(_toNum(row['__total'])),
-              fitCell('${row['__tujuan'] ?? '-'}', tujuanMaxLen),
+              formatReportDate(row['__date']),
+              '${row['__customer'] ?? row['__name'] ?? '-'}'.trim(),
+              formatReportAmount(_toNum(row['__jumlah'])),
+              formatReportAmount(_toNum(row['__total'])),
+              paidAt.isEmpty ? '' : formatReportDate(paidAt),
+              formatOptionalEditableAmount(row, '__bayar_text', '__bayar'),
+              formatOptionalEditableAmount(row, '__sisa_text', '__sisa'),
             ];
-          });
+          }
+          if (companyMode) {
+            return [
+              '${index + 1}',
+              formatReportDate(row['__date']),
+              '${row['__customer'] ?? row['__name'] ?? '-'}'.trim(),
+              formatReportAmount(_toNum(row['__jumlah'])),
+              formatReportAmount(_toNum(row['__pph'])),
+              formatReportAmount(_toNum(row['__total'])),
+              '${row['__tujuan'] ?? '-'}'.trim(),
+            ];
+          }
+          return [
+            '${index + 1}',
+            formatReportDate(row['__date']),
+            '${row['__customer'] ?? row['__name'] ?? '-'}'.trim(),
+            formatReportAmount(_toNum(row['__jumlah'])),
+            formatReportAmount(_toNum(row['__total'])),
+            '${row['__tujuan'] ?? '-'}'.trim(),
+          ];
+        });
+        final reportTableData = <List<String>>[...tableData];
+        if (useIncomeInvoiceTable) {
+          final totalJumlah =
+              rows.fold<double>(0, (sum, row) => sum + _toNum(row['__jumlah']));
+          final totalPph =
+              rows.fold<double>(0, (sum, row) => sum + _toNum(row['__pph']));
+          final totalNilai =
+              rows.fold<double>(0, (sum, row) => sum + _toNum(row['__total']));
+          final totalBayar =
+              rows.fold<double>(0, (sum, row) => sum + _toNum(row['__bayar']));
+          final totalSisa =
+              rows.fold<double>(0, (sum, row) => sum + _toNum(row['__sisa']));
+          reportTableData.add(
+            showIncomePphColumn
+                ? [
+                    '',
+                    '',
+                    'TOTAL',
+                    formatReportAmount(totalJumlah),
+                    formatReportAmount(totalPph),
+                    formatReportAmount(totalNilai),
+                    '',
+                    formatReportAmount(totalBayar),
+                    formatReportAmount(totalSisa),
+                  ]
+                : [
+                    '',
+                    '',
+                    'TOTAL',
+                    formatReportAmount(totalJumlah),
+                    formatReportAmount(totalNilai),
+                    '',
+                    formatReportAmount(totalBayar),
+                    formatReportAmount(totalSisa),
+                  ],
+          );
+        }
+        final numericColumns = useIncomeInvoiceTable
+            ? showIncomePphColumn
+                ? <int>{3, 4, 5, 7, 8}
+                : <int>{3, 4, 6, 7}
+            : companyMode
+                ? <int>{3, 4, 5}
+                : <int>{3, 4};
+        final dateColumns = useIncomeInvoiceTable
+            ? showIncomePphColumn
+                ? <int>{1, 6}
+                : <int>{1, 5}
+            : <int>{1};
+        final priorityTextColumns =
+            useIncomeInvoiceTable ? <int>{2} : <int>{2, headers.length - 1};
+        final columnWidths = buildDynamicColumnWidths(
+          headers: headers,
+          data: reportTableData,
+          dateColumns: dateColumns,
+          numericColumns: numericColumns,
+          priorityTextColumns: priorityTextColumns,
+        );
+        final cellAlignments = <int, pw.Alignment>{
+          for (int i = 0; i < headers.length; i++) i: pw.Alignment.center,
+        };
+        final totalRowNumber = reportTableData.length;
 
-          final doc = pw.Document();
-          doc.addPage(
-            pw.MultiPage(
-              pageFormat: pageFormat,
-              margin: const pw.EdgeInsets.all(20),
-              build: (context) => [
-                pw.Text(
-                  'CV ANT - $reportHeader',
-                  style: pw.TextStyle(
-                    fontWeight: pw.FontWeight.bold,
-                    fontSize: 16,
-                    color: PdfColors.blue900,
-                  ),
-                ),
-                pw.SizedBox(height: 4),
-                pw.Text('${_t('Periode', 'Period')}: $periodLabel'),
-                pw.SizedBox(height: 10),
-                pw.TableHelper.fromTextArray(
-                  cellPadding:
-                      const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                  cellHeight: 16,
-                  headerHeight: 16,
-                  headerStyle: pw.TextStyle(
-                    fontWeight: pw.FontWeight.bold,
-                    color: PdfColors.black,
-                    fontSize: headerFont,
-                  ),
-                  cellStyle: pw.TextStyle(fontSize: cellFont),
-                  cellAlignments: cellAlignments,
-                  columnWidths: columnWidths,
-                  headers: headers,
-                  data: tableData,
-                ),
-                pw.SizedBox(height: 12),
-                pw.Align(
-                  alignment: pw.Alignment.centerRight,
-                  child: pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      if (includeIncome && includeExpense) ...[
+        pw.Widget buildReportHeader() {
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+            children: [
+              pw.Row(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  if (reportLogo != null)
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.only(top: 2),
+                      child: pw.Image(
+                        reportLogo,
+                        height: 38,
+                        fit: pw.BoxFit.contain,
+                      ),
+                    ),
+                  if (reportLogo != null) pw.SizedBox(width: 10),
+                  pw.Expanded(
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
                         pw.Text(
-                          '${_t('Total Income', 'Total Income')}: ${Formatters.rupiah(totalIncome)}',
-                          style: const pw.TextStyle(fontSize: 8.5),
-                        ),
-                        pw.Text(
-                          '${_t('Total Expense', 'Total Expense')}: ${Formatters.rupiah(totalExpense)}',
-                          style: const pw.TextStyle(fontSize: 8.5),
-                        ),
-                        pw.Text(
-                          '${_t('Selisih', 'Difference')}: ${Formatters.rupiah(totalIncome - totalExpense)}',
+                          'CV AS NUSA TRANS',
                           style: pw.TextStyle(
-                            fontSize: 8.5,
+                            font: pw.Font.helveticaBold(),
+                            fontSize: 13,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.blue900,
+                          ),
+                        ),
+                        pw.SizedBox(height: 1.5),
+                        pw.Text(
+                          reportHeader,
+                          style: pw.TextStyle(
+                            font: pw.Font.helveticaBold(),
+                            fontSize: 10.2,
                             fontWeight: pw.FontWeight.bold,
                           ),
                         ),
-                      ] else if (includeIncome) ...[
+                        pw.SizedBox(height: 1.5),
                         pw.Text(
-                          '${_t('Total Income', 'Total Income')}: ${Formatters.rupiah(totalIncome)}',
-                          style: pw.TextStyle(
-                            fontSize: 8.5,
-                            fontWeight: pw.FontWeight.bold,
-                          ),
+                          '${_t('Periode', 'Period')}: $periodLabel',
+                          style: const pw.TextStyle(fontSize: 8.1),
                         ),
-                      ] else if (includeExpense) ...[
                         pw.Text(
-                          '${_t('Total Expense', 'Total Expense')}: ${Formatters.rupiah(totalExpense)}',
-                          style: pw.TextStyle(
-                            fontSize: 8.5,
-                            fontWeight: pw.FontWeight.bold,
-                          ),
+                          '${_t('Ruang Lingkup', 'Scope')}: $reportScopeLabel',
+                          style: const pw.TextStyle(fontSize: 8.1),
                         ),
                       ],
+                    ),
+                  ),
+                  pw.SizedBox(width: 12),
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+                    children: [
+                      pw.Text(
+                        'L  A  P  O  R  A  N',
+                        style: pw.TextStyle(
+                          font: reportTitleFont,
+                          fontSize: 18,
+                          fontWeight: pw.FontWeight.bold,
+                          letterSpacing: 2.2,
+                        ),
+                      ),
+                      pw.SizedBox(height: 2),
+                      pw.Text(
+                        '${_t('Dicetak', 'Printed')}: ${Formatters.dMyShort(DateTime.now())}',
+                        textAlign: pw.TextAlign.right,
+                        style: const pw.TextStyle(fontSize: 7.9),
+                      ),
                     ],
                   ),
-                ),
-              ],
+                ],
+              ),
+              pw.SizedBox(height: 5),
+              pw.Container(height: 1.0, color: PdfColors.black),
+              pw.SizedBox(height: 1.2),
+              pw.Container(height: 0.8, color: PdfColors.black),
+            ],
+          );
+        }
+
+        pw.Widget buildSummaryBox() {
+          return pw.Align(
+            alignment: pw.Alignment.centerRight,
+            child: pw.Container(
+              width: 212,
+              padding: const pw.EdgeInsets.symmetric(
+                horizontal: 10,
+                vertical: 8,
+              ),
+              decoration: pw.BoxDecoration(
+                border: pw.Border.all(color: PdfColors.black, width: 0.9),
+              ),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                children: [
+                  if (includeIncome && includeExpense) ...[
+                    pw.Text(
+                      '${_t('Total Income', 'Total Income')}: ${Formatters.rupiah(totalIncome)}',
+                      textAlign: pw.TextAlign.right,
+                      style: pw.TextStyle(fontSize: 8.5),
+                    ),
+                    pw.SizedBox(height: 2),
+                    pw.Text(
+                      '${_t('Total Expense', 'Total Expense')}: ${Formatters.rupiah(totalExpense)}',
+                      textAlign: pw.TextAlign.right,
+                      style: pw.TextStyle(fontSize: 8.5),
+                    ),
+                    pw.SizedBox(height: 2),
+                    pw.Text(
+                      '${_t('Selisih', 'Difference')}: ${Formatters.rupiah(totalIncome - totalExpense)}',
+                      textAlign: pw.TextAlign.right,
+                      style: pw.TextStyle(
+                        font: pw.Font.helveticaBold(),
+                        fontSize: 8.5,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
+                  ] else if (includeIncome) ...[
+                    pw.Text(
+                      '${_t('Total Income', 'Total Income')}: ${Formatters.rupiah(totalIncome)}',
+                      textAlign: pw.TextAlign.right,
+                      style: pw.TextStyle(
+                        font: pw.Font.helveticaBold(),
+                        fontSize: 8.5,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
+                  ] else if (includeExpense) ...[
+                    pw.Text(
+                      '${_t('Total Expense', 'Total Expense')}: ${Formatters.rupiah(totalExpense)}',
+                      textAlign: pw.TextAlign.right,
+                      style: pw.TextStyle(
+                        font: pw.Font.helveticaBold(),
+                        fontSize: 8.5,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
           );
-          return doc.save();
-        },
+        }
+
+        final doc = pw.Document(theme: _dashboardPdfTheme(pdfFonts));
+        doc.addPage(
+          pw.MultiPage(
+            pageFormat: pageFormat,
+            margin: const pw.EdgeInsets.all(20),
+            build: (context) => [
+              buildReportHeader(),
+              pw.SizedBox(height: 10),
+              pw.TableHelper.fromTextArray(
+                border: pw.TableBorder.all(
+                  color: PdfColors.black,
+                  width: 0.8,
+                ),
+                cellPadding:
+                    const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+                headerHeight: 18,
+                headerDecoration: const pw.BoxDecoration(),
+                headerStyle: pw.TextStyle(
+                  font: pw.Font.helveticaBold(),
+                  fontWeight: pw.FontWeight.bold,
+                  color: PdfColors.black,
+                  fontSize: headerFont,
+                ),
+                cellStyle: pw.TextStyle(fontSize: cellFont),
+                cellAlignments: cellAlignments,
+                columnWidths: columnWidths,
+                headers: headers,
+                data: reportTableData,
+                cellDecoration: useIncomeInvoiceTable
+                    ? (index, data, rowNum) => rowNum == totalRowNumber
+                        ? const pw.BoxDecoration(color: PdfColors.grey200)
+                        : const pw.BoxDecoration()
+                    : null,
+                textStyleBuilder: useIncomeInvoiceTable
+                    ? (index, data, rowNum) => rowNum == totalRowNumber
+                        ? pw.TextStyle(
+                            font: pw.Font.helveticaBold(),
+                            fontWeight: pw.FontWeight.bold,
+                            fontSize: cellFont,
+                          )
+                        : null
+                    : null,
+              ),
+              pw.SizedBox(height: 12),
+              buildSummaryBox(),
+            ],
+          ),
+        );
+        return doc.save();
+      }
+
+      final pdfBytes = await buildReportPdfBytes(PdfPageFormat.a4);
+      final shouldPrint = await _showPdfPreviewDialog(
+        bytes: pdfBytes,
+        title: reportHeader,
+        renderInfo: previewInfo,
       );
+      if (!shouldPrint || !mounted) return false;
+
+      final pdfName = _safePdfFileName(
+        '${reportHeader.replaceAll(' ', '_')}_${periodLabel.replaceAll(' ', '_')}.pdf',
+      );
+      await _dispatchPdfBytesToPrinter(
+        bytes: pdfBytes,
+        name: pdfName,
+      );
+      return true;
     }
 
     final allStatuses = <String>{
-      ...incomes.map((item) => '${item['status'] ?? 'Waiting'}'),
+      ...reportIncomeInvoices.map(resolveIncomeReportStatus),
       ...expenses.map((item) => '${item['status'] ?? 'Recorded'}'),
     }.where((status) => status.trim().isNotEmpty).toList()
       ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
 
     String range = 'month';
-    String orientation = 'auto';
     String customerKind = 'all';
     bool includeIncome = true;
     bool includeExpense = true;
@@ -2531,9 +3033,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     int selectedMonth = DateTime.now().month;
     final availableYears = <int>{
       currentYear,
-      ...incomes
+      ...reportIncomeInvoices
           .map((item) =>
-              Formatters.parseDate(item['tanggal'] ?? item['created_at'])?.year)
+              Formatters.parseDate(resolveIncomeReportDate(item))?.year)
           .whereType<int>(),
       ...expenses
           .map((item) =>
@@ -2541,6 +3043,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
           .whereType<int>(),
     }.toList()
       ..sort((a, b) => b.compareTo(a));
+    final reportBayarControllers = <String, TextEditingController>{};
+    final reportSisaControllers = <String, TextEditingController>{};
+    final reportSisaEdited = <String, bool>{};
 
     String monthLabel(int month) {
       const id = [
@@ -2574,45 +3079,105 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       return _t(id[month - 1], en[month - 1]);
     }
 
-    final selection = await showDialog<Map<String, dynamic>>(
-      context: context,
-      barrierColor: AppColors.popupOverlay,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            final start = range == 'year'
-                ? DateTime(selectedYear, 1, 1)
-                : DateTime(selectedYear, selectedMonth, 1);
-            final end = range == 'year'
-                ? DateTime(selectedYear + 1, 1, 1)
-                : DateTime(selectedYear, selectedMonth + 1, 1);
-            final previewRows = buildRows(
-              start: start,
-              end: end,
-              includeIncome: includeIncome,
-              includeExpense: includeExpense,
-              customerKind: customerKind,
-              allowedStatuses: selectedStatuses,
-              keyword: keywordText.trim(),
-            );
-            final availableKeys =
-                previewRows.map((row) => '${row['__key']}').toSet();
-            rowSelections.removeWhere((key, _) => !availableKeys.contains(key));
-            for (final key in availableKeys) {
-              rowSelections.putIfAbsent(key, () => true);
-            }
-            final selectedCount = previewRows
-                .where((row) => rowSelections['${row['__key']}'] == true)
-                .length;
+    void syncReportPaymentControllers(
+      List<Map<String, dynamic>> previewRows,
+      bool incomeInvoiceReport,
+    ) {
+      final validKeys = previewRows.map((row) => '${row['__key']}').toSet();
+      final staleKeys = <String>{
+        ...reportBayarControllers.keys,
+        ...reportSisaControllers.keys,
+      }.difference(validKeys);
+      for (final key in staleKeys) {
+        reportBayarControllers.remove(key)?.dispose();
+        reportSisaControllers.remove(key)?.dispose();
+        reportSisaEdited.remove(key);
+      }
+      if (!incomeInvoiceReport) return;
 
-            return AlertDialog(
-              title: Text(_t('Buat Laporan PDF', 'Generate PDF Report')),
-              content: SizedBox(
-                width: 560,
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
+      for (final row in previewRows) {
+        final key = '${row['__key']}';
+        final paidLocked = row['__paid_locked'] == true;
+        final total = _toNum(row['__total']);
+        final defaultBayar = formatEditableReportAmount(
+          paidLocked ? total : _toNum(row['__bayar_default']),
+        );
+        final defaultSisa = paidLocked
+            ? ''
+            : formatEditableReportAmount(_toNum(row['__sisa_default']));
+        final bayarController = reportBayarControllers.putIfAbsent(
+          key,
+          () => TextEditingController(text: defaultBayar),
+        );
+        final sisaController = reportSisaControllers.putIfAbsent(
+          key,
+          () => TextEditingController(text: defaultSisa),
+        );
+        if (paidLocked) {
+          if (bayarController.text != defaultBayar) {
+            bayarController.text = defaultBayar;
+          }
+          if (sisaController.text.isNotEmpty) {
+            sisaController.clear();
+          }
+          reportSisaEdited[key] = true;
+        } else {
+          if (bayarController.text.trim().isEmpty && defaultBayar.isNotEmpty) {
+            bayarController.text = defaultBayar;
+          }
+          if (sisaController.text.trim().isEmpty && defaultSisa.isNotEmpty) {
+            sisaController.text = defaultSisa;
+          }
+          reportSisaEdited.putIfAbsent(key, () => false);
+        }
+      }
+    }
+
+    if (!mounted) return;
+    Map<String, dynamic>? selection;
+    try {
+      selection = await showDialog<Map<String, dynamic>>(
+        context: context,
+        barrierColor: AppColors.popupOverlay,
+        builder: (context) {
+          return StatefulBuilder(
+            builder: (context, setDialogState) {
+              final start = range == 'year'
+                  ? DateTime(selectedYear, 1, 1)
+                  : DateTime(selectedYear, selectedMonth, 1);
+              final end = range == 'year'
+                  ? DateTime(selectedYear + 1, 1, 1)
+                  : DateTime(selectedYear, selectedMonth + 1, 1);
+              final previewRows = buildRows(
+                start: start,
+                end: end,
+                includeIncome: includeIncome,
+                includeExpense: includeExpense,
+                customerKind: customerKind,
+                allowedStatuses: selectedStatuses,
+                keyword: keywordText.trim(),
+              );
+              final availableKeys =
+                  previewRows.map((row) => '${row['__key']}').toSet();
+              rowSelections
+                  .removeWhere((key, _) => !availableKeys.contains(key));
+              for (final key in availableKeys) {
+                rowSelections.putIfAbsent(key, () => true);
+              }
+              final incomeInvoiceReport = includeIncome && !includeExpense;
+              syncReportPaymentControllers(previewRows, incomeInvoiceReport);
+              final selectedCount = previewRows
+                  .where((row) => rowSelections['${row['__key']}'] == true)
+                  .length;
+
+              return AlertDialog(
+                title: Text(_t('Buat Laporan PDF', 'Generate PDF Report')),
+                content: SizedBox(
+                  width: 560,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                       Text(
                         _t('Range Report', 'Report Range'),
                         style: const TextStyle(fontWeight: FontWeight.w700),
@@ -2651,66 +3216,6 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                                     : AppColors.cardBorder(context),
                               ),
                               child: Text(_t('Tahunan', 'Yearly')),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        _t('Orientasi Kertas', 'Page Orientation'),
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: () =>
-                                  setDialogState(() => orientation = 'auto'),
-                              style: CvantButtonStyles.outlined(
-                                context,
-                                color: orientation == 'auto'
-                                    ? AppColors.blue
-                                    : AppColors.textMutedFor(context),
-                                borderColor: orientation == 'auto'
-                                    ? AppColors.blue
-                                    : AppColors.cardBorder(context),
-                              ),
-                              child: Text(_t('Otomatis', 'Auto')),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: () => setDialogState(
-                                  () => orientation = 'landscape'),
-                              style: CvantButtonStyles.outlined(
-                                context,
-                                color: orientation == 'landscape'
-                                    ? AppColors.blue
-                                    : AppColors.textMutedFor(context),
-                                borderColor: orientation == 'landscape'
-                                    ? AppColors.blue
-                                    : AppColors.cardBorder(context),
-                              ),
-                              child: Text(_t('Landscape', 'Landscape')),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: () => setDialogState(
-                                  () => orientation = 'portrait'),
-                              style: CvantButtonStyles.outlined(
-                                context,
-                                color: orientation == 'portrait'
-                                    ? AppColors.blue
-                                    : AppColors.textMutedFor(context),
-                                borderColor: orientation == 'portrait'
-                                    ? AppColors.blue
-                                    : AppColors.cardBorder(context),
-                              ),
-                              child: Text(_t('Portrait', 'Portrait')),
                             ),
                           ),
                         ],
@@ -2931,8 +3436,12 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                       const SizedBox(height: 8),
                       Text(
                         _t(
-                          'Hasil filter: ${previewRows.length} data • Dipilih: $selectedCount',
-                          'Filtered result: ${previewRows.length} rows • Selected: $selectedCount',
+                          includeIncome && !includeExpense
+                              ? 'Hasil filter: ${previewRows.length} invoice • Dipilih: $selectedCount'
+                              : 'Hasil filter: ${previewRows.length} data • Dipilih: $selectedCount',
+                          includeIncome && !includeExpense
+                              ? 'Filtered result: ${previewRows.length} invoices • Selected: $selectedCount'
+                              : 'Filtered result: ${previewRows.length} rows • Selected: $selectedCount',
                         ),
                         style: TextStyle(
                           color: AppColors.textMutedFor(context),
@@ -2943,8 +3452,14 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                       Row(
                         children: [
                           Text(
-                            _t('Pilih Invoice Manual',
-                                'Manual Invoice Selection'),
+                            _t(
+                              includeIncome && !includeExpense
+                                  ? 'Pilih Invoice Manual'
+                                  : 'Pilih Data Manual',
+                              includeIncome && !includeExpense
+                                  ? 'Manual Invoice Selection'
+                                  : 'Manual Data Selection',
+                            ),
                             style: const TextStyle(fontWeight: FontWeight.w700),
                           ),
                           const Spacer(),
@@ -2974,14 +3489,14 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                       const SizedBox(height: 6),
                       if (previewRows.isEmpty)
                         Text(
-                          _t('Tidak ada invoice pada filter ini.',
-                              'No invoices in this filter.'),
+                          _t('Tidak ada data pada filter ini.',
+                              'No data for this filter.'),
                           style:
                               TextStyle(color: AppColors.textMutedFor(context)),
                         )
                       else
                         SizedBox(
-                          height: 220,
+                          height: incomeInvoiceReport ? 320 : 220,
                           child: ListView.separated(
                             itemCount: previewRows.length,
                             separatorBuilder: (_, __) => Divider(
@@ -2994,28 +3509,183 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                               final checked = rowSelections[key] == true;
                               final income = _toNum(row['__income']);
                               final expense = _toNum(row['__expense']);
-                              final amountLabel = income > 0
-                                  ? '${_t('Income', 'Income')}: ${Formatters.rupiah(income)}'
-                                  : '${_t('Expense', 'Expense')}: ${Formatters.rupiah(expense)}';
-                              return CheckboxListTile(
-                                contentPadding: EdgeInsets.zero,
-                                dense: true,
-                                value: checked,
-                                onChanged: (value) => setDialogState(
-                                  () => rowSelections[key] = value ?? false,
+                              final showIncomePph = incomeInvoiceReport &&
+                                  (customerKind ==
+                                          Formatters.invoiceEntityCvAnt ||
+                                      customerKind ==
+                                          Formatters.invoiceEntityPtAnt ||
+                                      (customerKind !=
+                                              Formatters
+                                                  .invoiceEntityPersonal &&
+                                          previewRows.any((item) =>
+                                              _toNum(item['__pph']) > 0)));
+                              final paidAt = '${row['__paid_at'] ?? ''}'.trim();
+                              final tujuanLabel =
+                                  '${row['__tujuan'] ?? '-'}'.trim();
+                              final title = incomeInvoiceReport
+                                  ? '${row['__number'] ?? '-'} • ${row['__customer'] ?? row['__name'] ?? '-'}'
+                                  : '${row['__number'] ?? '-'} • ${Formatters.dmy(row['__date'])}';
+                              final subtitle = incomeInvoiceReport
+                                  ? [
+                                      '${_t('Tanggal', 'Date')}: ${Formatters.dmy(row['__date'])}',
+                                      '${_t('Jumlah', 'Amount')}: ${Formatters.rupiah(_toNum(row['__jumlah']))}',
+                                      if (showIncomePph)
+                                        '${_t('PPH', 'PPH')}: ${Formatters.rupiah(_toNum(row['__pph']))}',
+                                      '${_t('Total', 'Total')}: ${Formatters.rupiah(_toNum(row['__total']))}',
+                                      if (paidAt.isNotEmpty)
+                                        '${_t('Tgl Bayar', 'Paid Date')}: ${Formatters.dmy(paidAt)}',
+                                    ].join(' • ')
+                                  : income > 0
+                                      ? [
+                                          '${_t('Income', 'Income')}: ${Formatters.rupiah(income)}',
+                                          if (tujuanLabel.isNotEmpty &&
+                                              tujuanLabel != '-')
+                                            tujuanLabel,
+                                        ].join(' • ')
+                                      : '${_t('Expense', 'Expense')}: ${Formatters.rupiah(expense)}';
+                              final bayarController =
+                                  reportBayarControllers[key];
+                              final sisaController = reportSisaControllers[key];
+                              final paidLocked = row['__paid_locked'] == true;
+                              final total = _toNum(row['__total']);
+
+                              if (!incomeInvoiceReport ||
+                                  bayarController == null ||
+                                  sisaController == null) {
+                                return CheckboxListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  dense: true,
+                                  value: checked,
+                                  onChanged: (value) => setDialogState(
+                                    () => rowSelections[key] = value ?? false,
+                                  ),
+                                  title: Text(
+                                    title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  subtitle: Text(
+                                    subtitle,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  controlAffinity:
+                                      ListTileControlAffinity.leading,
+                                );
+                              }
+
+                              return Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 4),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    CheckboxListTile(
+                                      contentPadding: EdgeInsets.zero,
+                                      dense: true,
+                                      value: checked,
+                                      onChanged: (value) => setDialogState(
+                                        () => rowSelections[key] =
+                                            value ?? false,
+                                      ),
+                                      title: Text(
+                                        title,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      subtitle: Text(
+                                        subtitle,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      controlAffinity:
+                                          ListTileControlAffinity.leading,
+                                    ),
+                                    Padding(
+                                      padding: const EdgeInsets.only(
+                                        left: 42,
+                                        right: 4,
+                                        bottom: 6,
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Expanded(
+                                            child: TextField(
+                                              controller: bayarController,
+                                              enabled: checked,
+                                              readOnly: paidLocked,
+                                              keyboardType:
+                                                  TextInputType.number,
+                                              decoration: InputDecoration(
+                                                isDense: true,
+                                                labelText:
+                                                    _t('Bayar', 'Paid'),
+                                                hintText: '0',
+                                              ),
+                                              onChanged: paidLocked
+                                                  ? null
+                                                  : (value) {
+                                                      if (reportSisaEdited[
+                                                              key] ==
+                                                          true) {
+                                                        return;
+                                                      }
+                                                      final remaining = max(
+                                                        0,
+                                                        total -
+                                                            parseEditableReportAmount(
+                                                              value,
+                                                            ),
+                                                      );
+                                                      final text =
+                                                          formatEditableReportAmount(
+                                                        remaining,
+                                                      );
+                                                      if (sisaController
+                                                              .text !=
+                                                          text) {
+                                                        sisaController.value =
+                                                            TextEditingValue(
+                                                          text: text,
+                                                          selection:
+                                                              TextSelection
+                                                                  .collapsed(
+                                                            offset: text.length,
+                                                          ),
+                                                        );
+                                                      }
+                                                    },
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: TextField(
+                                              controller: sisaController,
+                                              enabled: checked,
+                                              readOnly: paidLocked,
+                                              keyboardType:
+                                                  TextInputType.number,
+                                              decoration: InputDecoration(
+                                                isDense: true,
+                                                labelText: _t('Sisa',
+                                                    'Remaining'),
+                                                hintText: paidLocked ? '' : '0',
+                                              ),
+                                              onChanged: paidLocked
+                                                  ? null
+                                                  : (value) {
+                                                      reportSisaEdited[key] =
+                                                          value
+                                                              .trim()
+                                                              .isNotEmpty;
+                                                    },
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                title: Text(
-                                  '${row['__number'] ?? '-'} • ${Formatters.dmy(row['__date'])}',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                subtitle: Text(
-                                  amountLabel,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                controlAffinity:
-                                    ListTileControlAffinity.leading,
                               );
                             },
                           ),
@@ -3043,7 +3713,6 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                       'range': range,
                       'includeIncome': includeIncome,
                       'includeExpense': includeExpense,
-                      'orientation': orientation,
                       'customerKind': customerKind,
                       'month': selectedMonth,
                       'year': selectedYear,
@@ -3053,12 +3722,18 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                           .where((entry) => entry.value)
                           .map((entry) => entry.key)
                           .toList(),
+                      'bayarInputs': reportBayarControllers.map(
+                        (key, controller) => MapEntry(key, controller.text),
+                      ),
+                      'sisaInputs': reportSisaControllers.map(
+                        (key, controller) => MapEntry(key, controller.text),
+                      ),
                     });
                   },
                   style: CvantButtonStyles.filled(context,
                       color: AppColors.success),
-                  icon: const Icon(Icons.print_outlined),
-                  label: Text(_t('Cetak PDF', 'Print PDF')),
+                  icon: const Icon(Icons.preview_outlined),
+                  label: Text(_t('Preview PDF', 'Preview PDF')),
                 ),
               ],
             );
@@ -3066,6 +3741,14 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         );
       },
     );
+    } finally {
+      for (final controller in reportBayarControllers.values) {
+        controller.dispose();
+      }
+      for (final controller in reportSisaControllers.values) {
+        controller.dispose();
+      }
+    }
     if (selection == null) return;
 
     final selectedRange = '${selection['range'] ?? 'month'}';
@@ -3084,7 +3767,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         : DateTime(reportYear, reportMonth + 1, 1);
     final includeIncomeSelected = selection['includeIncome'] == true;
     final includeExpenseSelected = selection['includeExpense'] == true;
-    final selectedOrientation = '${selection['orientation'] ?? 'auto'}';
+    const selectedOrientation = 'portrait';
     final statusFilters =
         (selection['statuses'] as List<dynamic>? ?? const <dynamic>[])
             .map((item) => '$item')
@@ -3093,6 +3776,16 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         (selection['selectedKeys'] as List<dynamic>? ?? const <dynamic>[])
             .map((item) => '$item')
             .toSet();
+    final bayarInputs =
+        ((selection['bayarInputs'] as Map?)?.map(
+              (key, value) => MapEntry('$key', '$value'),
+            ) ??
+            const <String, String>{});
+    final sisaInputs =
+        ((selection['sisaInputs'] as Map?)?.map(
+              (key, value) => MapEntry('$key', '$value'),
+            ) ??
+            const <String, String>{});
     final keyword = '${selection['keyword'] ?? ''}';
 
     if (!includeIncomeSelected && !includeExpenseSelected) {
@@ -3119,6 +3812,34 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         ? <Map<String, dynamic>>[]
         : allRows
             .where((row) => selectedKeys.contains('${row['__key']}'))
+            .map((row) {
+              if (!(includeIncomeSelected && !includeExpenseSelected) ||
+                  '${row['__type']}' != 'Income') {
+                return row;
+              }
+              final key = '${row['__key']}';
+              final total = _toNum(row['__total']);
+              final paidLocked = row['__paid_locked'] == true;
+              final bayarText = paidLocked
+                  ? formatEditableReportAmount(total)
+                  : (bayarInputs[key] ?? '').toString().trim();
+              final sisaText = paidLocked
+                  ? ''
+                  : (sisaInputs[key] ?? '').toString().trim();
+              final bayar = paidLocked
+                  ? total
+                  : parseEditableReportAmount(bayarText);
+              final sisa = paidLocked
+                  ? 0.0
+                  : parseEditableReportAmount(sisaText);
+              return {
+                ...row,
+                '__bayar': bayar,
+                '__sisa': sisa,
+                '__bayar_text': bayarText,
+                '__sisa_text': sisaText,
+              };
+            })
             .toList();
 
     if (rows.isEmpty) {
@@ -3140,7 +3861,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         .fold<double>(0, (sum, row) => sum + _toNum(row['__expense']));
 
     try {
-      await printReportPdf(
+      final incomeInvoiceReport =
+          includeIncomeSelected && !includeExpenseSelected;
+      final printed = await printReportPdf(
         start: start,
         end: end,
         rows: rows,
@@ -3151,11 +3874,15 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         customerKind: selectedCustomerKind,
         orientation: selectedOrientation,
       );
-      if (!mounted) return;
+      if (!printed || !mounted) return;
       _snack(
         _t(
-          'Report PDF berhasil dibuat (${rows.length} data).',
-          'PDF report generated successfully (${rows.length} rows).',
+          incomeInvoiceReport
+              ? 'Report PDF berhasil dibuat (${rows.length} invoice).'
+              : 'Report PDF berhasil dibuat (${rows.length} data).',
+          incomeInvoiceReport
+              ? 'PDF report generated successfully (${rows.length} invoices).'
+              : 'PDF report generated successfully (${rows.length} rows).',
         ),
       );
     } catch (e) {
@@ -3877,7 +4604,6 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                         height: 44,
                         child: OutlinedButton(
                           onPressed: () => _openReportSummary(
-                            incomes: incomes,
                             expenses: expenses,
                           ),
                           style: CvantButtonStyles.outlined(
