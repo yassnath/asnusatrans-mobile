@@ -182,7 +182,15 @@ File? _resolveBundledAssetFileForPdf(String relativeAssetPath) {
   if (kIsWeb) return null;
   final normalizedRelative =
       relativeAssetPath.replaceAll('/', Platform.pathSeparator);
+  final projectRoots = <String>{
+    ..._candidateProjectRootsForPdf(Directory.current),
+    ..._candidateProjectRootsForPdf(File(Platform.resolvedExecutable).parent),
+  };
   final candidatePaths = <String>[
+    ...projectRoots.map(
+      (root) => _joinBundledAssetPath(root, normalizedRelative),
+    ),
+    _joinBundledAssetPath(Directory.current.path, normalizedRelative),
     _joinBundledAssetPath(
       Directory.current.path,
       'data',
@@ -195,7 +203,6 @@ File? _resolveBundledAssetFileForPdf(String relativeAssetPath) {
       'flutter_assets',
       normalizedRelative,
     ),
-    _joinBundledAssetPath(Directory.current.path, normalizedRelative),
   ];
 
   for (final candidate in candidatePaths) {
@@ -205,6 +212,22 @@ File? _resolveBundledAssetFileForPdf(String relativeAssetPath) {
     }
   }
   return null;
+}
+
+Iterable<String> _candidateProjectRootsForPdf(Directory start) sync* {
+  var current = start.absolute;
+  while (true) {
+    final pubspec = File(
+      _joinBundledAssetPath(current.path, 'pubspec.yaml'),
+    );
+    if (pubspec.existsSync()) {
+      yield current.path;
+      return;
+    }
+    final parent = current.parent;
+    if (parent.path == current.path) return;
+    current = parent;
+  }
 }
 
 String _joinBundledAssetPath(String base, String next,

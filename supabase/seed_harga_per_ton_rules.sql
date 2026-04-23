@@ -46,6 +46,7 @@ with incoming(
     (null, null, 'Batang', 235.00, null, 100, true),
     ('PT Bornava Indobara Mandiri', null, 'Batang', 225.00, null, 200, true),
     ('Giono', 'Nganjuk', 'Driyo', 0.00, 1600000.00, 250, true),
+    ('Hasan', 'T. Langon', 'T. Langon', 0.00, 200000.00, 260, true),
     (null, 'T. Langon', 'Tuban', 90.00, null, 100, true),
     (null, 'T. Langon', 'Probolinggo', 90.00, null, 100, true),
     (null, 'T. Langon', 'Mojoagung', 80.00, null, 100, true),
@@ -75,6 +76,7 @@ with incoming(
     (null, 'Betoyo', 'Probolinggo', 95.00, null, 100, true),
     (null, 'Betoyo', 'Tongas', 88.00, null, 100, true),
     (null, 'Betoyo', 'Mojoagung', 87.00, null, 100, true),
+    (null, 'Betoyo', 'Muncar', 193.00, null, 110, true),
     (null, 'Betoyo', 'T. Langon', 90.00, null, 100, true),
     (null, 'Betoyo', 'Blitar', 125.00, null, 100, true)
 ), normalized as (
@@ -113,6 +115,7 @@ with incoming(
     (null, null, 'Batang', 235.00, null, 100, true),
     ('PT Bornava Indobara Mandiri', null, 'Batang', 225.00, null, 200, true),
     ('Giono', 'Nganjuk', 'Driyo', 0.00, 1600000.00, 250, true),
+    ('Hasan', 'T. Langon', 'T. Langon', 0.00, 200000.00, 260, true),
     (null, 'T. Langon', 'Tuban', 90.00, null, 100, true),
     (null, 'T. Langon', 'Probolinggo', 90.00, null, 100, true),
     (null, 'T. Langon', 'Mojoagung', 80.00, null, 100, true),
@@ -142,6 +145,7 @@ with incoming(
     (null, 'Betoyo', 'Probolinggo', 95.00, null, 100, true),
     (null, 'Betoyo', 'Tongas', 88.00, null, 100, true),
     (null, 'Betoyo', 'Mojoagung', 87.00, null, 100, true),
+    (null, 'Betoyo', 'Muncar', 193.00, null, 110, true),
     (null, 'Betoyo', 'T. Langon', 90.00, null, 100, true),
     (null, 'Betoyo', 'Blitar', 125.00, null, 100, true)
 ), normalized as (

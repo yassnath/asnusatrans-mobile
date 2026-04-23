@@ -214,6 +214,8 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
       final driverText = _safeInputText(option['nama_supir']);
       final isDriverManual =
           driverText.isNotEmpty && !_isKnownDriverOption(driverText);
+      final isOngkosKuli =
+          isOngkosKuliCargo(_safeInputText(option['muatan']));
       final row = <String, dynamic>{
         'lokasi_muat': _safeInputText(option['lokasi_muat']),
         'lokasi_muat_manual': '',
@@ -238,8 +240,9 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
         'tonase': _safeNumberInputText(option['tonase']),
         'harga': hargaText,
         'subtotal': subtotalText,
-        'harga_auto': hargaText.isEmpty,
-        'subtotal_auto': subtotalText.isNotEmpty && hargaText.isEmpty,
+        'harga_auto': !isOngkosKuli && hargaText.isEmpty,
+        'subtotal_auto':
+            !isOngkosKuli && subtotalText.isNotEmpty && hargaText.isEmpty,
       };
       final defaultDriver =
           _resolveDefaultDriverForRow(row, armadas: armadas)?.trim() ?? '';
@@ -319,6 +322,25 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
       );
       return;
     }
+    final invalidOngkosKuliIndexes = <int>[];
+    for (var i = 0; i < _details.length; i++) {
+      final row = _details[i];
+      if (!_isOngkosKuliIncomeRow(row)) continue;
+      if (!_hasRequiredIncomeDetailDate(row) || _detailSubtotal(row) <= 0) {
+        invalidOngkosKuliIndexes.add(i + 1);
+      }
+    }
+    if (invalidOngkosKuliIndexes.isNotEmpty) {
+      final detailLabels = invalidOngkosKuliIndexes.join(', ');
+      _snack(
+        _t(
+          'Muatan Ongkos Kuli wajib mengisi tanggal mulai dan total harga. Periksa rincian ke-$detailLabels.',
+          'Ongkos Kuli cargo requires a start date and total price. Check detail row(s) $detailLabels.',
+        ),
+        error: true,
+      );
+      return;
+    }
     final first = _details.first;
     final firstArmadaId = '${first['armada_id']}'.trim();
     final firstArmadaManual = '${first['armada_manual'] ?? ''}'.trim();
@@ -330,9 +352,10 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
     );
     final hasArmadaSelection =
         firstResolvedArmadaId.isNotEmpty || firstArmadaManual.isNotEmpty;
-    if ('${first['lokasi_muat']}'.trim().isEmpty ||
-        '${first['lokasi_bongkar']}'.trim().isEmpty ||
-        !hasArmadaSelection) {
+    if (!_isOngkosKuliIncomeRow(first) &&
+        ('${first['lokasi_muat']}'.trim().isEmpty ||
+            '${first['lokasi_bongkar']}'.trim().isEmpty ||
+            !hasArmadaSelection)) {
       _snack(
         _t(
           'Lokasi muat, lokasi bongkar, dan armada wajib diisi.',
@@ -390,9 +413,10 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
         armadaIdByPlate: armadaIdByPlate,
       );
       final useManual = resolvedArmadaId.isEmpty && armadaManualRaw.isNotEmpty;
+      final isOngkosKuli = _isOngkosKuliIncomeRow(row);
       return <String, dynamic>{
-        'lokasi_muat': '${row['lokasi_muat']}'.trim(),
-        'lokasi_bongkar': '${row['lokasi_bongkar']}'.trim(),
+        'lokasi_muat': _nullableInputText(row['lokasi_muat']),
+        'lokasi_bongkar': _nullableInputText(row['lokasi_bongkar']),
         'muatan': _nullableInputText(row['muatan']),
         'nama_supir': _nullableInputText(row['nama_supir']),
         'armada_id': resolvedArmadaId.isEmpty ? null : resolvedArmadaId,
@@ -404,9 +428,9 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
         'armada_end_date': '${row['armada_end_date']}'.trim().isEmpty
             ? null
             : '${row['armada_end_date']}',
-        'tonase': _toNum(row['tonase']),
-        'harga': _toNum(row['harga']),
-        'subtotal': _toNum(row['subtotal']),
+        'tonase': isOngkosKuli ? null : _nullableIncomeNumber(row['tonase']),
+        'harga': isOngkosKuli ? null : _nullableIncomeNumber(row['harga']),
+        'subtotal': _nullableIncomeNumber(row['subtotal']),
       };
     }).toList();
     final driverNames = detailsPayload
@@ -448,14 +472,18 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
         kopDate: Formatters.parseDate(_kopDate.text) ?? _date,
         kopLocation: _kopLocation.text,
         dueDate: Formatters.parseDate(_dueDate.text),
-        pickup: '${first['lokasi_muat']}',
-        destination: '${first['lokasi_bongkar']}',
+        pickup: _nullableInputText(first['lokasi_muat']),
+        destination: _nullableInputText(first['lokasi_bongkar']),
         muatan: _nullableInputText(first['muatan']),
         armadaId: firstResolvedArmadaId.isEmpty ? null : firstResolvedArmadaId,
         armadaStartDate: Formatters.parseDate(first['armada_start_date']),
         armadaEndDate: Formatters.parseDate(first['armada_end_date']),
-        tonase: _toNum(first['tonase']),
-        harga: _toNum(first['harga']),
+        tonase: _isOngkosKuliIncomeRow(first)
+            ? null
+            : _nullableIncomeNumber(first['tonase']),
+        harga: _isOngkosKuliIncomeRow(first)
+            ? null
+            : _nullableIncomeNumber(first['harga']),
         namaSupir: driverNames.isEmpty ? null : driverNames,
         acceptedBy: widget.session.isPengurus ? 'Pengurus' : _acceptedBy,
         customerId: _linkedCustomerId,
@@ -906,10 +934,23 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                               hintText: _t('Muatan', 'Cargo'),
                             ),
                             onChanged: (value) {
+                              final wasOngkosKuli =
+                                  _isOngkosKuliIncomeRow(row);
                               row['muatan'] = value;
-                              final hargaChanged =
-                                  _applyAutoHargaPerTon(row, force: true);
+                              final isOngkosKuli =
+                                  _isOngkosKuliIncomeRow(row);
+                              var hargaChanged = false;
+                              if (isOngkosKuli) {
+                                _enableDirectTotalOnlyIncomeRow(row);
+                              } else {
+                                if (wasOngkosKuli) {
+                                  _resetDirectTotalOnlyIncomeRow(row);
+                                }
+                                hargaChanged =
+                                    _applyAutoHargaPerTon(row, force: true);
+                              }
                               setState(() {
+                                _detailFieldRefreshToken++;
                                 if (hargaChanged) {
                                   _hargaFieldRefreshToken++;
                                 }
@@ -1162,52 +1203,76 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                             ],
                           ),
                           const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: TextFormField(
-                                  key: ValueKey(
-                                    'tonase-$index-$_detailFieldRefreshToken',
-                                  ),
-                                  initialValue: '${row['tonase']}',
-                                  keyboardType:
-                                      const TextInputType.numberWithOptions(
-                                    decimal: true,
-                                  ),
-                                  decoration: InputDecoration(
-                                    hintText: _t('Tonase', 'Tonnage'),
-                                  ),
-                                  onChanged: (value) {
-                                    row['tonase'] = value;
-                                    setState(() {});
-                                  },
-                                ),
+                          if (_isOngkosKuliIncomeRow(row))
+                            TextFormField(
+                              key: ValueKey(
+                                'total-harga-$index-$_detailFieldRefreshToken-$_hargaFieldRefreshToken',
                               ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: TextFormField(
-                                  key: ValueKey(
-                                    'harga-$index-$_detailFieldRefreshToken-$_hargaFieldRefreshToken',
-                                  ),
-                                  initialValue: '${row['harga']}',
-                                  keyboardType:
-                                      const TextInputType.numberWithOptions(
-                                    decimal: true,
-                                  ),
-                                  decoration: InputDecoration(
-                                    hintText: _t('Harga / Ton', 'Price / Ton'),
-                                  ),
-                                  onChanged: (value) {
-                                    row['harga'] = value;
-                                    row['subtotal'] = '';
-                                    row['harga_auto'] = false;
-                                    row['subtotal_auto'] = false;
-                                    setState(() {});
-                                  },
-                                ),
+                              initialValue: '${row['subtotal']}',
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                decimal: true,
                               ),
-                            ],
-                          ),
+                              decoration: InputDecoration(
+                                hintText: _t('Total Harga', 'Total Price'),
+                              ),
+                              onChanged: (value) {
+                                row['subtotal'] = value;
+                                row['tonase'] = '';
+                                row['harga'] = '';
+                                row['harga_auto'] = false;
+                                row['subtotal_auto'] = false;
+                                setState(() {});
+                              },
+                            )
+                          else
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextFormField(
+                                    key: ValueKey(
+                                      'tonase-$index-$_detailFieldRefreshToken',
+                                    ),
+                                    initialValue: '${row['tonase']}',
+                                    keyboardType:
+                                        const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                    decoration: InputDecoration(
+                                      hintText: _t('Tonase', 'Tonnage'),
+                                    ),
+                                    onChanged: (value) {
+                                      row['tonase'] = value;
+                                      setState(() {});
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: TextFormField(
+                                    key: ValueKey(
+                                      'harga-$index-$_detailFieldRefreshToken-$_hargaFieldRefreshToken',
+                                    ),
+                                    initialValue: '${row['harga']}',
+                                    keyboardType:
+                                        const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                    decoration: InputDecoration(
+                                      hintText:
+                                          _t('Harga / Ton', 'Price / Ton'),
+                                    ),
+                                    onChanged: (value) {
+                                      row['harga'] = value;
+                                      row['subtotal'] = '';
+                                      row['harga_auto'] = false;
+                                      row['subtotal_auto'] = false;
+                                      setState(() {});
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
                           const SizedBox(height: 8),
                           Row(
                             children: [

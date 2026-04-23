@@ -6,6 +6,10 @@ String normalizeIncomePricingRuleKey(String value) {
       .trim();
 }
 
+bool isOngkosKuliCargo(String value) {
+  return normalizeIncomePricingRuleKey(value) == 'ongkos kuli';
+}
+
 bool incomePricingLocationKeyMatches(String inputKey, String ruleKey) {
   if (inputKey.isEmpty || ruleKey.isEmpty) return false;
   if (inputKey == ruleKey) return true;
@@ -84,6 +88,33 @@ Map<String, dynamic>? resolveBuiltInIncomePricingRule({
       'harga_per_ton': 0.0,
       'flat_total': 1600000.0,
       'priority': 250,
+      'is_active': true,
+    };
+  }
+
+  if (incomePricingCustomerNameMatches(customerKey, 'hasan') &&
+      incomePricingLocationKeyMatches(pickupKey, 't langon') &&
+      incomePricingLocationKeyMatches(destinationKey, 't langon')) {
+    return <String, dynamic>{
+      'customer_name': 'Hasan',
+      'lokasi_muat': 'T. Langon',
+      'lokasi_bongkar': 'T. Langon',
+      'harga_per_ton': 0.0,
+      'flat_total': 200000.0,
+      'priority': 260,
+      'is_active': true,
+    };
+  }
+
+  if (incomePricingLocationKeyMatches(pickupKey, 'betoyo') &&
+      incomePricingLocationKeyMatches(destinationKey, 'muncar')) {
+    return <String, dynamic>{
+      'customer_name': null,
+      'lokasi_muat': 'Betoyo',
+      'lokasi_bongkar': 'Muncar',
+      'harga_per_ton': 193.0,
+      'flat_total': null,
+      'priority': 110,
       'is_active': true,
     };
   }

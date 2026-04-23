@@ -1,5 +1,35 @@
 part of 'dashboard_page.dart';
 
+bool _isOngkosKuliIncomeRow(Map<String, dynamic> row) {
+  return isOngkosKuliCargo('${row['muatan'] ?? ''}');
+}
+
+bool _hasRequiredIncomeDetailDate(Map<String, dynamic> row) {
+  return '${row['armada_start_date'] ?? ''}'.trim().isNotEmpty;
+}
+
+void _enableDirectTotalOnlyIncomeRow(Map<String, dynamic> row) {
+  row['tonase'] = '';
+  row['harga'] = '';
+  row['harga_auto'] = false;
+  row['subtotal_auto'] = false;
+}
+
+void _resetDirectTotalOnlyIncomeRow(Map<String, dynamic> row) {
+  row['subtotal'] = '';
+  row['harga_auto'] = true;
+  row['subtotal_auto'] = false;
+}
+
+double? _nullableIncomeNumber(dynamic value) {
+  if (value == null) return null;
+  final raw = value.toString().trim();
+  if (raw.isEmpty || raw.toLowerCase() == 'null' || raw == '-') {
+    return null;
+  }
+  return _toNum(value);
+}
+
 extension _AdminCreateIncomeViewStateSupport on _AdminCreateIncomeViewState {
   String _safeInputText(dynamic value) {
     final raw = (value ?? '').toString().trim();

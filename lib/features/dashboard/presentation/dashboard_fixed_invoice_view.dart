@@ -123,6 +123,8 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
       status: batch.status,
       paidAt: batch.paidAt,
       createdAt: batch.createdAt,
+      paymentDetails:
+          batch.paymentDetails.map((entry) => entry.toJson()).toList(),
     );
   }
 
@@ -136,6 +138,45 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
         .toSet();
     await _saveFixedIds(ids);
     await _saveFixedBatches(batches);
+  }
+
+  Future<List<_FixedInvoiceBatch>> _loadMergedFixedBatches() async {
+    final localIds = await _loadFixedIds();
+    final localBatches = await _loadFixedBatches();
+    final remoteBatches = await _loadRemoteFixedBatches();
+    final knownInvoiceIds = <String>{
+      ...localBatches.expand((batch) => batch.invoiceIds),
+      ...remoteBatches.expand((batch) => batch.invoiceIds),
+    }.map((id) => id.trim()).where((id) => id.isNotEmpty).toSet();
+    final legacyIds = localIds.difference(knownInvoiceIds);
+    final legacyBatches = legacyIds.isEmpty
+        ? const <_FixedInvoiceBatch>[]
+        : _buildLegacyFixedInvoiceBatchesFromInvoices(
+            invoices: await widget.repository.fetchInvoicesByIds(legacyIds),
+            fixedIds: legacyIds,
+            existingBatches: <_FixedInvoiceBatch>[
+              ...localBatches,
+              ...remoteBatches,
+            ],
+          );
+    final promotedLocalBatches = <_FixedInvoiceBatch>[
+      ...localBatches,
+      ...legacyBatches,
+    ];
+    final merged = _mergeFixedInvoiceBatchesWithLocalFallback(
+      remoteBatches: remoteBatches,
+      localBatches: promotedLocalBatches,
+    );
+    if (merged.isNotEmpty) {
+      await Future.wait(merged.map(_upsertRemoteFixedBatch));
+    }
+    final refreshedRemote = await _loadRemoteFixedBatches();
+    final finalBatches = _mergeFixedInvoiceBatchesWithLocalFallback(
+      remoteBatches: refreshedRemote,
+      localBatches: merged,
+    );
+    await _syncLocalCacheFromBatches(finalBatches);
+    return finalBatches;
   }
 
   Future<void> _saveFixedIds(Set<String> ids) async {
@@ -325,6 +366,56 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
     );
   }
 
+  List<Map<String, dynamic>> _resolveBatchSourceItems(Map<String, dynamic> item) {
+    final sourceItems =
+        (item['__batch_items'] as List<dynamic>? ?? const <dynamic>[])
+            .whereType<Map>()
+            .map((row) => Map<String, dynamic>.from(row))
+            .toList();
+    return sourceItems.isNotEmpty ? sourceItems : <Map<String, dynamic>>[item];
+  }
+
+  _FixedInvoiceBatch _buildBatchSnapshotFromItem(Map<String, dynamic> item) {
+    final batchId = '${item['__batch_id'] ?? item['id'] ?? ''}'.trim();
+    final invoiceIds =
+        (item['__batch_invoice_ids'] as List<dynamic>? ?? const <dynamic>[])
+            .map((id) => '$id'.trim())
+            .where((id) => id.isNotEmpty)
+            .toList(growable: false);
+    return _FixedInvoiceBatch(
+      batchId: batchId,
+      invoiceIds: invoiceIds,
+      invoiceNumber: '${item['__batch_invoice_number'] ?? item['no_invoice'] ?? ''}'
+          .trim(),
+      customerName: '${item['nama_pelanggan'] ?? ''}'.trim(),
+      kopDate: '${item['tanggal_kop'] ?? ''}'.trim().isEmpty
+          ? null
+          : '${item['tanggal_kop'] ?? ''}'.trim(),
+      kopLocation: '${item['lokasi_kop'] ?? ''}'.trim().isEmpty
+          ? null
+          : '${item['lokasi_kop'] ?? ''}'.trim(),
+      status: '${item['status'] ?? 'Unpaid'}'.trim(),
+      paidAt: '${item['paid_at'] ?? ''}'.trim().isEmpty
+          ? null
+          : '${item['paid_at'] ?? ''}'.trim(),
+      createdAt: '${item['__batch_created_at'] ?? item['created_at'] ?? ''}'
+          .trim(),
+      paymentDetails: _toFixedInvoicePaymentEntryList(
+        item['__batch_payment_details'],
+      ),
+    );
+  }
+
+  _FixedInvoicePaymentSummary _resolvePaymentSummaryForItem(
+    Map<String, dynamic> item, {
+    _FixedInvoiceBatch? batchOverride,
+  }) {
+    return _summarizeFixedInvoicePayments(
+      batch: batchOverride ?? _buildBatchSnapshotFromItem(item),
+      sourceInvoices: _resolveBatchSourceItems(item),
+    );
+  }
+
   Future<void> _editFixedInvoiceStatus(Map<String, dynamic> item) async {
     final batchId = '${item['__batch_id'] ?? item['id'] ?? ''}'.trim();
     if (batchId.isEmpty) {
@@ -334,20 +425,80 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
       );
       return;
     }
-    final rawStatus = '${item['status'] ?? 'Unpaid'}'.trim();
-    final initialStatus = rawStatus.isEmpty ? 'Unpaid' : rawStatus;
-    final rawPaidAt = '${item['paid_at'] ?? ''}'.trim();
-    final initialPaidDate =
-        rawPaidAt.isEmpty ? null : Formatters.parseDate(rawPaidAt);
+    final sourceItems = _resolveBatchSourceItems(item);
+    final batches = await _loadFixedBatches();
+    final existingIndex = batches.indexWhere((batch) => batch.batchId == batchId);
+    final currentBatch = existingIndex >= 0
+        ? batches[existingIndex].copyWith(
+            paymentDetails: batches[existingIndex].paymentDetails.isNotEmpty
+                ? batches[existingIndex].paymentDetails
+                : _toFixedInvoicePaymentEntryList(item['__batch_payment_details']),
+            status: '${item['status'] ?? batches[existingIndex].status}'.trim(),
+            paidAt: '${item['paid_at'] ?? batches[existingIndex].paidAt ?? ''}'
+                    .trim()
+                    .isEmpty
+                ? null
+                : '${item['paid_at'] ?? batches[existingIndex].paidAt ?? ''}'
+                    .trim(),
+          )
+        : _buildBatchSnapshotFromItem(item);
+    final initialSummary = _summarizeFixedInvoicePayments(
+      batch: currentBatch,
+      sourceInvoices: sourceItems,
+    );
+    if (!mounted) return;
 
-    final result = await showDialog<Map<String, String?>>(
+    final result = await showDialog<Map<String, dynamic>>(
       context: context,
       barrierColor: AppColors.popupOverlay,
       builder: (context) {
-        var selectedStatus = initialStatus;
-        DateTime? selectedPaidDate = initialPaidDate;
+        var selectedStatus = initialSummary.status;
+        DateTime? selectedPaidDate = Formatters.parseDate(initialSummary.paidAt);
+        final paymentEntries = initialSummary.entries
+            .map(
+              (entry) => entry.copyWith(
+                paidAt: (entry.paidAt ?? '').trim().isEmpty
+                    ? null
+                    : _toDbDate(
+                        Formatters.parseDate(entry.paidAt) ?? DateTime.now(),
+                      ),
+              ),
+            )
+            .toList(growable: true);
+
         return StatefulBuilder(
           builder: (context, setDialogState) {
+            void recalculateStatus() {
+              final anyPaid = paymentEntries.any((entry) => entry.paid);
+              final allPaid =
+                  paymentEntries.isNotEmpty && paymentEntries.every((entry) => entry.paid);
+              selectedStatus = allPaid
+                  ? 'Paid'
+                  : anyPaid
+                      ? 'Partial'
+                      : 'Unpaid';
+              if (selectedStatus != 'Paid') {
+                selectedPaidDate = null;
+              } else {
+                selectedPaidDate ??= paymentEntries
+                    .map((entry) => Formatters.parseDate(entry.paidAt))
+                    .whereType<DateTime>()
+                    .fold<DateTime?>(null, (latest, current) {
+                  if (latest == null || current.isAfter(latest)) return current;
+                  return latest;
+                }) ??
+                    DateTime.now();
+              }
+            }
+
+            void applyBatchPaidDate(DateTime date) {
+              final dbDate = _toDbDate(date);
+              for (var i = 0; i < paymentEntries.length; i++) {
+                if (!paymentEntries[i].paid) continue;
+                paymentEntries[i] = paymentEntries[i].copyWith(paidAt: dbDate);
+              }
+            }
+
             Future<void> pickPaidDate() async {
               final initial = selectedPaidDate ?? DateTime.now();
               final picked = await showDatePicker(
@@ -359,6 +510,9 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
               if (picked == null) return;
               setDialogState(() {
                 selectedPaidDate = picked;
+                if (selectedStatus == 'Paid') {
+                  applyBatchPaidDate(picked);
+                }
               });
             }
 
@@ -367,23 +521,48 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
               return Formatters.dmy(selectedPaidDate);
             }
 
+            Future<void> pickRaidPaidDate(int index) async {
+              final current = Formatters.parseDate(paymentEntries[index].paidAt) ??
+                  selectedPaidDate ??
+                  DateTime.now();
+              final picked = await showDatePicker(
+                context: context,
+                firstDate: DateTime(2020),
+                lastDate: DateTime(2100),
+                initialDate: current,
+              );
+              if (picked == null) return;
+              setDialogState(() {
+                paymentEntries[index] = paymentEntries[index].copyWith(
+                  paid: true,
+                  paidAt: _toDbDate(picked),
+                );
+                recalculateStatus();
+              });
+            }
+
             return AlertDialog(
               title: Text(_t('Edit Status Fix Invoice', 'Edit Fixed Invoice')),
               content: SizedBox(
-                width: 420,
+                width: 620,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     CvantDropdownField<String>(
+                      key: ValueKey(selectedStatus),
                       initialValue: selectedStatus,
                       decoration: InputDecoration(
                         labelText: _t('Status', 'Status'),
                       ),
-                      items: const [
+                      items: [
                         DropdownMenuItem(
                           value: 'Unpaid',
                           child: Text('Unpaid'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'Partial',
+                          child: Text(_t('Partial', 'Partial')),
                         ),
                         DropdownMenuItem(
                           value: 'Paid',
@@ -392,10 +571,23 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                       ],
                       onChanged: (value) => setDialogState(() {
                         selectedStatus = value ?? 'Unpaid';
-                        if (selectedStatus != 'Paid') {
+                        if (selectedStatus == 'Unpaid') {
+                          for (var i = 0; i < paymentEntries.length; i++) {
+                            paymentEntries[i] = paymentEntries[i].copyWith(
+                              paid: false,
+                              paidAt: null,
+                            );
+                          }
                           selectedPaidDate = null;
-                        } else {
+                        } else if (selectedStatus == 'Paid') {
                           selectedPaidDate ??= DateTime.now();
+                          final batchDate = _toDbDate(selectedPaidDate!);
+                          for (var i = 0; i < paymentEntries.length; i++) {
+                            paymentEntries[i] = paymentEntries[i].copyWith(
+                              paid: true,
+                              paidAt: batchDate,
+                            );
+                          }
                         }
                       }),
                     ),
@@ -408,6 +600,135 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                           labelText: _t('Tanggal Pelunasan', 'Payment Date'),
                         ),
                         child: Text(paidDateLabel()),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Text(
+                          _t('Pembayaran per raid', 'Per-raid payment'),
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        const Spacer(),
+                        TextButton(
+                          onPressed: () => setDialogState(() {
+                            selectedStatus = 'Paid';
+                            selectedPaidDate ??= DateTime.now();
+                            final batchDate = _toDbDate(selectedPaidDate!);
+                            for (var i = 0; i < paymentEntries.length; i++) {
+                              paymentEntries[i] = paymentEntries[i].copyWith(
+                                paid: true,
+                                paidAt: batchDate,
+                              );
+                            }
+                          }),
+                          child: Text(_t('Bayar Semua', 'Pay All')),
+                        ),
+                        TextButton(
+                          onPressed: () => setDialogState(() {
+                            selectedStatus = 'Unpaid';
+                            selectedPaidDate = null;
+                            for (var i = 0; i < paymentEntries.length; i++) {
+                              paymentEntries[i] = paymentEntries[i].copyWith(
+                                paid: false,
+                                paidAt: null,
+                              );
+                            }
+                          }),
+                          child: Text(_t('Kosongi', 'Clear')),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    SizedBox(
+                      height: 320,
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: paymentEntries.length,
+                        separatorBuilder: (_, __) => Divider(
+                          height: 1,
+                          color: AppColors.cardBorder(context),
+                        ),
+                        itemBuilder: (context, index) {
+                          final entry = paymentEntries[index];
+                          final paidDate = Formatters.parseDate(entry.paidAt);
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Checkbox(
+                                  value: entry.paid,
+                                  onChanged: (value) => setDialogState(() {
+                                    paymentEntries[index] = entry.copyWith(
+                                      paid: value ?? false,
+                                      paidAt: value == true
+                                          ? (entry.paidAt ??
+                                              _toDbDate(DateTime.now()))
+                                          : null,
+                                    );
+                                    recalculateStatus();
+                                  }),
+                                ),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        '${index + 1}. ${entry.departureDate.isEmpty ? '-' : Formatters.dmy(entry.departureDate)} • ${entry.plate}',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(entry.routeLabel),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        Formatters.rupiah(entry.total),
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                InkWell(
+                                  onTap: entry.paid
+                                      ? () => pickRaidPaidDate(index)
+                                      : null,
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 8,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      border: Border.all(
+                                        color: AppColors.cardBorder(context),
+                                      ),
+                                      borderRadius: BorderRadius.circular(10),
+                                      color: entry.paid
+                                          ? AppColors.surfaceSoft(context)
+                                          : AppColors.surface(context),
+                                    ),
+                                    child: Text(
+                                      paidDate == null
+                                          ? _t('Pilih Tanggal', 'Pick Date')
+                                          : Formatters.dmy(paidDate),
+                                      style: TextStyle(
+                                        color: entry.paid
+                                            ? AppColors.textPrimaryFor(context)
+                                            : AppColors.textMutedFor(context),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
                       ),
                     ),
                   ],
@@ -427,13 +748,18 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                 ),
                 FilledButton(
                   onPressed: () {
-                    final paidAt =
-                        selectedStatus == 'Paid' && selectedPaidDate != null
-                            ? _toDbDate(selectedPaidDate!)
-                            : null;
+                    recalculateStatus();
+                    if (selectedStatus == 'Paid' && selectedPaidDate != null) {
+                      applyBatchPaidDate(selectedPaidDate!);
+                    }
+                    final paidAt = selectedStatus == 'Paid'
+                        ? _toDbDate(selectedPaidDate ?? DateTime.now())
+                        : null;
                     Navigator.pop(context, {
                       'status': selectedStatus,
                       'paid_at': paidAt,
+                      'payment_details':
+                          paymentEntries.map((entry) => entry.toJson()).toList(),
                     });
                   },
                   style: CvantButtonStyles.filled(
@@ -452,22 +778,18 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
     if (result == null) return;
     final newStatus = (result['status'] ?? 'Unpaid').toString().trim();
     final newPaidAt = (result['paid_at'] ?? '').toString().trim();
+    final paymentDetails = _toFixedInvoicePaymentEntryList(
+      result['payment_details'],
+    );
 
     try {
-      final batches = await _loadFixedBatches();
       final index = batches.indexWhere((batch) => batch.batchId == batchId);
       if (index >= 0) {
         final current = batches[index];
-        final updated = _FixedInvoiceBatch(
-          batchId: current.batchId,
-          invoiceIds: current.invoiceIds,
-          invoiceNumber: current.invoiceNumber,
-          customerName: current.customerName,
-          kopDate: current.kopDate,
-          kopLocation: current.kopLocation,
+        final updated = current.copyWith(
           status: newStatus.isEmpty ? 'Unpaid' : newStatus,
           paidAt: newPaidAt.isEmpty ? null : newPaidAt,
-          createdAt: current.createdAt,
+          paymentDetails: paymentDetails,
         );
         batches[index] = updated;
         await _saveFixedBatches(batches);
@@ -491,13 +813,11 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
   }
 
   Future<void> _openBatchPreview(Map<String, dynamic> item) async {
-    final sourceItems =
-        (item['__batch_items'] as List<dynamic>? ?? const <dynamic>[])
-            .whereType<Map>()
-            .map((row) => Map<String, dynamic>.from(row))
-            .toList();
-    final effectiveSourceItems =
-        sourceItems.isNotEmpty ? sourceItems : <Map<String, dynamic>>[item];
+    final effectiveSourceItems = _resolveBatchSourceItems(item);
+    final paymentSummary = _resolvePaymentSummaryForItem(item);
+    final paymentEntryByKey = <String, _FixedInvoicePaymentEntry>{
+      for (final entry in paymentSummary.entries) entry.detailKey: entry,
+    };
     final invoiceNumber = _resolveDisplayNumber(item);
     final customerName = '${item['nama_pelanggan'] ?? '-'}';
     final total = fixedInvoiceNum(item['total_bayar'] ?? item['total_biaya']);
@@ -544,11 +864,16 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '${_t('Status', 'Status')}: ${item['status'] ?? '-'}',
+                    '${_t('Status', 'Status')}: ${paymentSummary.status}',
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '${_t('Tanggal Pelunasan', 'Payment Date')}: ${((item['paid_at'] ?? '').toString().trim().isEmpty ? '-' : Formatters.dmy(item['paid_at']))}',
+                    '${_t('Tanggal Pelunasan', 'Payment Date')}: ${((paymentSummary.paidAt ?? '').trim().isEmpty ? '-' : Formatters.dmy(paymentSummary.paidAt))}',
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${_t('Bayar', 'Paid')}: ${Formatters.rupiah(paymentSummary.paidAmount)} • ${_t('Sisa', 'Remaining')}: ${Formatters.rupiah(paymentSummary.remainingAmount)}',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: 12),
                   Text(
@@ -617,6 +942,11 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                             ...detailRows.asMap().entries.map((entry) {
                               final index = entry.key;
                               final detail = entry.value;
+                              final detailKey = _fixedInvoicePaymentDetailKey(
+                                invoiceId: '${source['id'] ?? sourceNumber}'.trim(),
+                                detailIndex: index,
+                              );
+                              final paymentEntry = paymentEntryByKey[detailKey];
                               final startDate = detail['armada_start_date'] ??
                                   detail['tanggal'] ??
                                   source['tanggal'];
@@ -701,6 +1031,19 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                                       ].join(' • '),
                                       style: TextStyle(
                                         color: AppColors.textMutedFor(context),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      [
+                                        '${_t('Pembayaran', 'Payment')}: ${paymentEntry?.paid == true ? _t('Paid', 'Paid') : _t('Belum dibayar', 'Unpaid')}',
+                                        '${_t('Tanggal Bayar', 'Paid Date')}: ${((paymentEntry?.paidAt ?? '').trim().isEmpty ? '-' : Formatters.dmy(paymentEntry?.paidAt))}',
+                                      ].join(' • '),
+                                      style: TextStyle(
+                                        color: paymentEntry?.paid == true
+                                            ? AppColors.success
+                                            : AppColors.textMutedFor(context),
+                                        fontWeight: FontWeight.w600,
                                       ),
                                     ),
                                   ],
@@ -818,18 +1161,15 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
   Future<List<Map<String, dynamic>>> _load() async {
     final payload = await Future.wait<dynamic>([
       _loadFixedIds(),
-      _loadFixedBatches(),
-      _loadRemoteFixedBatches(),
+      _loadMergedFixedBatches(),
     ]);
     final localIds = payload[0] as Set<String>;
-    var localBatches = payload[1] as List<_FixedInvoiceBatch>;
-    final initialRemoteBatches = payload[2] as List<_FixedInvoiceBatch>;
+    final batches = payload[1] as List<_FixedInvoiceBatch>;
     final rows = <Map<String, dynamic>>[];
 
     final invoiceIdsToFetch = <String>{
       ...localIds,
-      for (final batch in localBatches) ...batch.invoiceIds,
-      for (final batch in initialRemoteBatches) ...batch.invoiceIds,
+      for (final batch in batches) ...batch.invoiceIds,
     };
     final invoices =
         await widget.repository.fetchInvoicesByIds(invoiceIdsToFetch);
@@ -838,40 +1178,7 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
         '${item['id'] ?? ''}'.trim(): Map<String, dynamic>.from(item),
     };
 
-    final legacyItems = invoices
-        .where((item) {
-          final id = '${item['id'] ?? ''}'.trim();
-          return id.isNotEmpty &&
-              localIds.contains(id) &&
-              !localBatches.any((batch) => batch.invoiceIds.contains(id));
-        })
-        .map((item) => Map<String, dynamic>.from(item))
-        .toList();
-    if (legacyItems.isNotEmpty) {
-      final legacyBatches = _buildLegacyBatches(legacyItems);
-      if (legacyBatches.isNotEmpty) {
-        final existingBatchIds =
-            localBatches.map((batch) => batch.batchId).toSet();
-        localBatches = [
-          ...localBatches,
-          ...legacyBatches.where(
-            (batch) => !existingBatchIds.contains(batch.batchId),
-          ),
-        ];
-        await _saveFixedBatches(localBatches);
-      }
-    }
-
-    if (localBatches.isNotEmpty) {
-      await Future.wait(localBatches.map(_upsertRemoteFixedBatch));
-    }
-
-    final remoteBatches = localBatches.isEmpty
-        ? initialRemoteBatches
-        : await _loadRemoteFixedBatches();
-    final batches = remoteBatches.isNotEmpty ? remoteBatches : localBatches;
     if (batches.isEmpty) return <Map<String, dynamic>>[];
-    await _syncLocalCacheFromBatches(batches);
 
     for (final batch in batches) {
       final batchItems = batch.invoiceIds
@@ -884,6 +1191,10 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
         0,
         (sum, row) =>
             sum + fixedInvoiceNum(row['total_bayar'] ?? row['total_biaya']),
+      );
+      final paymentSummary = _summarizeFixedInvoicePayments(
+        batch: batch,
+        sourceInvoices: batchItems,
       );
       final first = batchItems.first;
       rows.add({
@@ -902,9 +1213,12 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
             ? first['lokasi_kop']
             : batch.kopLocation,
         'total_bayar': total,
-        'status':
-            batch.status.isEmpty ? (first['status'] ?? 'Unpaid') : batch.status,
-        'paid_at': batch.paidAt,
+        'status': paymentSummary.status,
+        'paid_at': paymentSummary.paidAt,
+        '__batch_payment_details':
+            batch.paymentDetails.map((entry) => entry.toJson()).toList(),
+        '__batch_paid_amount': paymentSummary.paidAmount,
+        '__batch_remaining_amount': paymentSummary.remainingAmount,
         '__batch_id': batch.batchId,
         '__batch_invoice_ids': batch.invoiceIds,
         '__batch_invoice_number': batch.invoiceNumber,

@@ -492,50 +492,63 @@ Future<bool> _printDashboardInvoicePdf(
       return formatInvoiceHargaPerTon(value);
     }
 
-    int extraBlankRowsForMultiSheet({
-      required int dataRows,
-      required int baseRowsPerSheet,
-    }) {
-      // Request: when invoice spans multiple sheets, add 7 blank rows
-      // on each sheet while keeping row height consistent.
-      if (dataRows <= baseRowsPerSheet) return 0;
-      const extraPerSheet = 7;
-      var sheetCount = (dataRows / baseRowsPerSheet).ceil();
-      var totalRowsWithPadding = dataRows + (sheetCount * extraPerSheet);
-      while ((totalRowsWithPadding / baseRowsPerSheet).ceil() != sheetCount) {
-        sheetCount = (totalRowsWithPadding / baseRowsPerSheet).ceil();
-        totalRowsWithPadding = dataRows + (sheetCount * extraPerSheet);
+      int baseRowsPerSheet({
+        required bool compact,
+      }) {
+        final halfSheetRows = isCompanyInvoice ? 18 : 21;
+        return compact ? halfSheetRows : (halfSheetRows * 2) + 14;
       }
-      return totalRowsWithPadding - dataRows;
-    }
 
     List<Map<String, dynamic>> buildPrintableRows({
       required bool compact,
+      List<Map<String, dynamic>>? sourceRows,
     }) {
-      final baseRowsPerSheet =
-          compact ? (isCompanyInvoice ? 18 : 21) : (isCompanyInvoice ? 40 : 43);
-      final extraRows = extraBlankRowsForMultiSheet(
-        dataRows: invoiceDetailList.length,
-        baseRowsPerSheet: baseRowsPerSheet,
-      );
-      final minRows =
-          max(baseRowsPerSheet, invoiceDetailList.length + extraRows);
-      return invoiceDetailList.length >= minRows
-          ? invoiceDetailList
+      final sheetRows =
+          sourceRows?.map((row) => Map<String, dynamic>.from(row)).toList() ??
+              invoiceDetailList
+                  .map((row) => Map<String, dynamic>.from(row))
+                  .toList();
+      final minRows = max(baseRowsPerSheet(compact: compact), sheetRows.length);
+      return sheetRows.length >= minRows
+          ? sheetRows
           : <Map<String, dynamic>>[
-              ...invoiceDetailList,
+              ...sheetRows,
               ...List<Map<String, dynamic>>.generate(
-                minRows - invoiceDetailList.length,
+                minRows - sheetRows.length,
                 (_) => <String, dynamic>{},
               ),
             ];
     }
 
+    List<List<Map<String, dynamic>>> splitInvoiceRowsIntoSheets({
+      required bool compact,
+    }) {
+      final sourceRows = invoiceDetailList
+          .map((row) => Map<String, dynamic>.from(row))
+          .toList(growable: false);
+      if (sourceRows.isEmpty) {
+        return <List<Map<String, dynamic>>>[
+          <Map<String, dynamic>>[],
+        ];
+      }
+      final rowsPerSheet = baseRowsPerSheet(compact: compact);
+      final sheets = <List<Map<String, dynamic>>>[];
+      for (var offset = 0; offset < sourceRows.length; offset += rowsPerSheet) {
+        final end = min(offset + rowsPerSheet, sourceRows.length);
+        sheets.add(sourceRows.sublist(offset, end));
+      }
+      return sheets;
+    }
+
     Future<_InvoiceTableRenderResult?> buildExcelTableImage({
       required bool compact,
       String renderMode = 'table',
+      List<Map<String, dynamic>>? sourceRows,
     }) async {
-      final printableRows = buildPrintableRows(compact: compact);
+      final printableRows = buildPrintableRows(
+        compact: compact,
+        sourceRows: sourceRows,
+      );
       final summaryValues =
           renderMode == 'table_with_summary' || renderMode == 'table_with_total'
               ? <String, String>{
@@ -592,15 +605,14 @@ Future<bool> _printDashboardInvoicePdf(
         if (cloudBytes != null) {
           bytes = cloudBytes;
           renderSource = 'Excel cloud service';
-        } else {
-          bytes = await host._renderInvoiceTableImagePortable(
-            rows: payloadRows,
-            rowCount: printableRows.length,
-            renderMode: renderMode,
-            summaryValues: summaryValues,
-          );
         }
       }
+      bytes ??= await host._renderInvoiceTableImagePortable(
+        rows: payloadRows,
+        rowCount: printableRows.length,
+        renderMode: renderMode,
+        summaryValues: summaryValues,
+      );
       if (bytes == null) return null;
       final decodedImage = img.decodeImage(bytes);
       final aspectRatio = decodedImage == null || decodedImage.height == 0
@@ -626,6 +638,8 @@ Future<bool> _printDashboardInvoicePdf(
       _InvoiceTableRenderResult? excelTableRender,
       _InvoiceTableRenderResult? excelSummaryRender,
       bool excelTableHasEmbeddedSummary = false,
+      List<Map<String, dynamic>>? sourceRows,
+      bool showFooterSection = true,
     }) {
       const infoFont = 9.5;
       final summaryValueGap = compact ? 8.0 : 10.0;
@@ -633,7 +647,10 @@ Future<bool> _printDashboardInvoicePdf(
       final signatureLeftOffset = compact ? 72.0 : 86.0;
       final signatureNameOffset = compact ? 5.0 : 6.0;
       const signatureTextFontSize = 11.0;
-      final printableRows = buildPrintableRows(compact: compact);
+      final printableRows = buildPrintableRows(
+        compact: compact,
+        sourceRows: sourceRows,
+      );
       String? printable(dynamic value) {
         final raw = value?.toString().trim() ?? '';
         if (raw.isEmpty || raw == '-' || raw.toLowerCase() == 'null') {
@@ -685,7 +702,7 @@ Future<bool> _printDashboardInvoicePdf(
           ? tanggalLong
           : '$kopLocationTitle, $tanggalLong';
       final logoHeight = compact ? 39.0 : 52.0;
-      final companyKopHeight = compact ? 50.0 : 65.0;
+      final companyKopHeight = compact ? 50.0 : 61.0;
       final recipientBaseLineWidth = compact
           ? (isCompanyInvoice ? 168.0 : 122.0)
           : (isCompanyInvoice ? 242.0 : 158.0);
@@ -710,9 +727,11 @@ Future<bool> _printDashboardInvoicePdf(
       const tableRowVPadding = 2.4;
       const tableBodyRowHeight = 16.0;
       final tableHorizontalBleedLeft =
-          isCompanyInvoice ? (compact ? 1.1 : 0.7) : (compact ? 11.2 : 7.2);
+          isCompanyInvoice ? (compact ? 1.1 : 31.0) : (compact ? 11.2 : 37.0);
       final tableHorizontalBleedRight =
-          isCompanyInvoice ? (compact ? 1.5 : 1.0) : (compact ? 12.0 : 7.8);
+          isCompanyInvoice ? (compact ? 1.5 : 29.0) : (compact ? 12.0 : 35.0);
+      final fullPageTableWidthScale =
+          isCompanyInvoice ? (compact ? 1.0 : 0.89) : (compact ? 1.0 : 0.88);
       final incomeColumnWidths =
           _buildDashboardIncomeTableColumnWidths(printableRows);
       final excelTableImage = excelTableRender?.image;
@@ -775,7 +794,8 @@ Future<bool> _printDashboardInvoicePdf(
       }
 
       double invoiceDividerWidthFor(double availableWidth) {
-        final fallbackWidth = compact ? 146.0 : 186.0;
+        final fallbackWidth = compact ? 146.0 : 238.0;
+        final minPreferredWidth = compact ? 146.0 : 238.0;
         if (availableWidth <= 0) {
           return fallbackWidth;
         }
@@ -805,9 +825,10 @@ Future<bool> _printDashboardInvoicePdf(
                 excelTableRender != null &&
                 excelTableRender.aspectRatio > 0
             ? compactExcelRenderHeight * excelTableRender.aspectRatio
-            : availableWidth +
-                tableHorizontalBleedLeft +
-                tableHorizontalBleedRight;
+            : (availableWidth +
+                    tableHorizontalBleedLeft +
+                    tableHorizontalBleedRight) *
+                fullPageTableWidthScale;
         final expandedWidth = availableWidth +
             tableHorizontalBleedLeft +
             tableHorizontalBleedRight;
@@ -822,9 +843,9 @@ Future<bool> _printDashboardInvoicePdf(
         final safeRightBoundary =
             max(0.0, muatanRightBoundary - (compact ? 20.0 : 24.0));
         if (safeRightBoundary > 0) {
-          return min(safeRightBoundary, availableWidth);
+          return min(max(minPreferredWidth, safeRightBoundary), availableWidth);
         }
-        return min(fallbackWidth, availableWidth);
+        return min(max(minPreferredWidth, fallbackWidth), availableWidth);
       }
 
       pw.Widget buildCompanySummaryRow(
@@ -1030,6 +1051,308 @@ Future<bool> _printDashboardInvoicePdf(
         );
       }
 
+      pw.Widget buildFallbackTableWidget() {
+        return pw.Table(
+          border: pw.TableBorder.all(color: PdfColors.black, width: 0.8),
+          columnWidths: incomeColumnWidths,
+          children: [
+            pw.TableRow(
+              decoration: const pw.BoxDecoration(),
+              children: [
+                _dashboardPdfCell(
+                  'NO',
+                  bold: true,
+                  alignCenter: true,
+                  textColor: PdfColors.black,
+                  fontSize: 9,
+                  hPadding: 4,
+                  vPadding: tableRowVPadding,
+                  singleLineAutoShrink: true,
+                  softLimitChars: 3,
+                  minFontSize: 7,
+                ),
+                _dashboardPdfCell(
+                  'TANGGAL',
+                  bold: true,
+                  alignCenter: true,
+                  textColor: PdfColors.black,
+                  fontSize: 9,
+                  hPadding: 4,
+                  vPadding: tableRowVPadding,
+                  singleLineAutoShrink: true,
+                  softLimitChars: 8,
+                ),
+                _dashboardPdfCell(
+                  'PLAT',
+                  bold: true,
+                  alignCenter: true,
+                  textColor: PdfColors.black,
+                  fontSize: 9,
+                  hPadding: 4,
+                  vPadding: tableRowVPadding,
+                  singleLineAutoShrink: true,
+                  softLimitChars: 6,
+                  minFontSize: 6.8,
+                ),
+                _dashboardPdfCell(
+                  'MUATAN',
+                  bold: true,
+                  alignCenter: true,
+                  textColor: PdfColors.black,
+                  fontSize: 9,
+                  hPadding: 4,
+                  vPadding: tableRowVPadding,
+                  singleLineAutoShrink: true,
+                  softLimitChars: 8,
+                  minFontSize: 6.8,
+                ),
+                _dashboardPdfCell(
+                  'MUAT',
+                  bold: true,
+                  alignCenter: true,
+                  textColor: PdfColors.black,
+                  fontSize: 9,
+                  hPadding: 4,
+                  vPadding: tableRowVPadding,
+                  singleLineAutoShrink: true,
+                  softLimitChars: 6,
+                  minFontSize: 6.8,
+                ),
+                _dashboardPdfCell(
+                  'BONGKAR',
+                  bold: true,
+                  alignCenter: true,
+                  textColor: PdfColors.black,
+                  fontSize: 9,
+                  hPadding: 4,
+                  vPadding: tableRowVPadding,
+                  singleLineAutoShrink: true,
+                  softLimitChars: 8,
+                  minFontSize: 6.8,
+                ),
+                _dashboardPdfCell(
+                  'TONASE',
+                  bold: true,
+                  alignCenter: true,
+                  textColor: PdfColors.black,
+                  fontSize: 9,
+                  hPadding: 4,
+                  vPadding: tableRowVPadding,
+                  singleLineAutoShrink: true,
+                  softLimitChars: 8,
+                  minFontSize: 6.8,
+                ),
+                _dashboardPdfCell(
+                  'HARGA',
+                  bold: true,
+                  alignCenter: true,
+                  textColor: PdfColors.black,
+                  fontSize: 9,
+                  hPadding: 4,
+                  vPadding: tableRowVPadding,
+                  singleLineAutoShrink: true,
+                  softLimitChars: 7,
+                  minFontSize: 6.8,
+                ),
+                _dashboardPdfCell(
+                  'TOTAL',
+                  bold: true,
+                  alignCenter: true,
+                  textColor: PdfColors.black,
+                  fontSize: 9,
+                  hPadding: 4,
+                  vPadding: tableRowVPadding,
+                  singleLineAutoShrink: true,
+                  softLimitChars: 7,
+                  minFontSize: 6.8,
+                ),
+              ],
+            ),
+            ...List<pw.TableRow>.generate(printableRows.length, (index) {
+              final row = printableRows[index];
+              final hasData = index < invoiceDetailList.length;
+              const blankCell = '';
+              final tonase = hasData ? _toNum(row['tonase']) : 0;
+              final harga = hasData ? _toNum(row['harga']) : 0;
+              final rowSubtotal =
+                  hasData ? _resolveInvoiceDetailSubtotalShared(row) : 0;
+              final armadaStartSource = row['armada_start_date'] ??
+                  item['armada_start_date'] ??
+                  row['tanggal'] ??
+                  item['tanggal'];
+              final tanggal = hasData
+                  ? _formatInvoiceTableDate(armadaStartSource)
+                  : blankCell;
+              return pw.TableRow(
+                children: [
+                  _dashboardPdfCell(
+                    hasData ? '${index + 1}' : blankCell,
+                    alignCenter: true,
+                    hPadding: 4,
+                    vPadding: tableRowVPadding,
+                    fixedHeight: tableBodyRowHeight,
+                    singleLineAutoShrink: true,
+                    softLimitChars: 2,
+                    minFontSize: 7,
+                  ),
+                  _dashboardPdfCell(
+                    tanggal,
+                    alignCenter: true,
+                    hPadding: 4,
+                    vPadding: tableRowVPadding,
+                    fixedHeight: tableBodyRowHeight,
+                    singleLineAutoShrink: true,
+                    softLimitChars: 10,
+                  ),
+                  _dashboardPdfCell(
+                    hasData ? resolveNoPolisi(row) : blankCell,
+                    alignCenter: true,
+                    hPadding: 4,
+                    vPadding: tableRowVPadding,
+                    fixedHeight: tableBodyRowHeight,
+                    singleLineAutoShrink: true,
+                    softLimitChars: 12,
+                  ),
+                  _dashboardPdfCell(
+                    hasData ? '${row['muatan'] ?? '-'}' : blankCell,
+                    alignCenter: true,
+                    hPadding: 4,
+                    vPadding: tableRowVPadding,
+                    fixedHeight: tableBodyRowHeight,
+                    singleLineAutoShrink: true,
+                    softLimitChars: 14,
+                    minFontSize: 6.5,
+                  ),
+                  _dashboardPdfCell(
+                    hasData
+                        ? _normalizeInvoicePrintLocationLabel(row['lokasi_muat'])
+                        : blankCell,
+                    alignCenter: true,
+                    hPadding: 4,
+                    vPadding: tableRowVPadding,
+                    fixedHeight: tableBodyRowHeight,
+                    singleLineAutoShrink: true,
+                    softLimitChars: 32,
+                    minFontSize: 6.5,
+                  ),
+                  _dashboardPdfCell(
+                    hasData
+                        ? _normalizeInvoicePrintLocationLabel(
+                            row['lokasi_bongkar'],
+                          )
+                        : blankCell,
+                    alignCenter: true,
+                    hPadding: 4,
+                    vPadding: tableRowVPadding,
+                    fixedHeight: tableBodyRowHeight,
+                    singleLineAutoShrink: true,
+                    softLimitChars: 32,
+                    minFontSize: 6.5,
+                  ),
+                  _dashboardPdfCell(
+                    hasData && tonase > 0 ? formatTonase(tonase) : blankCell,
+                    alignCenter: true,
+                    hPadding: 4,
+                    vPadding: tableRowVPadding,
+                    fixedHeight: tableBodyRowHeight,
+                    singleLineAutoShrink: true,
+                    softLimitChars: 8,
+                  ),
+                  _dashboardPdfCell(
+                    hasData && harga > 0 ? formatHargaPerTon(harga) : blankCell,
+                    alignRight: true,
+                    hPadding: 4,
+                    vPadding: tableRowVPadding,
+                    fixedHeight: tableBodyRowHeight,
+                    singleLineAutoShrink: true,
+                    softLimitChars: 10,
+                    minFontSize: 6.2,
+                  ),
+                  _dashboardPdfCell(
+                    hasData ? formatRupiahNoPrefix(rowSubtotal) : blankCell,
+                    alignRight: true,
+                    hPadding: 4,
+                    vPadding: tableRowVPadding,
+                    fixedHeight: tableBodyRowHeight,
+                    singleLineAutoShrink: true,
+                    softLimitChars: 12,
+                    minFontSize: 6.8,
+                  ),
+                ],
+              );
+            }),
+          ],
+        );
+      }
+
+      pw.Widget buildTableSection() {
+        if (excelTableImage != null) {
+          if (compact) {
+            return pw.Container(
+              margin: pw.EdgeInsets.only(
+                left: -tableHorizontalBleedLeft,
+                right: -tableHorizontalBleedRight,
+              ),
+              width: double.infinity,
+              alignment: pw.Alignment.topCenter,
+              child: pw.Image(
+                excelTableImage,
+                height: compactExcelRenderHeight,
+                fit: pw.BoxFit.fitHeight,
+                alignment: pw.Alignment.topCenter,
+              ),
+            );
+          }
+          return pw.LayoutBuilder(
+            builder: (context, constraints) {
+              final availableWidth = max(0.0, constraints?.maxWidth ?? 0);
+              final expandedWidth = availableWidth +
+                  tableHorizontalBleedLeft +
+                  tableHorizontalBleedRight;
+              final aspectRatio = excelTableRender?.aspectRatio ?? 0;
+              final baseTargetWidth = expandedWidth * fullPageTableWidthScale;
+              final naturalHeight = aspectRatio > 0 && baseTargetWidth > 0
+                  ? baseTargetWidth / aspectRatio
+                  : 0.0;
+              final maxReservedHeight = showFooterSection
+                  ? (isCompanyInvoice ? 750.0 : 728.0)
+                  : (isCompanyInvoice ? 820.0 : 796.0);
+              final shouldScaleDown = naturalHeight > maxReservedHeight && naturalHeight > 0;
+              final targetHeight =
+                  shouldScaleDown ? maxReservedHeight : max(0.0, naturalHeight);
+              final targetWidth = shouldScaleDown && aspectRatio > 0
+                  ? min(baseTargetWidth, maxReservedHeight * aspectRatio)
+                  : baseTargetWidth;
+
+              return pw.SizedBox(
+                height: targetHeight,
+                child: pw.Container(
+                  margin: pw.EdgeInsets.only(
+                    left: -tableHorizontalBleedLeft,
+                    right: -tableHorizontalBleedRight,
+                  ),
+                  width: double.infinity,
+                  alignment: pw.Alignment.topCenter,
+                  child: pw.SizedBox(
+                    width: targetWidth,
+                    height: targetHeight,
+                    child: pw.Image(
+                      excelTableImage,
+                      width: targetWidth,
+                      height: targetHeight,
+                      fit: pw.BoxFit.fill,
+                      alignment: pw.Alignment.topCenter,
+                    ),
+                  ),
+                ),
+              );
+            },
+          );
+        }
+        final fallbackTable = buildFallbackTableWidget();
+        return fallbackTable;
+      }
+
       return pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
@@ -1039,7 +1362,7 @@ Future<bool> _printDashboardInvoicePdf(
                 margin: const pw.EdgeInsets.only(
                   left: -5.8,
                   right: -6.8,
-                  top: 0,
+                  top: -3.0,
                 ),
                 width: double.infinity,
                 height: companyKopHeight,
@@ -1104,9 +1427,10 @@ Future<bool> _printDashboardInvoicePdf(
                         child: pw.Center(
                           child: pw.Text(
                             'I  N  V  O  I  C  E',
+                            maxLines: 1,
                             style: pw.TextStyle(
                               font: invoiceTitleFont,
-                              fontSize: compact ? 24 : 29,
+                              fontSize: compact ? 24 : 25.5,
                               fontWeight: pw.FontWeight.bold,
                             ),
                           ),
@@ -1230,273 +1554,10 @@ Future<bool> _printDashboardInvoicePdf(
             },
           ),
           pw.SizedBox(height: 5),
-          if (excelTableImage != null)
-            compact
-                ? pw.Container(
-                    margin: pw.EdgeInsets.only(
-                      left: -tableHorizontalBleedLeft,
-                      right: -tableHorizontalBleedRight,
-                    ),
-                    width: double.infinity,
-                    alignment: pw.Alignment.topCenter,
-                    child: pw.Image(
-                      excelTableImage,
-                      height: compactExcelRenderHeight,
-                      fit: pw.BoxFit.fitHeight,
-                      alignment: pw.Alignment.topCenter,
-                    ),
-                  )
-                : pw.Container(
-                    margin: pw.EdgeInsets.only(
-                      left: -tableHorizontalBleedLeft,
-                      right: -tableHorizontalBleedRight,
-                    ),
-                    width: double.infinity,
-                    child: pw.Image(
-                      excelTableImage,
-                      fit: pw.BoxFit.fitWidth,
-                      alignment: pw.Alignment.topCenter,
-                    ),
-                  )
-          else
-            pw.Table(
-              border: pw.TableBorder.all(color: PdfColors.black, width: 0.8),
-              columnWidths: incomeColumnWidths,
-              children: [
-                pw.TableRow(
-                  decoration: const pw.BoxDecoration(),
-                  children: [
-                    _dashboardPdfCell(
-                      'NO',
-                      bold: true,
-                      alignCenter: true,
-                      textColor: PdfColors.black,
-                      fontSize: 9,
-                      hPadding: 4,
-                      vPadding: tableRowVPadding,
-                      singleLineAutoShrink: true,
-                      softLimitChars: 3,
-                      minFontSize: 7,
-                    ),
-                    _dashboardPdfCell(
-                      'TANGGAL',
-                      bold: true,
-                      alignCenter: true,
-                      textColor: PdfColors.black,
-                      fontSize: 9,
-                      hPadding: 4,
-                      vPadding: tableRowVPadding,
-                      singleLineAutoShrink: true,
-                      softLimitChars: 8,
-                    ),
-                    _dashboardPdfCell(
-                      'PLAT',
-                      bold: true,
-                      alignCenter: true,
-                      textColor: PdfColors.black,
-                      fontSize: 9,
-                      hPadding: 4,
-                      vPadding: tableRowVPadding,
-                      singleLineAutoShrink: true,
-                      softLimitChars: 6,
-                      minFontSize: 6.8,
-                    ),
-                    _dashboardPdfCell(
-                      'MUATAN',
-                      bold: true,
-                      alignCenter: true,
-                      textColor: PdfColors.black,
-                      fontSize: 9,
-                      hPadding: 4,
-                      vPadding: tableRowVPadding,
-                      singleLineAutoShrink: true,
-                      softLimitChars: 8,
-                      minFontSize: 6.8,
-                    ),
-                    _dashboardPdfCell(
-                      'MUAT',
-                      bold: true,
-                      alignCenter: true,
-                      textColor: PdfColors.black,
-                      fontSize: 9,
-                      hPadding: 4,
-                      vPadding: tableRowVPadding,
-                      singleLineAutoShrink: true,
-                      softLimitChars: 6,
-                      minFontSize: 6.8,
-                    ),
-                    _dashboardPdfCell(
-                      'BONGKAR',
-                      bold: true,
-                      alignCenter: true,
-                      textColor: PdfColors.black,
-                      fontSize: 9,
-                      hPadding: 4,
-                      vPadding: tableRowVPadding,
-                      singleLineAutoShrink: true,
-                      softLimitChars: 8,
-                      minFontSize: 6.8,
-                    ),
-                    _dashboardPdfCell(
-                      'TONASE',
-                      bold: true,
-                      alignCenter: true,
-                      textColor: PdfColors.black,
-                      fontSize: 9,
-                      hPadding: 4,
-                      vPadding: tableRowVPadding,
-                      singleLineAutoShrink: true,
-                      softLimitChars: 8,
-                      minFontSize: 6.8,
-                    ),
-                    _dashboardPdfCell(
-                      'HARGA',
-                      bold: true,
-                      alignCenter: true,
-                      textColor: PdfColors.black,
-                      fontSize: 9,
-                      hPadding: 4,
-                      vPadding: tableRowVPadding,
-                      singleLineAutoShrink: true,
-                      softLimitChars: 7,
-                      minFontSize: 6.8,
-                    ),
-                    _dashboardPdfCell(
-                      'TOTAL',
-                      bold: true,
-                      alignCenter: true,
-                      textColor: PdfColors.black,
-                      fontSize: 9,
-                      hPadding: 4,
-                      vPadding: tableRowVPadding,
-                      singleLineAutoShrink: true,
-                      softLimitChars: 7,
-                      minFontSize: 6.8,
-                    ),
-                  ],
-                ),
-                ...List<pw.TableRow>.generate(printableRows.length, (index) {
-                  final row = printableRows[index];
-                  final hasData = index < invoiceDetailList.length;
-                  const blankCell = '';
-                  final tonase = hasData ? _toNum(row['tonase']) : 0;
-                  final harga = hasData ? _toNum(row['harga']) : 0;
-                  final rowSubtotal =
-                      hasData ? _resolveInvoiceDetailSubtotalShared(row) : 0;
-                  final armadaStartSource = row['armada_start_date'] ??
-                      item['armada_start_date'] ??
-                      row['tanggal'] ??
-                      item['tanggal'];
-                  final tanggal = hasData
-                      ? _formatInvoiceTableDate(armadaStartSource)
-                      : blankCell;
-                  return pw.TableRow(
-                    children: [
-                      _dashboardPdfCell(
-                        hasData ? '${index + 1}' : blankCell,
-                        alignCenter: true,
-                        hPadding: 4,
-                        vPadding: tableRowVPadding,
-                        fixedHeight: tableBodyRowHeight,
-                        singleLineAutoShrink: true,
-                        softLimitChars: 2,
-                        minFontSize: 7,
-                      ),
-                      _dashboardPdfCell(
-                        tanggal,
-                        alignCenter: true,
-                        hPadding: 4,
-                        vPadding: tableRowVPadding,
-                        fixedHeight: tableBodyRowHeight,
-                        singleLineAutoShrink: true,
-                        softLimitChars: 10,
-                      ),
-                      _dashboardPdfCell(
-                        hasData ? resolveNoPolisi(row) : blankCell,
-                        alignCenter: true,
-                        hPadding: 4,
-                        vPadding: tableRowVPadding,
-                        fixedHeight: tableBodyRowHeight,
-                        singleLineAutoShrink: true,
-                        softLimitChars: 12,
-                      ),
-                      _dashboardPdfCell(
-                        hasData ? '${row['muatan'] ?? '-'}' : blankCell,
-                        alignCenter: true,
-                        hPadding: 4,
-                        vPadding: tableRowVPadding,
-                        fixedHeight: tableBodyRowHeight,
-                        singleLineAutoShrink: true,
-                        softLimitChars: 14,
-                        minFontSize: 6.5,
-                      ),
-                      _dashboardPdfCell(
-                        hasData
-                            ? _normalizeInvoicePrintLocationLabel(
-                                row['lokasi_muat'],
-                              )
-                            : blankCell,
-                        alignCenter: true,
-                        hPadding: 4,
-                        vPadding: tableRowVPadding,
-                        fixedHeight: tableBodyRowHeight,
-                        singleLineAutoShrink: true,
-                        softLimitChars: 32,
-                        minFontSize: 6.5,
-                      ),
-                      _dashboardPdfCell(
-                        hasData
-                            ? _normalizeInvoicePrintLocationLabel(
-                                row['lokasi_bongkar'],
-                              )
-                            : blankCell,
-                        alignCenter: true,
-                        hPadding: 4,
-                        vPadding: tableRowVPadding,
-                        fixedHeight: tableBodyRowHeight,
-                        singleLineAutoShrink: true,
-                        softLimitChars: 32,
-                        minFontSize: 6.5,
-                      ),
-                      _dashboardPdfCell(
-                        hasData && tonase > 0
-                            ? formatTonase(tonase)
-                            : blankCell,
-                        alignCenter: true,
-                        hPadding: 4,
-                        vPadding: tableRowVPadding,
-                        fixedHeight: tableBodyRowHeight,
-                        singleLineAutoShrink: true,
-                        softLimitChars: 8,
-                      ),
-                      _dashboardPdfCell(
-                        hasData && harga > 0
-                            ? formatHargaPerTon(harga)
-                            : blankCell,
-                        alignRight: true,
-                        hPadding: 4,
-                        vPadding: tableRowVPadding,
-                        fixedHeight: tableBodyRowHeight,
-                        singleLineAutoShrink: true,
-                        softLimitChars: 10,
-                        minFontSize: 6.2,
-                      ),
-                      _dashboardPdfCell(
-                        hasData ? formatRupiahNoPrefix(rowSubtotal) : blankCell,
-                        alignRight: true,
-                        hPadding: 4,
-                        vPadding: tableRowVPadding,
-                        fixedHeight: tableBodyRowHeight,
-                        singleLineAutoShrink: true,
-                        softLimitChars: 12,
-                        minFontSize: 6.8,
-                      ),
-                    ],
-                  );
-                }),
-              ],
-            ),
-          if (isCompanyInvoice && !excelTableIncludesSummary) ...[
+          buildTableSection(),
+          if (showFooterSection &&
+              isCompanyInvoice &&
+              !excelTableIncludesSummary) ...[
             pw.LayoutBuilder(
               builder: (context, constraints) {
                 final tableWidth = constraints?.maxWidth ?? 0;
@@ -1555,137 +1616,142 @@ Future<bool> _printDashboardInvoicePdf(
               },
             ),
           ],
-          pw.SizedBox(height: 0),
-          pw.Row(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              pw.Expanded(
-                child: isCompanyInvoice
-                    ? pw.SizedBox()
-                    : pw.Padding(
-                        padding: pw.EdgeInsets.only(left: signatureLeftOffset),
-                        child: pw.Column(
-                          crossAxisAlignment: pw.CrossAxisAlignment.start,
-                          children: [
-                            pw.SizedBox(height: signatureTextFontSize + 1),
-                            pw.SizedBox(height: compact ? 58 : 84),
-                            pw.Padding(
-                              padding: pw.EdgeInsets.only(
-                                left:
-                                    signatureNameOffset + (compact ? -11 : -16),
-                              ),
-                              child: pw.Text(
-                                'A N T O K',
-                                style: pw.TextStyle(
-                                  font: pw.Font.helveticaBold(),
-                                  fontSize: signatureTextFontSize,
-                                  fontWeight: pw.FontWeight.bold,
-                                  decoration: pw.TextDecoration.none,
+          if (showFooterSection) ...[
+            pw.SizedBox(height: 0),
+            pw.Row(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Expanded(
+                  child: isCompanyInvoice
+                      ? pw.SizedBox()
+                      : pw.Padding(
+                          padding: pw.EdgeInsets.only(left: signatureLeftOffset),
+                          child: pw.Column(
+                            crossAxisAlignment: pw.CrossAxisAlignment.start,
+                            children: [
+                              pw.SizedBox(height: signatureTextFontSize + 1),
+                              pw.SizedBox(height: compact ? 58 : 92),
+                              pw.Padding(
+                                padding: pw.EdgeInsets.only(
+                                  left: signatureNameOffset + (compact ? 10 : 17),
                                 ),
+                                child: pw.Text(
+                                  'A N T O K',
+                                  style: pw.TextStyle(
+                                    font: pw.Font.helveticaBold(),
+                                    fontSize: signatureTextFontSize,
+                                    fontWeight: pw.FontWeight.bold,
+                                    decoration: pw.TextDecoration.none,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                ),
+                pw.SizedBox(width: 16),
+                pw.SizedBox(
+                  width: compact ? 280 : 320,
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                    children: [
+                      if (!isCompanyInvoice && !excelTableIncludesSummary)
+                        pw.Row(
+                          mainAxisAlignment: pw.MainAxisAlignment.end,
+                          children: [
+                            pw.Text(
+                              'TOTAL BAYAR Rp.',
+                              style: pw.TextStyle(
+                                fontSize: infoFont,
+                                fontWeight: pw.FontWeight.bold,
+                              ),
+                            ),
+                            pw.SizedBox(width: summaryValueGap),
+                            pw.Text(
+                              formatRupiahNoPrefix(total),
+                              style: pw.TextStyle(
+                                fontSize: infoFont,
+                                fontWeight: pw.FontWeight.bold,
                               ),
                             ),
                           ],
                         ),
-                      ),
-              ),
-              pw.SizedBox(width: 16),
-              pw.SizedBox(
-                width: compact ? 280 : 320,
-                child: pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-                  children: [
-                    if (!isCompanyInvoice && !excelTableIncludesSummary)
-                      pw.Row(
-                        mainAxisAlignment: pw.MainAxisAlignment.end,
-                        children: [
-                          pw.Text(
-                            'TOTAL BAYAR Rp.',
-                            style: pw.TextStyle(
-                              fontSize: infoFont,
-                              fontWeight: pw.FontWeight.bold,
-                            ),
-                          ),
-                          pw.SizedBox(width: summaryValueGap),
-                          pw.Text(
-                            formatRupiahNoPrefix(total),
-                            style: pw.TextStyle(
-                              fontSize: infoFont,
-                              fontWeight: pw.FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                    pw.SizedBox(height: summaryBoxGap),
-                    (isCompanyInvoice
-                        ? pw.Transform.translate(
-                            offset: const PdfPoint(-1.8, -5),
-                            child: pw.Column(
-                              crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-                              children: [
-                                pw.Container(
-                                  alignment: pw.Alignment.center,
-                                  padding: const pw.EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 4,
-                                  ),
-                                  decoration: pw.BoxDecoration(
-                                    border: pw.Border.all(
-                                      color: const PdfColor(
-                                        252 / 255,
-                                        2 / 255,
-                                        0,
+                      pw.SizedBox(height: summaryBoxGap),
+                      (isCompanyInvoice
+                          ? pw.Transform.translate(
+                              offset: compact
+                                  ? const PdfPoint(-1.8, -5)
+                                  : const PdfPoint(-3.8, -1.5),
+                              child: pw.Column(
+                                crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                                children: [
+                                  pw.Container(
+                                    alignment: pw.Alignment.center,
+                                    padding: const pw.EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: pw.BoxDecoration(
+                                      border: pw.Border.all(
+                                        color: const PdfColor(
+                                          252 / 255,
+                                          2 / 255,
+                                          0,
+                                        ),
+                                        width: 1.2,
                                       ),
-                                      width: 1.2,
+                                    ),
+                                    child: pw.Text(
+                                      'Rekening BCA a/c 6155345601 a/n CV AS NUSA TRANS\nNPWP 096.775.534.9-617.000',
+                                      textAlign: pw.TextAlign.center,
+                                      style: pw.TextStyle(
+                                        font: pw.Font.helveticaBoldOblique(),
+                                        fontSize: infoFont,
+                                        color: PdfColors.blue700,
+                                        fontWeight: pw.FontWeight.bold,
+                                        fontStyle: pw.FontStyle.italic,
+                                      ),
                                     ),
                                   ),
-                                  child: pw.Text(
-                                    'Rekening BCA a/c 6155345601 a/n CV AS NUSA TRANS\nNPWP 096.775.534.9-617.000',
-                                    textAlign: pw.TextAlign.center,
-                                    style: pw.TextStyle(
-                                      font: pw.Font.helveticaBoldOblique(),
-                                      fontSize: infoFont,
-                                      color: PdfColors.blue700,
-                                      fontWeight: pw.FontWeight.bold,
-                                      fontStyle: pw.FontStyle.italic,
-                                    ),
+                                ],
+                              ),
+                            )
+                          : pw.Transform.translate(
+                              offset: compact
+                                  ? const PdfPoint(-2.3, -3)
+                                  : const PdfPoint(-4.3, 1),
+                              child: pw.Container(
+                                alignment: pw.Alignment.center,
+                                padding: const pw.EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: pw.BoxDecoration(
+                                  border: pw.Border.all(
+                                    color: PdfColors.blue700,
+                                    width: 1.2,
                                   ),
                                 ),
-                              ],
-                            ),
-                          )
-                        : pw.Transform.translate(
-                            offset: const PdfPoint(-2.3, -3),
-                            child: pw.Container(
-                              alignment: pw.Alignment.center,
-                              padding: const pw.EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              decoration: pw.BoxDecoration(
-                                border: pw.Border.all(
-                                  color: PdfColors.blue700,
-                                  width: 1.2,
+                                child: pw.Text(
+                                  'Rekening BCA a/c 1730290001 a/n BUDI SUKAMTO',
+                                  textAlign: pw.TextAlign.center,
+                                  style: pw.TextStyle(
+                                    font: pw.Font.helveticaBoldOblique(),
+                                    fontSize: infoFont,
+                                    color: PdfColors.blue700,
+                                    fontWeight: pw.FontWeight.bold,
+                                    fontStyle: pw.FontStyle.italic,
+                                  ),
                                 ),
                               ),
-                              child: pw.Text(
-                                'Rekening BCA a/c 1730290001 a/n BUDI SUKAMTO',
-                                textAlign: pw.TextAlign.center,
-                                style: pw.TextStyle(
-                                  font: pw.Font.helveticaBoldOblique(),
-                                  fontSize: infoFont,
-                                  color: PdfColors.blue700,
-                                  fontWeight: pw.FontWeight.bold,
-                                  fontStyle: pw.FontStyle.italic,
-                                ),
-                              ),
-                            ),
-                          )),
-                  ],
+                            )),
+                    ],
+                  ),
                 ),
-              ),
-            ],
-          ),
-          if (isCompanyInvoice)
+              ],
+            ),
+          ],
+          if (showFooterSection && isCompanyInvoice)
             pw.LayoutBuilder(
               builder: (context, constraints) {
                 final availableWidth = constraints?.maxWidth ?? 0;
@@ -1714,9 +1780,10 @@ Future<bool> _printDashboardInvoicePdf(
                         excelTableRender != null &&
                         excelTableRender.aspectRatio > 0
                     ? compactExcelRenderHeight * excelTableRender.aspectRatio
-                    : availableWidth +
-                        tableHorizontalBleedLeft +
-                        tableHorizontalBleedRight;
+                    : (availableWidth +
+                            tableHorizontalBleedLeft +
+                            tableHorizontalBleedRight) *
+                        fullPageTableWidthScale;
                 final expandedWidth = availableWidth +
                     tableHorizontalBleedLeft +
                     tableHorizontalBleedRight;
@@ -1785,12 +1852,21 @@ Future<bool> _printDashboardInvoicePdf(
             renderMode: invoiceTableRenderMode,
           )
         : null;
-    final fullExcelTableImage = usePortrait
-        ? await buildExcelTableImage(
+    final portraitSheets =
+        usePortrait ? splitInvoiceRowsIntoSheets(compact: false) : const <List<Map<String, dynamic>>>[];
+    final fullExcelTableImages = <_InvoiceTableRenderResult?>[];
+    if (usePortrait) {
+      for (var pageIndex = 0; pageIndex < portraitSheets.length; pageIndex++) {
+        final isLastPage = pageIndex == portraitSheets.length - 1;
+        fullExcelTableImages.add(
+          await buildExcelTableImage(
             compact: false,
-            renderMode: invoiceTableRenderMode,
-          )
-        : null;
+            renderMode: isLastPage ? invoiceTableRenderMode : 'table',
+            sourceRows: portraitSheets[pageIndex],
+          ),
+        );
+      }
+    }
     final pdfName = 'invoice-${host._safePdfFileName(invoiceNumber)}';
     final pdfPageFormat = PdfPageFormat(
       8.5 * PdfPageFormat.inch,
@@ -1800,13 +1876,15 @@ Future<bool> _printDashboardInvoicePdf(
     final pdfMarginTop = usePortrait ? 12.0 : 6.5;
     final pdfMarginBottom = usePortrait ? 15.0 : 9.0;
     final tableRenderInfo = usePortrait
-        ? fullExcelTableImage?.renderSource
+        ? fullExcelTableImages.lastOrNull?.renderSource
         : compactExcelTableImage?.renderSource;
     final doc = pw.Document(theme: _dashboardPdfTheme(pdfFonts));
 
     if (usePortrait) {
-      doc.addPage(
-        pw.MultiPage(
+      for (var pageIndex = 0; pageIndex < portraitSheets.length; pageIndex++) {
+        final isLastPage = pageIndex == portraitSheets.length - 1;
+        doc.addPage(
+          pw.Page(
           pageFormat: pdfPageFormat,
           margin: pw.EdgeInsets.fromLTRB(
             pdfMarginHorizontal,
@@ -1814,15 +1892,17 @@ Future<bool> _printDashboardInvoicePdf(
             pdfMarginHorizontal,
             pdfMarginBottom,
           ),
-          build: (_) => [
-            buildInvoiceContent(
+            build: (_) => buildInvoiceContent(
               compact: false,
-              excelTableRender: fullExcelTableImage,
-              excelTableHasEmbeddedSummary: invoiceTableHasEmbeddedSummary,
+              sourceRows: portraitSheets[pageIndex],
+              excelTableRender: fullExcelTableImages[pageIndex],
+              excelTableHasEmbeddedSummary:
+                  isLastPage && invoiceTableHasEmbeddedSummary,
+              showFooterSection: isLastPage,
             ),
-          ],
-        ),
-      );
+          ),
+        );
+      }
     } else {
       final usableHeight =
           pdfPageFormat.height - pdfMarginTop - pdfMarginBottom;

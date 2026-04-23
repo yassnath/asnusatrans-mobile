@@ -689,6 +689,7 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
       'kop_location': '${row['kop_location'] ?? ''}'.trim(),
       'status': '${row['status'] ?? 'Unpaid'}'.trim(),
       'paid_at': '${row['paid_at'] ?? ''}'.trim(),
+      'payment_details': _toMapList(row['payment_details']),
       'created_at': '${row['created_at'] ?? ''}'.trim(),
       'updated_at': '${row['updated_at'] ?? ''}'.trim(),
     };
@@ -794,6 +795,32 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
     return null;
   }
 
+  String? _missingOptionalFixedInvoiceBatchColumnFromError(
+    PostgrestException error,
+    String columns,
+  ) {
+    for (final column in DashboardRepository._optionalFixedInvoiceBatchColumns) {
+      if (!_selectColumnsInclude(columns, column)) continue;
+      if (_isMissingColumnError(error, column)) {
+        return column;
+      }
+    }
+    return null;
+  }
+
+  String? _missingOptionalFixedInvoiceBatchPayloadColumnFromError(
+    PostgrestException error,
+    Map<String, dynamic> payload,
+  ) {
+    for (final column in DashboardRepository._optionalFixedInvoiceBatchColumns) {
+      if (!payload.containsKey(column)) continue;
+      if (_isMissingColumnError(error, column)) {
+        return column;
+      }
+    }
+    return null;
+  }
+
   bool _isMissingFixedInvoiceBatchTableError(PostgrestException error) {
     final message = error.message.toLowerCase();
     return message.contains('fixed_invoice_batches') &&
@@ -801,6 +828,51 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
             message.contains('could not find') ||
             message.contains('schema cache') ||
             message.contains('relation'));
+  }
+
+  bool _isPermissionDeniedError(PostgrestException error) {
+    final message = error.message.toLowerCase();
+    final details = (error.details ?? '').toString().toLowerCase();
+    final hint = (error.hint ?? '').toString().toLowerCase();
+    final code = (error.code ?? '').toString().trim();
+    return code == '42501' ||
+        message.contains('permission denied') ||
+        message.contains('violates row-level security') ||
+        details.contains('permission denied') ||
+        details.contains('row-level security') ||
+        hint.contains('row-level security');
+  }
+
+  bool _isMissingRpcFunctionError(
+    PostgrestException error,
+    String functionName,
+  ) {
+    final message = error.message.toLowerCase();
+    final details = (error.details ?? '').toString().toLowerCase();
+    final hint = (error.hint ?? '').toString().toLowerCase();
+    final functionNeedle = functionName.toLowerCase();
+    return (message.contains(functionNeedle) ||
+            details.contains(functionNeedle) ||
+            hint.contains(functionNeedle)) &&
+        (message.contains('does not exist') ||
+            details.contains('does not exist') ||
+            message.contains('could not find') ||
+            details.contains('could not find') ||
+            hint.contains('function'));
+  }
+
+  String _fixedInvoiceBatchSelectColumnsForCurrentSchema(String columns) {
+    return _removeSelectColumns(columns, _unavailableFixedInvoiceBatchColumns);
+  }
+
+  Map<String, dynamic> _fixedInvoiceBatchPayloadForCurrentSchema(
+    Map<String, dynamic> payload,
+  ) {
+    final sanitized = Map<String, dynamic>.from(payload)
+      ..removeWhere(
+        (key, _) => _unavailableFixedInvoiceBatchColumns.contains(key),
+      );
+    return sanitized;
   }
 
   String _invoiceSelectColumnsForCurrentSchema(String columns) {
@@ -847,6 +919,32 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
     }
   }
 
+  Future<T> _runFixedInvoiceBatchSelectWithFallback<T>(
+    String columns,
+    Future<T> Function(String columns) request,
+  ) async {
+    var preferredColumns = _fixedInvoiceBatchSelectColumnsForCurrentSchema(
+      columns,
+    );
+    while (true) {
+      try {
+        return await request(preferredColumns);
+      } on PostgrestException catch (error) {
+        final missingColumn = _missingOptionalFixedInvoiceBatchColumnFromError(
+          error,
+          preferredColumns,
+        );
+        if (missingColumn == null) rethrow;
+        _unavailableFixedInvoiceBatchColumns.add(missingColumn);
+        final fallbackColumns = _fixedInvoiceBatchSelectColumnsForCurrentSchema(
+          preferredColumns,
+        );
+        if (fallbackColumns == preferredColumns) rethrow;
+        preferredColumns = fallbackColumns;
+      }
+    }
+  }
+
   Future<T> _runExpenseSelectWithFallback<T>(
     String columns,
     Future<T> Function(String columns) request,
@@ -871,6 +969,33 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
         );
         if (fallbackColumns == preferredColumns) rethrow;
         preferredColumns = fallbackColumns;
+      }
+    }
+  }
+
+  Future<void> _upsertFixedInvoiceBatchWithFallback(
+    Map<String, dynamic> payload,
+  ) async {
+    var preferredPayload = _fixedInvoiceBatchPayloadForCurrentSchema(payload);
+    while (true) {
+      try {
+        await _supabase
+            .from('fixed_invoice_batches')
+            .upsert(preferredPayload, onConflict: 'batch_id');
+        return;
+      } on PostgrestException catch (error) {
+        final missingColumn =
+            _missingOptionalFixedInvoiceBatchPayloadColumnFromError(
+          error,
+          preferredPayload,
+        );
+        if (missingColumn == null) rethrow;
+        _unavailableFixedInvoiceBatchColumns.add(missingColumn);
+        final fallbackPayload = _fixedInvoiceBatchPayloadForCurrentSchema(
+          preferredPayload,
+        );
+        if (fallbackPayload.length == preferredPayload.length) rethrow;
+        preferredPayload = fallbackPayload;
       }
     }
   }

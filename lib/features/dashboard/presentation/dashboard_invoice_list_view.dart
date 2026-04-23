@@ -411,7 +411,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       WidgetsBinding.instance.addPostFrameCallback((_) {
         Future<void>.delayed(const Duration(seconds: 2), () {
           if (!mounted || !_isAdminOrOwner) return;
-          unawaited(_runInvoiceListBackgroundMaintenance());
+          unawaited(_runInvoiceListBackgroundMaintenanceAndReloadOnce());
         });
       });
     }
@@ -444,7 +444,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         limit: fetchLimit == null ? null : max(80, fetchLimit * 2),
       ),
       _isAdminOrOwner
-          ? _loadLocalFixedInvoiceIds()
+          ? _loadFixedInvoiceIds()
           : Future<Set<String>>.value(<String>{}),
     ]);
 
@@ -482,62 +482,73 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     return [filteredIncomes, scopedExpenses];
   }
 
-  Future<void> _runInvoiceListBackgroundMaintenance() async {
-    await _syncFixedInvoiceCacheInBackground();
-    await _backfillIncomePricingInBackground();
-    await _cleanupManualArmadaAutoSanguInBackground();
-    await _normalizeInvoiceNumbersInBackground();
+  Future<void> _runInvoiceListBackgroundMaintenanceAndReloadOnce() async {
+    final hasVisibleChanges = await _runInvoiceListBackgroundMaintenance();
+    if (!mounted || !hasVisibleChanges) return;
+    setState(() {
+      _future = _load();
+    });
+    await _future;
+    if (widget.session.isBackofficeUser) {
+      unawaited(
+          PushNotificationService.instance.refreshMonthlyFinanceReminder());
+    }
   }
 
-  Future<void> _backfillIncomePricingInBackground() async {
+  Future<bool> _runInvoiceListBackgroundMaintenance() async {
+    var hasVisibleChanges = false;
+    hasVisibleChanges =
+        await _syncFixedInvoiceCacheInBackground() || hasVisibleChanges;
+    hasVisibleChanges =
+        await _backfillIncomePricingInBackground() || hasVisibleChanges;
+    hasVisibleChanges =
+        await _cleanupManualArmadaAutoSanguInBackground() || hasVisibleChanges;
+    hasVisibleChanges =
+        await _normalizeInvoiceNumbersInBackground() || hasVisibleChanges;
+    return hasVisibleChanges;
+  }
+
+  Future<bool> _backfillIncomePricingInBackground() async {
     if (_incomePricingBackfillDone || _backgroundIncomePricingBackfillRunning) {
-      return;
+      return false;
     }
     _backgroundIncomePricingBackfillRunning = true;
     try {
       final report = await widget.repository
           .backfillSpecialIncomePricingForExistingInvoices();
       _incomePricingBackfillDone = true;
-      if (!mounted || !report.hasChanges) return;
-      setState(() {
-        _future = _load();
-      });
-      if (widget.session.isBackofficeUser) {
-        unawaited(
-            PushNotificationService.instance.refreshMonthlyFinanceReminder());
-      }
+      return report.hasChanges;
     } catch (_) {
       // Best effort: update pricing invoice lama tidak boleh menghambat page.
+      return false;
     } finally {
       _backgroundIncomePricingBackfillRunning = false;
     }
   }
 
-  Future<void> _normalizeInvoiceNumbersInBackground() async {
-    if (_backgroundInvoiceNumberNormalizationRunning) return;
+  Future<bool> _normalizeInvoiceNumbersInBackground() async {
+    if (_backgroundInvoiceNumberNormalizationRunning) return false;
     _backgroundInvoiceNumberNormalizationRunning = true;
     try {
       final report = await widget.repository.normalizeLegacyInvoiceNumbers();
       if (report.updatedInvoices <= 0 && report.updatedFixedBatches <= 0) {
-        return;
+        return false;
       }
       final remoteBatches = await _loadRemoteFixedInvoiceBatches();
       if (remoteBatches.isNotEmpty) {
         await _syncLocalFixedInvoiceCache(remoteBatches);
       }
-      if (!mounted) return;
-      setState(() {
-        _future = _load();
-      });
+      return true;
     } catch (_) {
       // Best effort: migrasi nomor invoice lama tidak boleh menghambat page.
+      return false;
     } finally {
       _backgroundInvoiceNumberNormalizationRunning = false;
     }
   }
 
-  Future<void> _syncFixedInvoiceCacheInBackground() async {
-    if (_backgroundFixedInvoiceSyncRunning) return;
+  Future<bool> _syncFixedInvoiceCacheInBackground() async {
+    if (_backgroundFixedInvoiceSyncRunning) return false;
     _backgroundFixedInvoiceSyncRunning = true;
     try {
       final localIds = await _loadLocalFixedInvoiceIds();
@@ -549,7 +560,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       }
 
       final remoteBatches = await _loadRemoteFixedInvoiceBatches();
-      if (remoteBatches.isEmpty) return;
+      if (remoteBatches.isEmpty) return false;
 
       final remoteIds = remoteBatches
           .expand((batch) => batch.invoiceIds)
@@ -559,41 +570,32 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
 
       await _syncLocalFixedInvoiceCache(remoteBatches);
 
-      if (!mounted || setEquals(localIds, remoteIds)) return;
-      setState(() {
-        _future = _load();
-      });
+      return !setEquals(localIds, remoteIds);
     } catch (_) {
       // Best effort: page list tetap cepat walau sync fix invoice gagal.
+      return false;
     } finally {
       _backgroundFixedInvoiceSyncRunning = false;
     }
   }
 
-  Future<void> _cleanupManualArmadaAutoSanguInBackground() async {
+  Future<bool> _cleanupManualArmadaAutoSanguInBackground() async {
     if (_manualArmadaAutoSanguCleanupDone ||
         _backgroundAutoSanguCleanupRunning) {
-      return;
+      return false;
     }
     _backgroundAutoSanguCleanupRunning = true;
     try {
       final report = await widget.repository
           .backfillAutoSanguExpensesForExistingInvoices();
       _manualArmadaAutoSanguCleanupDone = true;
-      if (!mounted) return;
       final hasVisibleChange = report.createdExpenses > 0 ||
           report.updatedExpenses > 0 ||
           report.deletedExpenses > 0;
-      if (!hasVisibleChange) return;
-      setState(() {
-        _future = _load();
-      });
-      if (widget.session.isBackofficeUser) {
-        unawaited(
-            PushNotificationService.instance.refreshMonthlyFinanceReminder());
-      }
+      return hasVisibleChange;
     } catch (_) {
       // Best effort: page list tetap cepat walau cleanup auto sangu gagal.
+      return false;
     } finally {
       _backgroundAutoSanguCleanupRunning = false;
     }
@@ -631,8 +633,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       unawaited(
           PushNotificationService.instance.refreshMonthlyFinanceReminder());
     }
-    if (_isAdminOrOwner) {
-      unawaited(_runInvoiceListBackgroundMaintenance());
+    if (_isAdminOrOwner && runBackfill) {
+      unawaited(_runInvoiceListBackgroundMaintenanceAndReloadOnce());
     }
   }
 
@@ -833,6 +835,10 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       kopDate: batch.kopDate,
       kopLocation: batch.kopLocation,
       createdAt: batch.createdAt,
+      status: batch.status,
+      paidAt: batch.paidAt,
+      paymentDetails:
+          batch.paymentDetails.map((entry) => entry.toJson()).toList(),
     );
   }
 
@@ -848,26 +854,52 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     await _saveFixedInvoiceBatches(batches);
   }
 
-  Future<Set<String>> _loadFixedInvoiceIds() async {
+  Future<List<_FixedInvoiceBatch>> _loadMergedFixedInvoiceBatches() async {
     final localIds = await _loadLocalFixedInvoiceIds();
     final localBatches = await _loadLocalFixedInvoiceBatches();
-    if (localBatches.isNotEmpty) {
-      for (final batch in localBatches) {
-        await _upsertRemoteFixedInvoiceBatch(batch);
-      }
-    }
-
     final remoteBatches = await _loadRemoteFixedInvoiceBatches();
-    if (remoteBatches.isNotEmpty) {
-      await _syncLocalFixedInvoiceCache(remoteBatches);
-      return remoteBatches
-          .expand((batch) => batch.invoiceIds)
-          .map((id) => id.trim())
-          .where((id) => id.isNotEmpty)
-          .toSet();
+    final knownInvoiceIds = <String>{
+      ...localBatches.expand((batch) => batch.invoiceIds),
+      ...remoteBatches.expand((batch) => batch.invoiceIds),
+    }.map((id) => id.trim()).where((id) => id.isNotEmpty).toSet();
+    final legacyIds = localIds.difference(knownInvoiceIds);
+    final legacyBatches = legacyIds.isEmpty
+        ? const <_FixedInvoiceBatch>[]
+        : _buildLegacyFixedInvoiceBatchesFromInvoices(
+            invoices: await widget.repository.fetchInvoicesByIds(legacyIds),
+            fixedIds: legacyIds,
+            existingBatches: <_FixedInvoiceBatch>[
+              ...localBatches,
+              ...remoteBatches,
+            ],
+          );
+    final promotedLocalBatches = <_FixedInvoiceBatch>[
+      ...localBatches,
+      ...legacyBatches,
+    ];
+    final merged = _mergeFixedInvoiceBatchesWithLocalFallback(
+      remoteBatches: remoteBatches,
+      localBatches: promotedLocalBatches,
+    );
+    if (merged.isNotEmpty) {
+      await Future.wait(merged.map(_upsertRemoteFixedInvoiceBatch));
     }
+    final refreshedRemote = await _loadRemoteFixedInvoiceBatches();
+    final finalBatches = _mergeFixedInvoiceBatchesWithLocalFallback(
+      remoteBatches: refreshedRemote,
+      localBatches: merged,
+    );
+    await _syncLocalFixedInvoiceCache(finalBatches);
+    return finalBatches;
+  }
 
-    return localIds;
+  Future<Set<String>> _loadFixedInvoiceIds() async {
+    final batches = await _loadMergedFixedInvoiceBatches();
+    return batches
+        .expand((batch) => batch.invoiceIds)
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
   }
 
   Future<Set<String>> _loadLocalFixedInvoiceIds() async {
@@ -883,20 +915,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
   }
 
   Future<List<_FixedInvoiceBatch>> _loadFixedInvoiceBatches() async {
-    final localBatches = await _loadLocalFixedInvoiceBatches();
-    if (localBatches.isNotEmpty) {
-      for (final batch in localBatches) {
-        await _upsertRemoteFixedInvoiceBatch(batch);
-      }
-    }
-
-    final remoteBatches = await _loadRemoteFixedInvoiceBatches();
-    if (remoteBatches.isNotEmpty) {
-      await _syncLocalFixedInvoiceCache(remoteBatches);
-      return remoteBatches;
-    }
-
-    return localBatches;
+    return _loadMergedFixedInvoiceBatches();
   }
 
   Future<List<_FixedInvoiceBatch>> _loadLocalFixedInvoiceBatches() async {
@@ -941,6 +960,32 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     return '${DateTime.now().microsecondsSinceEpoch}_$seed';
   }
 
+  Future<_FixedInvoiceBatch?> _buildFixedInvoiceBatchFromInvoiceIds(
+    Set<String> invoiceIds, {
+    _FixedInvoiceBatch? preferredBatch,
+  }) async {
+    if (preferredBatch != null) return preferredBatch;
+    if (invoiceIds.isEmpty) return null;
+    final sourceInvoices = await widget.repository.fetchInvoicesByIds(invoiceIds);
+    final generatedBatches = _buildLegacyFixedInvoiceBatchesFromInvoices(
+      invoices: sourceInvoices,
+      fixedIds: invoiceIds,
+    );
+    if (generatedBatches.isNotEmpty) {
+      return generatedBatches.first.copyWith(
+        batchId: _buildFixedInvoiceBatchId(invoiceIds),
+        createdAt: DateTime.now().toIso8601String(),
+      );
+    }
+    return _FixedInvoiceBatch(
+      batchId: _buildFixedInvoiceBatchId(invoiceIds),
+      invoiceIds: invoiceIds.toList(growable: false),
+      invoiceNumber: '',
+      customerName: '',
+      createdAt: DateTime.now().toIso8601String(),
+    );
+  }
+
   Future<void> _markInvoicesAsFixed(
     Iterable<String> invoiceIds, {
     _FixedInvoiceBatch? batch,
@@ -948,15 +993,19 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     final cleaned =
         invoiceIds.map((id) => id.trim()).where((id) => id.isNotEmpty).toSet();
     if (cleaned.isEmpty) return;
+    final effectiveBatch = await _buildFixedInvoiceBatchFromInvoiceIds(
+      cleaned,
+      preferredBatch: batch,
+    );
     final existing = await _loadFixedInvoiceIds();
     existing.addAll(cleaned);
     await _saveFixedInvoiceIds(existing);
-    if (batch == null) return;
-    final batches = await _loadFixedInvoiceBatches();
+    if (effectiveBatch == null) return;
+    final batches = await _loadLocalFixedInvoiceBatches();
     final overlappingBatchIds = batches
         .where(
           (existingBatch) =>
-              existingBatch.batchId != batch.batchId &&
+              existingBatch.batchId != effectiveBatch.batchId &&
               existingBatch.invoiceIds.any(cleaned.contains),
         )
         .map((existingBatch) => existingBatch.batchId)
@@ -964,10 +1013,10 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         .toSet();
     batches.removeWhere(
       (existingBatch) =>
-          existingBatch.batchId == batch.batchId ||
+          existingBatch.batchId == effectiveBatch.batchId ||
           existingBatch.invoiceIds.any(cleaned.contains),
     );
-    batches.add(batch);
+    batches.add(effectiveBatch);
     batches.sort((a, b) {
       final aDate = DateTime.tryParse(a.createdAt ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0);
@@ -979,7 +1028,13 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     for (final batchId in overlappingBatchIds) {
       await widget.repository.deleteFixedInvoiceBatch(batchId);
     }
-    await _upsertRemoteFixedInvoiceBatch(batch);
+    await _upsertRemoteFixedInvoiceBatch(effectiveBatch);
+    final remoteBatches = await _loadRemoteFixedInvoiceBatches();
+    final merged = _mergeFixedInvoiceBatchesWithLocalFallback(
+      remoteBatches: remoteBatches,
+      localBatches: batches,
+    );
+    await _syncLocalFixedInvoiceCache(merged);
   }
 
   Future<void> _requestPengurusInvoiceEdit(Map<String, dynamic> item) async {
@@ -1035,45 +1090,43 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
   Future<void> _openInvoicePrintSelector({
     required List<Map<String, dynamic>> incomes,
   }) async {
+    List<Map<String, dynamic>> cloneMapRows(Iterable<dynamic> rows) {
+      return rows
+          .whereType<Map>()
+          .map((row) => Map<String, dynamic>.from(row))
+          .toList();
+    }
+
+    final fixedIds = _isAdminOrOwner
+        ? await _loadFixedInvoiceIds()
+        : await _loadLocalFixedInvoiceIds();
+
     final allPrintableIncomes = await (() async {
       try {
-        final fixedIds = _isAdminOrOwner
-            ? await _loadFixedInvoiceIds()
-            : await _loadLocalFixedInvoiceIds();
-        final fetched = await widget.repository.fetchInvoices();
-        final scoped = fetched.where((item) {
-          final id = '${item['id'] ?? ''}'.trim();
-          if (id.isNotEmpty && _locallyRemovedRowIds.contains(id)) return false;
-          if (id.isNotEmpty && fixedIds.contains(id)) return false;
-          if (_isPengurus) return _isOwnedByCurrentUser(item);
-          if (_isAdminOrOwner) return _isPengurusIncomeApproved(item);
-          return true;
-        }).toList()
-          ..sort((a, b) {
-            final aDate = Formatters.parseDate(
-                  a['tanggal_kop'] ?? a['tanggal'] ?? a['created_at'],
-                ) ??
-                DateTime.fromMillisecondsSinceEpoch(0);
-            final bDate = Formatters.parseDate(
-                  b['tanggal_kop'] ?? b['tanggal'] ?? b['created_at'],
-                ) ??
-                DateTime.fromMillisecondsSinceEpoch(0);
-            return bDate.compareTo(aDate);
-          });
-        return scoped;
+        return cloneMapRows(await widget.repository.fetchInvoices());
       } catch (_) {
-        return incomes;
+        try {
+          final fetched = await widget.repository.fetchInvoicesSinceWithScope(
+            DateTime(2000, 1, 1),
+            columns: _invoiceListColumns,
+            createdBy: _isPengurus ? _currentUserId : null,
+          );
+          return cloneMapRows(fetched as List);
+        } catch (_) {
+          return incomes
+              .map((item) => Map<String, dynamic>.from(item))
+              .toList(growable: false);
+        }
       }
-    })();
-
-    if (allPrintableIncomes.isEmpty) {
-      _snack(
-        _t('Tidak ada invoice income untuk dicetak.',
-            'No income invoices available to print.'),
-        error: true,
-      );
-      return;
-    }
+    })()
+      ..removeWhere((item) {
+        final id = '${item['id'] ?? ''}'.trim();
+        if (id.isNotEmpty && _locallyRemovedRowIds.contains(id)) return true;
+        if (id.isNotEmpty && fixedIds.contains(id)) return true;
+        if (_isPengurus) return !_isOwnedByCurrentUser(item);
+        if (_isAdminOrOwner) return !_isPengurusIncomeApproved(item);
+        return false;
+      });
 
     String keyword = '';
     final now = DateTime.now();
@@ -1083,6 +1136,65 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     final selectedIds = <String>{};
     final searchController = TextEditingController();
     final fixedInvoiceBatches = await _loadFixedInvoiceBatches();
+
+    List<DateTime> resolveDepartureDates(Map<String, dynamic> item) {
+      final dates = <DateTime>[];
+
+      void pushDate(dynamic raw) {
+        final parsed = Formatters.parseDate(raw);
+        if (parsed != null) {
+          dates.add(parsed);
+        }
+      }
+
+      final details = _toDetailList(item['rincian']);
+      if (details.isNotEmpty) {
+        for (final row in details) {
+          pushDate(row['armada_start_date'] ?? row['tanggal']);
+        }
+      }
+      if (dates.isEmpty) {
+        pushDate(item['armada_start_date']);
+        pushDate(item['tanggal']);
+        pushDate(item['created_at']);
+      }
+      dates.sort();
+      return dates;
+    }
+
+    DateTime resolveInvoiceDepartureSortDate(Map<String, dynamic> item) {
+      final departureDates = resolveDepartureDates(item);
+      if (departureDates.isNotEmpty) {
+        return departureDates.first;
+      }
+      return Formatters.parseDate(
+            item['armada_start_date'] ?? item['tanggal'] ?? item['created_at'],
+          ) ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+    }
+
+    bool matchesDepartureMonth(Map<String, dynamic> item) {
+      final departureDates = resolveDepartureDates(item);
+      if (departureDates.isEmpty) return false;
+      return departureDates.every(
+        (date) => date.year == selectedYear && date.month == selectedMonth,
+      );
+    }
+
+    allPrintableIncomes.sort(
+      (a, b) =>
+          resolveInvoiceDepartureSortDate(b)
+              .compareTo(resolveInvoiceDepartureSortDate(a)),
+    );
+
+    if (allPrintableIncomes.isEmpty) {
+      _snack(
+        _t('Tidak ada invoice income untuk dicetak.',
+            'No income invoices available to print.'),
+        error: true,
+      );
+      return;
+    }
 
     bool matchesCustomerKind(
       Map<String, dynamic> item,
@@ -1157,13 +1269,13 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         for (final row in details) {
           pushLine(
             row,
-            item['armada_start_date'] ?? item['tanggal_kop'] ?? item['tanggal'],
+            item['armada_start_date'] ?? item['tanggal'] ?? item['created_at'],
           );
         }
       } else {
         pushLine(
           item,
-          item['armada_start_date'] ?? item['tanggal_kop'] ?? item['tanggal'],
+          item['armada_start_date'] ?? item['tanggal'] ?? item['created_at'],
         );
       }
 
@@ -1454,16 +1566,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     }
 
     List<Map<String, dynamic>> filterRows() {
-      bool inMonthYear(Map<String, dynamic> item) {
-        final date = Formatters.parseDate(
-          item['tanggal_kop'] ?? item['tanggal'] ?? item['created_at'],
-        );
-        if (date == null) return false;
-        return date.year == selectedYear && date.month == selectedMonth;
-      }
-
       return allPrintableIncomes.where((item) {
-        if (!inMonthYear(item)) return false;
+        if (!matchesDepartureMonth(item)) return false;
         if (!matchesCustomerKind(item, customerKind)) return false;
         if (keyword.trim().isEmpty) return true;
         return _matchesKeywordInAnyColumn(
@@ -1476,14 +1580,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         );
       }).toList()
         ..sort((a, b) {
-          final aDate = Formatters.parseDate(
-                a['tanggal_kop'] ?? a['tanggal'] ?? a['created_at'],
-              ) ??
-              DateTime.fromMillisecondsSinceEpoch(0);
-          final bDate = Formatters.parseDate(
-                b['tanggal_kop'] ?? b['tanggal'] ?? b['created_at'],
-              ) ??
-              DateTime.fromMillisecondsSinceEpoch(0);
+          final aDate = resolveInvoiceDepartureSortDate(a);
+          final bDate = resolveInvoiceDepartureSortDate(b);
           return bDate.compareTo(aDate);
         });
     }
@@ -2164,12 +2262,15 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       final invoiceNumber = batch.invoiceNumber.trim().isEmpty
           ? resolveIncomeReportInvoiceNumber(batchItems.first)
           : batch.invoiceNumber.trim();
+      final paymentSummary = _summarizeFixedInvoicePayments(
+        batch: batch,
+        sourceInvoices: batchItems,
+      );
       final reportDate = (batch.kopDate ?? '').trim().isEmpty
           ? resolveIncomeReportDate(batchItems.first)
           : batch.kopDate;
-      final paidAt = (batch.paidAt ?? '').trim();
-      final status =
-          batch.status.trim().isEmpty ? 'Unpaid' : batch.status.trim();
+      final paidAt = (paymentSummary.paidAt ?? '').trim();
+      final status = paymentSummary.status;
       final jumlah = batchItems.fold<double>(
         0,
         (sum, item) => sum + resolveSingleInvoiceJumlah(item),
@@ -2182,6 +2283,15 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         0,
         (sum, item) => sum + resolveSingleInvoiceTotal(item),
       );
+      final paymentBaseTotal = paymentSummary.entries.fold<double>(
+        0,
+        (sum, entry) => sum + entry.total,
+      );
+      final paymentRatio =
+          paymentBaseTotal > 0 ? (total / paymentBaseTotal) : 1.0;
+      final scaledPaidAmount =
+          min(total, max(0.0, paymentSummary.paidAmount * paymentRatio));
+      final scaledRemainingAmount = max(0.0, total - scaledPaidAmount);
       final departureDate = batchItems
           .map(resolveSingleInvoiceDepartureDate)
           .map(Formatters.parseDate)
@@ -2209,6 +2319,10 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         '__batch_items': batchItems,
         '__batch_invoice_ids': batch.invoiceIds,
         '__batch_id': batch.batchId,
+        '__paid_amount': scaledPaidAmount,
+        '__remaining_amount': scaledRemainingAmount,
+        '__payment_details':
+            paymentSummary.entries.map((entry) => entry.toJson()).toList(),
         '__departure_date': departureDate?.toIso8601String(),
       });
     }
@@ -2298,6 +2412,13 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
           final subtotal = resolveSingleInvoiceJumlah(item);
           final pph = resolveSingleInvoicePph(item);
           final total = resolveSingleInvoiceTotal(item);
+          final paidAmount = _toNum(item['__paid_amount']);
+          final remainingAmount = _toNum(item['__remaining_amount']);
+          final paidLocked = isIncomeReportPaid(item);
+          final defaultBayar = paidLocked ? total : paidAmount;
+          final defaultSisa = paidLocked
+              ? 0.0
+              : (remainingAmount > 0 ? remainingAmount : max(0.0, total - paidAmount));
 
           rows.add({
             '__key':
@@ -2317,9 +2438,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
             '__pph': pph,
             '__total': total,
             '__tujuan': '${item['lokasi_bongkar'] ?? '-'}'.trim(),
-            '__paid_locked': isIncomeReportPaid(item),
-            '__bayar_default': isIncomeReportPaid(item) ? total : 0.0,
-            '__sisa_default': isIncomeReportPaid(item) ? 0.0 : total,
+            '__paid_locked': paidLocked,
+            '__bayar_default': defaultBayar,
+            '__sisa_default': defaultSisa,
             '__income': total,
             '__expense': 0.0,
           });
@@ -2657,9 +2778,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                     'JUMLAH',
                     'PPH',
                     'TOTAL',
-                    'TGL BAYAR',
                     'BAYAR',
                     'SISA',
+                    'TGL BAYAR',
                   ]
                 : const [
                     'NO',
@@ -2667,9 +2788,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                     'CUSTOMER',
                     'JUMLAH',
                     'TOTAL',
-                    'TGL BAYAR',
                     'BAYAR',
                     'SISA',
+                    'TGL BAYAR',
                   ]
             : companyMode
                 ? const [
@@ -2701,9 +2822,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                 formatReportAmount(_toNum(row['__jumlah'])),
                 formatReportAmount(_toNum(row['__pph'])),
                 formatReportAmount(_toNum(row['__total'])),
-                paidAt.isEmpty ? '' : formatReportDate(paidAt),
                 formatOptionalEditableAmount(row, '__bayar_text', '__bayar'),
                 formatOptionalEditableAmount(row, '__sisa_text', '__sisa'),
+                paidAt.isEmpty ? '' : formatReportDate(paidAt),
               ];
             }
             return [
@@ -2712,9 +2833,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
               '${row['__customer'] ?? row['__name'] ?? '-'}'.trim(),
               formatReportAmount(_toNum(row['__jumlah'])),
               formatReportAmount(_toNum(row['__total'])),
-              paidAt.isEmpty ? '' : formatReportDate(paidAt),
               formatOptionalEditableAmount(row, '__bayar_text', '__bayar'),
               formatOptionalEditableAmount(row, '__sisa_text', '__sisa'),
+              paidAt.isEmpty ? '' : formatReportDate(paidAt),
             ];
           }
           if (companyMode) {
@@ -2758,9 +2879,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                     formatReportAmount(totalJumlah),
                     formatReportAmount(totalPph),
                     formatReportAmount(totalNilai),
-                    '',
                     formatReportAmount(totalBayar),
                     formatReportAmount(totalSisa),
+                    '',
                   ]
                 : [
                     '',
@@ -2768,23 +2889,23 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                     'TOTAL',
                     formatReportAmount(totalJumlah),
                     formatReportAmount(totalNilai),
-                    '',
                     formatReportAmount(totalBayar),
                     formatReportAmount(totalSisa),
+                    '',
                   ],
           );
         }
         final numericColumns = useIncomeInvoiceTable
             ? showIncomePphColumn
-                ? <int>{3, 4, 5, 7, 8}
-                : <int>{3, 4, 6, 7}
+                ? <int>{3, 4, 5, 6, 7}
+                : <int>{3, 4, 5, 6}
             : companyMode
                 ? <int>{3, 4, 5}
                 : <int>{3, 4};
         final dateColumns = useIncomeInvoiceTable
             ? showIncomePphColumn
-                ? <int>{1, 6}
-                : <int>{1, 5}
+                ? <int>{1, 8}
+                : <int>{1, 7}
             : <int>{1};
         final priorityTextColumns =
             useIncomeInvoiceTable ? <int>{2} : <int>{2, headers.length - 1};
@@ -2795,6 +2916,32 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
           numericColumns: numericColumns,
           priorityTextColumns: priorityTextColumns,
         );
+        double flexValue(pw.TableColumnWidth? width, double fallback) {
+          if (width is pw.FlexColumnWidth) return width.flex;
+          if (width is pw.FixedColumnWidth) return width.width;
+          return fallback;
+        }
+        if (useIncomeInvoiceTable) {
+          final customerIndex = 2;
+          final bayarIndex = showIncomePphColumn ? 6 : 5;
+          final sisaIndex = showIncomePphColumn ? 7 : 6;
+          final paidDateIndex = headers.length - 1;
+          columnWidths[customerIndex] = pw.FlexColumnWidth(
+            min(
+              flexValue(columnWidths[customerIndex], 16.0),
+              showIncomePphColumn ? 15.2 : 16.4,
+            ),
+          );
+          columnWidths[bayarIndex] = pw.FlexColumnWidth(
+            max(flexValue(columnWidths[bayarIndex], 9.0), 9.0),
+          );
+          columnWidths[sisaIndex] = pw.FlexColumnWidth(
+            max(flexValue(columnWidths[sisaIndex], 9.4), 9.4),
+          );
+          columnWidths[paidDateIndex] = pw.FlexColumnWidth(
+            max(flexValue(columnWidths[paidDateIndex], 10.5), 10.5),
+          );
+        }
         final cellAlignments = <int, pw.Alignment>{
           for (int i = 0; i < headers.length; i++) i: pw.Alignment.center,
         };
@@ -2960,8 +3107,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                   width: 0.8,
                 ),
                 cellPadding:
-                    const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 3),
-                headerHeight: 18,
+                    const pw.EdgeInsets.symmetric(horizontal: 3, vertical: 3),
+                headerHeight: 16,
                 headerDecoration: const pw.BoxDecoration(),
                 headerStyle: pw.TextStyle(
                   font: pw.Font.helveticaBold(),

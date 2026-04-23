@@ -637,6 +637,9 @@ create table if not exists public.fixed_invoice_batches (
   updated_at timestamptz not null default timezone('utc', now())
 );
 
+alter table public.fixed_invoice_batches
+  add column if not exists payment_details jsonb not null default '[]'::jsonb;
+
 create index if not exists fixed_invoice_batches_created_at_idx
   on public.fixed_invoice_batches (created_at desc);
 
@@ -1540,15 +1543,42 @@ create policy fixed_invoice_batches_select_policy
 on public.fixed_invoice_batches
 for select
 to authenticated
-using (public.is_staff());
+using (public.is_staff() or public.is_pengurus());
 
 drop policy if exists fixed_invoice_batches_modify_policy on public.fixed_invoice_batches;
 create policy fixed_invoice_batches_modify_policy
 on public.fixed_invoice_batches
 for all
 to authenticated
-using (public.is_staff())
-with check (public.is_staff());
+using (public.is_staff() or public.is_pengurus())
+with check (public.is_staff() or public.is_pengurus());
+
+create or replace function public.get_fixed_invoice_batches()
+returns setof public.fixed_invoice_batches
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select *
+  from public.fixed_invoice_batches
+  where public.is_staff() or public.is_pengurus()
+  order by created_at desc;
+$$;
+
+create or replace function public.get_fixed_invoice_batch_invoices(p_ids uuid[])
+returns setof public.invoices
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select i.*
+  from public.invoices i
+  where (public.is_staff() or public.is_pengurus())
+    and i.id = any(coalesce(p_ids, array[]::uuid[]))
+  order by i.tanggal desc nulls last, i.created_at desc nulls last;
+$$;
 
 -- customer_orders
 drop policy if exists customer_orders_select_policy on public.customer_orders;
@@ -1643,6 +1673,8 @@ grant execute on function public.current_role() to anon, authenticated;
 grant execute on function public.is_staff() to anon, authenticated;
 grant execute on function public.is_pengurus() to anon, authenticated;
 grant execute on function public.sync_armada_statuses() to authenticated;
+grant execute on function public.get_fixed_invoice_batches() to authenticated;
+grant execute on function public.get_fixed_invoice_batch_invoices(uuid[]) to authenticated;
 grant execute on function public.get_income_form_armadas() to authenticated;
 grant execute on function public.get_income_form_harga_per_ton_rules() to authenticated;
 grant execute on function public.create_pengurus_income_invoice(jsonb) to authenticated;

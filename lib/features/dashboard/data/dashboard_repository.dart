@@ -106,6 +106,7 @@ class DashboardRepository {
   bool? _invoiceNumberColumnAvailable;
   final Set<String> _unavailableInvoiceColumns = <String>{};
   final Set<String> _unavailableExpenseColumns = <String>{};
+  final Set<String> _unavailableFixedInvoiceBatchColumns = <String>{};
   String? _cachedRoleUserId;
   String? _cachedCurrentRole;
   static const _invoiceWorkflowColumns = <String>{
@@ -131,6 +132,11 @@ class DashboardRepository {
   };
   static const _optionalExpenseColumns = <String>{
     'created_by',
+  };
+  static const _optionalFixedInvoiceBatchColumns = <String>{
+    'status',
+    'paid_at',
+    'payment_details',
   };
   static const _companyKeywords = <String>[
     r'\bcv\b',

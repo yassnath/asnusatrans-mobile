@@ -48,7 +48,10 @@ function Set-CellText($cell, [string]$text) {
 try {
   $payload = Get-Content -Raw -LiteralPath $PayloadPath | ConvertFrom-Json
   $rows = @($payload.rows)
-  $summaryValues = $payload.summaryValues
+  $summaryValues = $null
+  if ($payload.PSObject.Properties.Name -contains 'summaryValues') {
+    $summaryValues = $payload.summaryValues
+  }
   $rowCount = [Math]::Max(1, [int]$payload.rowCount)
   $firstDataRow = 6
   $summaryStartRow = 21
@@ -59,6 +62,10 @@ try {
   $excel.Visible = $false
   $excel.DisplayAlerts = $false
   $excel.ScreenUpdating = $false
+  try {
+    $excel.ErrorCheckingOptions.BackgroundChecking = $false
+  } catch {
+  }
 
   $workbook = $excel.Workbooks.Open($TemplatePath)
   $worksheet = $workbook.Worksheets.Item(1)

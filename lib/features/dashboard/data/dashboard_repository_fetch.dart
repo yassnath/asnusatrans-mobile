@@ -37,6 +37,25 @@ extension DashboardRepositoryFetchExtension on DashboardRepository {
     }
 
     try {
+      final currentRole = await _loadCurrentRole();
+      if (currentRole == 'pengurus') {
+        try {
+          final rpcRows = await _supabase.rpc(
+            'get_fixed_invoice_batch_invoices',
+            params: <String, dynamic>{'p_ids': cleanedIds},
+          );
+          return _toMapList(rpcRows);
+        } on PostgrestException catch (error) {
+          if (!_isMissingRpcFunctionError(
+                error,
+                'get_fixed_invoice_batch_invoices',
+              ) &&
+              !_isPermissionDeniedError(error)) {
+            rethrow;
+          }
+        }
+      }
+
       const invoiceColumns =
           'id,no_invoice,invoice_entity,tanggal,tanggal_kop,lokasi_kop,nama_pelanggan,email,no_telp,due_date,'
           'lokasi_muat,lokasi_bongkar,armada_start_date,armada_end_date,'
@@ -182,13 +201,32 @@ extension DashboardRepositoryFetchExtension on DashboardRepository {
 
   Future<List<Map<String, dynamic>>> fetchFixedInvoiceBatches() async {
     try {
-      final res = await _supabase
-          .from('fixed_invoice_batches')
-          .select(
-            'batch_id,invoice_ids,invoice_number,customer_name,kop_date,'
-            'kop_location,status,paid_at,created_at,updated_at',
-          )
-          .order('created_at', ascending: false);
+      final currentRole = await _loadCurrentRole();
+      if (currentRole == 'pengurus') {
+        try {
+          final rpcRows = await _supabase.rpc('get_fixed_invoice_batches');
+          return _toMapList(rpcRows).map(_normalizeFixedInvoiceBatchRow).toList();
+        } on PostgrestException catch (error) {
+          if (!_isMissingRpcFunctionError(
+                error,
+                'get_fixed_invoice_batches',
+              ) &&
+              !_isPermissionDeniedError(error)) {
+            rethrow;
+          }
+        }
+      }
+
+      const fixedInvoiceBatchColumns =
+          'batch_id,invoice_ids,invoice_number,customer_name,kop_date,'
+          'kop_location,status,paid_at,payment_details,created_at,updated_at';
+      final res = await _runFixedInvoiceBatchSelectWithFallback(
+        fixedInvoiceBatchColumns,
+        (columns) => _supabase
+            .from('fixed_invoice_batches')
+            .select(columns)
+            .order('created_at', ascending: false),
+      );
       return _toMapList(res).map(_normalizeFixedInvoiceBatchRow).toList();
     } on PostgrestException catch (e) {
       if (_isMissingFixedInvoiceBatchTableError(e)) {
@@ -208,6 +246,7 @@ extension DashboardRepositoryFetchExtension on DashboardRepository {
     String? createdAt,
     String? status,
     String? paidAt,
+    List<Map<String, dynamic>>? paymentDetails,
   }) async {
     final cleanedBatchId = batchId.trim();
     final cleanedInvoiceIds = invoiceIds
@@ -237,6 +276,7 @@ extension DashboardRepositoryFetchExtension on DashboardRepository {
           (kopLocation ?? '').trim().isEmpty ? null : kopLocation!.trim(),
       'status': (status ?? '').trim().isEmpty ? 'Unpaid' : status!.trim(),
       'paid_at': (paidAt ?? '').trim().isEmpty ? null : paidAt!.trim(),
+      'payment_details': paymentDetails ?? const <Map<String, dynamic>>[],
       'created_at': (createdAt ?? '').trim().isEmpty
           ? DateTime.now().toIso8601String()
           : createdAt!.trim(),
@@ -244,9 +284,7 @@ extension DashboardRepositoryFetchExtension on DashboardRepository {
     };
 
     try {
-      await _supabase
-          .from('fixed_invoice_batches')
-          .upsert(payload, onConflict: 'batch_id');
+      await _upsertFixedInvoiceBatchWithFallback(payload);
     } on PostgrestException catch (e) {
       if (_isMissingFixedInvoiceBatchTableError(e)) {
         return;

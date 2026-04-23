@@ -114,7 +114,7 @@ extension DashboardRepositoryCrudExtension on DashboardRepository {
       if (invalidDetailIndexes.isNotEmpty) {
         final detailLabels = invalidDetailIndexes.join(', ');
         throw Exception(
-          'Setiap keberangkatan wajib memiliki tonase dan harga. Periksa rincian ke-$detailLabels.',
+          'Setiap keberangkatan wajib memiliki total harga. Untuk muatan biasa isi tonase dan harga, sedangkan Ongkos Kuli isi total harga. Periksa rincian ke-$detailLabels.',
         );
       }
 

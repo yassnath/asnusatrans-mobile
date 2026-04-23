@@ -3,6 +3,13 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('Income pricing rule logic', () {
+    test('detects Ongkos Kuli cargo case-insensitively', () {
+      expect(isOngkosKuliCargo('Ongkos Kuli'), isTrue);
+      expect(isOngkosKuliCargo('ongkos   kuli'), isTrue);
+      expect(isOngkosKuliCargo('ONGKOS-KULI'), isTrue);
+      expect(isOngkosKuliCargo('Batubara'), isFalse);
+    });
+
     test('returns built-in Giono sewa rule for Nganjuk to Driyo', () {
       final rule = resolveBuiltInIncomePricingRule(
         customerName: 'gIoNo',
@@ -29,6 +36,35 @@ void main() {
       expect(rule?['lokasi_bongkar'], 'Gempol');
       expect(rule?['harga_per_ton'], 55.0);
       expect(rule?['flat_total'], isNull);
+    });
+
+    test('returns built-in Betoyo to Muncar fallback rule', () {
+      final rule = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'bEtOyO',
+        destination: 'mUnCaR',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule?['lokasi_muat'], 'Betoyo');
+      expect(rule?['lokasi_bongkar'], 'Muncar');
+      expect(rule?['harga_per_ton'], 193.0);
+      expect(rule?['flat_total'], isNull);
+    });
+
+    test('returns built-in Hasan geser rule for T. Langon to T. Langon', () {
+      final rule = resolveBuiltInIncomePricingRule(
+        customerName: 'HaSaN',
+        pickup: 't. LANGON',
+        destination: 'TLangon',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule?['customer_name'], 'Hasan');
+      expect(rule?['lokasi_muat'], 'T. Langon');
+      expect(rule?['lokasi_bongkar'], 'T. Langon');
+      expect(rule?['flat_total'], 200000.0);
+      expect(rule?['harga_per_ton'], 0.0);
     });
 
     test('returns null for unrelated route', () {

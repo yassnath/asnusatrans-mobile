@@ -64,15 +64,41 @@ Map<String, dynamic>? resolvePrioritizedSanguRouteRule({
   final destinationNorm = normalizeSanguPlace(destination);
   final batangToLangon = pickupNorm == 'batang' && destinationNorm == 'langon';
   final langonToBatang = pickupNorm == 'langon' && destinationNorm == 'batang';
-  if (!(batangToLangon || langonToBatang)) {
-    return null;
+  if (batangToLangon || langonToBatang) {
+    return <String, dynamic>{
+      'tempat': batangToLangon ? 'BATANG - T. LANGON' : 'T. LANGON - BATANG',
+      'lokasi_muat': batangToLangon ? 'BATANG' : 'T. LANGON',
+      'lokasi_bongkar': batangToLangon ? 'T. LANGON' : 'BATANG',
+      'nominal': 3400000,
+      '__muat_norm': batangToLangon ? 'batang' : 'langon',
+      '__bongkar_norm': batangToLangon ? 'langon' : 'batang',
+    };
   }
-  return <String, dynamic>{
-    'tempat': batangToLangon ? 'BATANG - T. LANGON' : 'T. LANGON - BATANG',
-    'lokasi_muat': batangToLangon ? 'BATANG' : 'T. LANGON',
-    'lokasi_bongkar': batangToLangon ? 'T. LANGON' : 'BATANG',
-    'nominal': 3400000,
-    '__muat_norm': batangToLangon ? 'batang' : 'langon',
-    '__bongkar_norm': batangToLangon ? 'langon' : 'batang',
-  };
+
+  final kendalToBetoyo = pickupNorm == 'kendal' && destinationNorm == 'betoyo';
+  if (kendalToBetoyo) {
+    return <String, dynamic>{
+      'tempat': 'KENDAL - BETOYO',
+      'lokasi_muat': 'KENDAL',
+      'lokasi_bongkar': 'BETOYO',
+      'nominal': 1700000,
+      '__muat_norm': 'kendal',
+      '__bongkar_norm': 'betoyo',
+    };
+  }
+
+  final nganjukToDriyo =
+      pickupNorm == 'nganjuk' && destinationNorm == 'driyo';
+  if (nganjukToDriyo) {
+    return <String, dynamic>{
+      'tempat': 'NGANJUK - DRIYO',
+      'lokasi_muat': 'NGANJUK',
+      'lokasi_bongkar': 'DRIYO',
+      'nominal': 700000,
+      '__muat_norm': 'nganjuk',
+      '__bongkar_norm': 'driyo',
+    };
+  }
+
+  return null;
 }
