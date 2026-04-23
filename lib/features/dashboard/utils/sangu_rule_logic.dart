@@ -87,6 +87,19 @@ Map<String, dynamic>? resolvePrioritizedSanguRouteRule({
     };
   }
 
+  final langonToMuncar =
+      pickupNorm == 'langon' && destinationNorm == 'muncar';
+  if (langonToMuncar) {
+    return <String, dynamic>{
+      'tempat': 'T. LANGON - MUNCAR',
+      'lokasi_muat': 'T. LANGON',
+      'lokasi_bongkar': 'MUNCAR',
+      'nominal': 1265000,
+      '__muat_norm': 'langon',
+      '__bongkar_norm': 'muncar',
+    };
+  }
+
   final nganjukToDriyo =
       pickupNorm == 'nganjuk' && destinationNorm == 'driyo';
   if (nganjukToDriyo) {

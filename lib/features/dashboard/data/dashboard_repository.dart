@@ -1070,6 +1070,9 @@ class DashboardRepository {
           detail['muatan'],
           fallbackCargo,
         ]);
+        if (isOngkosKuliCargo(effectiveCargo)) {
+          continue;
+        }
         final baseRoute = (
           pickup: originalPickup.trim(),
           destination: originalDestination.trim(),

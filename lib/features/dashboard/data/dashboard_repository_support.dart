@@ -1470,6 +1470,7 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
     final destinationKey = _normalizeIncomePricingText(destination);
     if (destinationKey.contains('batang')) return true;
     if (destinationKey.contains('gempol')) return true;
+    if (destinationKey.contains('muncar')) return true;
     return _num(rule['flat_total']) > 0;
   }
 
