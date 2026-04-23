@@ -713,11 +713,16 @@ Map<String, dynamic>? _resolveHargaRuleShared({
   required String lokasiMuat,
   required String lokasiBongkar,
 }) {
-  if (rules.isEmpty) return null;
   final bongkarKey = _normalizeIncomeRuleTextShared(lokasiBongkar);
   if (bongkarKey.isEmpty) return null;
   final muatKey = _normalizeIncomeRuleTextShared(lokasiMuat);
   final customerKey = _normalizeIncomeRuleTextShared(customerName);
+  final builtInRule = resolveBuiltInIncomePricingRule(
+    customerName: customerName,
+    pickup: lokasiMuat,
+    destination: lokasiBongkar,
+  );
+  if (rules.isEmpty) return builtInRule;
 
   int specificityScore(String value) {
     if (value.isEmpty) return 0;
@@ -782,12 +787,7 @@ Map<String, dynamic>? _resolveHargaRuleShared({
       bestRule = rule;
     }
   }
-  return bestRule ??
-      resolveBuiltInIncomePricingRule(
-        customerName: customerName,
-        pickup: lokasiMuat,
-        destination: lokasiBongkar,
-      );
+  return bestRule ?? builtInRule;
 }
 
 double? _resolveHargaPerTonValueShared(

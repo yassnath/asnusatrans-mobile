@@ -939,6 +939,8 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                               row['muatan'] = value;
                               final isOngkosKuli =
                                   _isOngkosKuliIncomeRow(row);
+                              final ongkosKuliModeChanged =
+                                  wasOngkosKuli != isOngkosKuli;
                               var hargaChanged = false;
                               if (isOngkosKuli) {
                                 _enableDirectTotalOnlyIncomeRow(row);
@@ -949,12 +951,16 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                                 hargaChanged =
                                     _applyAutoHargaPerTon(row, force: true);
                               }
-                              setState(() {
-                                _detailFieldRefreshToken++;
-                                if (hargaChanged) {
-                                  _hargaFieldRefreshToken++;
-                                }
-                              });
+                              if (ongkosKuliModeChanged || hargaChanged) {
+                                setState(() {
+                                  if (ongkosKuliModeChanged) {
+                                    _detailFieldRefreshToken++;
+                                  }
+                                  if (hargaChanged) {
+                                    _hargaFieldRefreshToken++;
+                                  }
+                                });
+                              }
                             },
                           ),
                           const SizedBox(height: 8),

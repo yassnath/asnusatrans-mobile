@@ -1471,6 +1471,7 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
     if (destinationKey.contains('batang')) return true;
     if (destinationKey.contains('gempol')) return true;
     if (destinationKey.contains('muncar')) return true;
+    if (destinationKey.contains('sarana')) return true;
     return _num(rule['flat_total']) > 0;
   }
 
