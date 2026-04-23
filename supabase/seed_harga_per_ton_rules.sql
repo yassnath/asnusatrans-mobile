@@ -39,7 +39,8 @@ with incoming(
   values
     (null, 'T. Langon', 'Purwosari', 80.00, null, 100, true),
     (null, 'T. Langon', 'Safelock', 50.00, null, 100, true),
-    (null, 'T. Langon', 'Muncar', 110.00, null, 105, true),
+    (null, 'T. Langon', 'Muncar', 187.50, null, 100, true),
+    (null, 'T. Langon', 'Sarana', 110.00, null, 105, true),
     (null, 'T. Langon', 'Tanggulangin', 55.00, null, 100, true),
     (null, 'T. Langon', 'Pare', 80.00, null, 100, true),
     (null, 'T. Langon', 'Singosari', 85.00, null, 100, true),
@@ -108,7 +109,8 @@ with incoming(
   values
     (null, 'T. Langon', 'Purwosari', 80.00, null, 100, true),
     (null, 'T. Langon', 'Safelock', 50.00, null, 100, true),
-    (null, 'T. Langon', 'Muncar', 110.00, null, 105, true),
+    (null, 'T. Langon', 'Muncar', 187.50, null, 100, true),
+    (null, 'T. Langon', 'Sarana', 110.00, null, 105, true),
     (null, 'T. Langon', 'Tanggulangin', 55.00, null, 100, true),
     (null, 'T. Langon', 'Pare', 80.00, null, 100, true),
     (null, 'T. Langon', 'Singosari', 85.00, null, 100, true),

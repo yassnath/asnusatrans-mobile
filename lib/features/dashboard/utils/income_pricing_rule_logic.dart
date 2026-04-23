@@ -107,11 +107,11 @@ Map<String, dynamic>? resolveBuiltInIncomePricingRule({
   }
 
   if (incomePricingLocationKeyMatches(pickupKey, 't langon') &&
-      incomePricingLocationKeyMatches(destinationKey, 'muncar')) {
+      incomePricingLocationKeyMatches(destinationKey, 'sarana')) {
     return <String, dynamic>{
       'customer_name': null,
       'lokasi_muat': 'T. Langon',
-      'lokasi_bongkar': 'Muncar',
+      'lokasi_bongkar': 'Sarana',
       'harga_per_ton': 110.0,
       'flat_total': null,
       'priority': 105,

@@ -38,16 +38,16 @@ void main() {
       expect(rule?['flat_total'], isNull);
     });
 
-    test('returns built-in T. Langon to Muncar fallback rule', () {
+    test('returns built-in T. Langon to Sarana fallback rule', () {
       final rule = resolveBuiltInIncomePricingRule(
         customerName: 'Siapa Saja',
         pickup: 't.LANGON',
-        destination: 'mUnCaR',
+        destination: 'sArAnA',
       );
 
       expect(rule, isNotNull);
       expect(rule?['lokasi_muat'], 'T. Langon');
-      expect(rule?['lokasi_bongkar'], 'Muncar');
+      expect(rule?['lokasi_bongkar'], 'Sarana');
       expect(rule?['harga_per_ton'], 110.0);
       expect(rule?['flat_total'], isNull);
     });

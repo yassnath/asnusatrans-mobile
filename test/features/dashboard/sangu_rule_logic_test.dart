@@ -48,16 +48,16 @@ void main() {
       expect(rule['lokasi_bongkar'], 'BETOYO');
     });
 
-    test('prioritizes T. Langon to Muncar route with fixed nominal', () {
+    test('prioritizes T. Langon to Sarana route with fixed nominal', () {
       final rule = resolvePrioritizedSanguRouteRule(
         pickup: 'T. LANGON',
-        destination: 'muncar',
+        destination: 'sarana',
       );
 
       expect(rule, isNotNull);
       expect(rule!['nominal'], 1265000);
       expect(rule['lokasi_muat'], 'T. LANGON');
-      expect(rule['lokasi_bongkar'], 'MUNCAR');
+      expect(rule['lokasi_bongkar'], 'SARANA');
     });
 
     test('prioritizes nganjuk to driyo route with fixed nominal', () {
