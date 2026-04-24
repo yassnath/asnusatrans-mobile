@@ -465,11 +465,11 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                     row['lokasi_bongkar'] = value;
                                     final hargaChanged =
                                         applyAutoHargaPerTon(row, force: true);
-                                    setDialogState(() {
-                                      if (hargaChanged) {
+                                    if (hargaChanged) {
+                                      setDialogState(() {
                                         editHargaFieldRefreshToken++;
-                                      }
-                                    });
+                                      });
+                                    }
                                   },
                                 ),
                                 const SizedBox(height: 8),
@@ -765,8 +765,8 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                       'edit-total-harga-$index-$editDetailFieldRefreshToken-$editHargaFieldRefreshToken',
                                     ),
                                     initialValue: '${row['subtotal']}',
-                                    keyboardType: const TextInputType
-                                        .numberWithOptions(
+                                    keyboardType:
+                                        const TextInputType.numberWithOptions(
                                       decimal: true,
                                     ),
                                     decoration: InputDecoration(
@@ -796,8 +796,7 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                             decimal: true,
                                           ),
                                           decoration: InputDecoration(
-                                            hintText:
-                                                _t('Tonase', 'Tonnage'),
+                                            hintText: _t('Tonase', 'Tonnage'),
                                           ),
                                           onChanged: (value) {
                                             row['tonase'] = value;
@@ -1004,8 +1003,11 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                           );
                                           return;
                                         }
-                                        final invalidOngkosKuliIndexes = <int>[];
-                                        for (var i = 0; i < details.length; i++) {
+                                        final invalidOngkosKuliIndexes =
+                                            <int>[];
+                                        for (var i = 0;
+                                            i < details.length;
+                                            i++) {
                                           final row = details[i];
                                           if (!_isOngkosKuliIncomeRow(row)) {
                                             continue;
@@ -1127,8 +1129,7 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                             'lokasi_muat': normalizeNullable(
                                               row['lokasi_muat'],
                                             ),
-                                            'lokasi_bongkar':
-                                                normalizeNullable(
+                                            'lokasi_bongkar': normalizeNullable(
                                               row['lokasi_bongkar'],
                                             ),
                                             'muatan': normalizeNullable(
@@ -1281,12 +1282,11 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                                     : _nullableIncomeNumber(
                                                         first['tonase'],
                                                       ),
-                                            harga:
-                                                _isOngkosKuliIncomeRow(first)
-                                                    ? null
-                                                    : _nullableIncomeNumber(
-                                                        first['harga'],
-                                                      ),
+                                            harga: _isOngkosKuliIncomeRow(first)
+                                                ? null
+                                                : _nullableIncomeNumber(
+                                                    first['harga'],
+                                                  ),
                                             namaSupir: driverNames.isEmpty
                                                 ? null
                                                 : driverNames,

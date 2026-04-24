@@ -3051,29 +3051,109 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
 
         if (useIncomeInvoiceTable) {
           final customerIndex = 2;
-          final bayarIndex = showIncomePphColumn ? 6 : 5;
-          final sisaIndex = showIncomePphColumn ? 7 : 6;
-          final paidDateIndex = headers.length - 1;
+          if (showIncomePphColumn) {
+            columnWidths
+              ..[0] = const pw.FlexColumnWidth(3.0)
+              ..[1] = const pw.FlexColumnWidth(8.0)
+              ..[customerIndex] = const pw.FlexColumnWidth(32.0)
+              ..[3] = const pw.FlexColumnWidth(9.0)
+              ..[4] = const pw.FlexColumnWidth(7.0)
+              ..[5] = const pw.FlexColumnWidth(9.0)
+              ..[6] = const pw.FlexColumnWidth(8.5)
+              ..[7] = const pw.FlexColumnWidth(8.5)
+              ..[8] = const pw.FlexColumnWidth(8.5);
+          } else {
+            columnWidths
+              ..[0] = const pw.FlexColumnWidth(3.0)
+              ..[1] = const pw.FlexColumnWidth(8.2)
+              ..[customerIndex] = const pw.FlexColumnWidth(34.0)
+              ..[3] = const pw.FlexColumnWidth(9.4)
+              ..[4] = const pw.FlexColumnWidth(9.4)
+              ..[5] = const pw.FlexColumnWidth(8.7)
+              ..[6] = const pw.FlexColumnWidth(8.7)
+              ..[7] = const pw.FlexColumnWidth(8.7);
+          }
+        } else {
+          final customerIndex = 2;
+          final currentCustomerFlex =
+              flexValue(columnWidths[customerIndex], 16.0);
           columnWidths[customerIndex] = pw.FlexColumnWidth(
-            min(
-              flexValue(columnWidths[customerIndex], 16.0),
-              showIncomePphColumn ? 15.2 : 16.4,
-            ),
-          );
-          columnWidths[bayarIndex] = pw.FlexColumnWidth(
-            max(flexValue(columnWidths[bayarIndex], 9.0), 9.0),
-          );
-          columnWidths[sisaIndex] = pw.FlexColumnWidth(
-            max(flexValue(columnWidths[sisaIndex], 9.4), 9.4),
-          );
-          columnWidths[paidDateIndex] = pw.FlexColumnWidth(
-            max(flexValue(columnWidths[paidDateIndex], 10.5), 10.5),
+            max(currentCustomerFlex, companyMode ? 26.0 : 24.0),
           );
         }
         final cellAlignments = <int, pw.Alignment>{
           for (int i = 0; i < headers.length; i++) i: pw.Alignment.center,
         };
         final totalRowNumber = reportTableData.length;
+
+        double oneLineReportFontSize({
+          required int index,
+          required String text,
+          required bool header,
+          required bool totalRow,
+        }) {
+          var size = header ? headerFont : cellFont;
+          if (totalRow) size = max(5.7, size - 0.2);
+          if (index == 2) {
+            final len = text.replaceAll(RegExp(r'\s+'), ' ').trim().length;
+            if (len > 30) {
+              size -= min(1.25, (len - 30) * 0.055);
+            }
+            if (len > 44) {
+              size -= min(0.75, (len - 44) * 0.045);
+            }
+            return size.clamp(4.8, header ? headerFont : cellFont).toDouble();
+          }
+          if (numericColumns.contains(index)) {
+            return size.clamp(5.4, header ? headerFont : cellFont).toDouble();
+          }
+          return size.clamp(5.2, header ? headerFont : cellFont).toDouble();
+        }
+
+        pw.Widget buildOneLineReportText(
+          String value, {
+          required int index,
+          required bool header,
+          bool totalRow = false,
+        }) {
+          final text = value.replaceAll('\n', ' ').replaceAll('\r', ' ').trim();
+          final fontSize = oneLineReportFontSize(
+            index: index,
+            text: text,
+            header: header,
+            totalRow: totalRow,
+          );
+          final bold = header || totalRow;
+          if (text.isEmpty) {
+            return pw.SizedBox(width: 1, height: fontSize + 1);
+          }
+          return pw.FittedBox(
+            fit: pw.BoxFit.scaleDown,
+            alignment: pw.Alignment.center,
+            child: pw.Text(
+              text,
+              maxLines: 1,
+              softWrap: false,
+              overflow: pw.TextOverflow.clip,
+              textAlign: pw.TextAlign.center,
+              style: pw.TextStyle(
+                font: bold ? pw.Font.helveticaBold() : null,
+                fontWeight: bold ? pw.FontWeight.bold : null,
+                color: PdfColors.black,
+                fontSize: fontSize,
+              ),
+            ),
+          );
+        }
+
+        final headerWidgets = <pw.Widget>[
+          for (var index = 0; index < headers.length; index++)
+            buildOneLineReportText(
+              headers[index],
+              index: index,
+              header: true,
+            ),
+        ];
 
         pw.Widget buildReportHeader() {
           return pw.Column(
@@ -3247,22 +3327,19 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                 cellStyle: pw.TextStyle(fontSize: cellFont),
                 cellAlignments: cellAlignments,
                 columnWidths: columnWidths,
-                headers: headers,
+                headers: headerWidgets,
                 data: reportTableData,
                 cellDecoration: useIncomeInvoiceTable
                     ? (index, data, rowNum) => rowNum == totalRowNumber
                         ? const pw.BoxDecoration(color: PdfColors.grey200)
                         : const pw.BoxDecoration()
                     : null,
-                textStyleBuilder: useIncomeInvoiceTable
-                    ? (index, data, rowNum) => rowNum == totalRowNumber
-                        ? pw.TextStyle(
-                            font: pw.Font.helveticaBold(),
-                            fontWeight: pw.FontWeight.bold,
-                            fontSize: cellFont,
-                          )
-                        : null
-                    : null,
+                cellBuilder: (index, data, rowNum) => buildOneLineReportText(
+                  '$data',
+                  index: index,
+                  header: false,
+                  totalRow: useIncomeInvoiceTable && rowNum == totalRowNumber,
+                ),
               ),
               pw.SizedBox(height: 12),
               buildSummaryBox(),

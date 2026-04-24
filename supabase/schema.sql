@@ -1778,3 +1778,58 @@ where not exists (
   from public.harga_per_ton_rules
   where lower(trim(lokasi_bongkar)) = 'molindo'
 );
+
+-- Unergi -> Royal: harga per ton dan auto sangu sopir.
+delete from public.harga_per_ton_rules
+where lower(coalesce(customer_name, '')) = 'unergi'
+  and lower(coalesce(lokasi_muat, '')) = ''
+  and lower(coalesce(lokasi_bongkar, '')) = 'royal';
+
+insert into public.harga_per_ton_rules (
+  customer_name,
+  lokasi_muat,
+  lokasi_bongkar,
+  harga_per_ton,
+  flat_total,
+  priority,
+  is_active
+)
+values
+  ('Unergi', null, 'Royal', 43.00, null, 210, true);
+
+update public.sangu_driver_rules
+set
+  tempat = 'ROYAL',
+  lokasi_muat = null,
+  lokasi_bongkar = 'ROYAL',
+  nominal = 520000.00,
+  is_active = true,
+  updated_at = timezone('utc', now())
+where lower(coalesce(tempat, '')) = 'royal'
+   or (
+     lower(coalesce(lokasi_bongkar, '')) = 'royal'
+     and lower(coalesce(lokasi_muat, '')) = ''
+   );
+
+insert into public.sangu_driver_rules (
+  tempat,
+  lokasi_muat,
+  lokasi_bongkar,
+  nominal,
+  is_active
+)
+select
+  'ROYAL',
+  null,
+  'ROYAL',
+  520000.00,
+  true
+where not exists (
+  select 1
+  from public.sangu_driver_rules
+  where lower(coalesce(tempat, '')) = 'royal'
+     or (
+       lower(coalesce(lokasi_bongkar, '')) = 'royal'
+       and lower(coalesce(lokasi_muat, '')) = ''
+     )
+);

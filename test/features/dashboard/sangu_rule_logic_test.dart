@@ -10,6 +10,7 @@ void main() {
       expect(normalizeSanguPlace('Soedali'), 'sudali');
       expect(normalizeSanguPlace('Tuban Jenu'), 'tuban jenu');
       expect(normalizeSanguPlace('GeMpOl'), 'gempol');
+      expect(normalizeSanguPlace('Royal Mix'), 'royal');
     });
 
     test('prioritizes batang to langon route with fixed nominal', () {
@@ -70,6 +71,17 @@ void main() {
       expect(rule!['nominal'], 700000);
       expect(rule['lokasi_muat'], 'NGANJUK');
       expect(rule['lokasi_bongkar'], 'DRIYO');
+    });
+
+    test('prioritizes royal destination with fixed nominal', () {
+      final rule = resolvePrioritizedSanguRouteRule(
+        pickup: 'T. Langon',
+        destination: 'rOyAl',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule!['nominal'], 520000);
+      expect(rule['lokasi_bongkar'], 'ROYAL');
     });
 
     test('returns null for unrelated route', () {

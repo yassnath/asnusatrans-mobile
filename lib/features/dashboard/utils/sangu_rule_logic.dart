@@ -49,6 +49,7 @@ String normalizeSanguPlace(String value) {
   if (normalized.contains('sgm')) return 'sgm';
   if (normalized.contains('molindo')) return 'molindo';
   if (normalized.contains('muncar')) return 'muncar';
+  if (normalized.contains('royal')) return 'royal';
   if (normalized.contains('tongas')) return 'tongas';
   if (normalized.contains('tanggulangin')) return 'tanggulangin';
   if (normalized.contains('tim')) return 'tim';
@@ -87,8 +88,7 @@ Map<String, dynamic>? resolvePrioritizedSanguRouteRule({
     };
   }
 
-  final langonToSarana =
-      pickupNorm == 'langon' && destinationNorm == 'sarana';
+  final langonToSarana = pickupNorm == 'langon' && destinationNorm == 'sarana';
   if (langonToSarana) {
     return <String, dynamic>{
       'tempat': 'T. LANGON - SARANA',
@@ -100,8 +100,7 @@ Map<String, dynamic>? resolvePrioritizedSanguRouteRule({
     };
   }
 
-  final nganjukToDriyo =
-      pickupNorm == 'nganjuk' && destinationNorm == 'driyo';
+  final nganjukToDriyo = pickupNorm == 'nganjuk' && destinationNorm == 'driyo';
   if (nganjukToDriyo) {
     return <String, dynamic>{
       'tempat': 'NGANJUK - DRIYO',
@@ -110,6 +109,17 @@ Map<String, dynamic>? resolvePrioritizedSanguRouteRule({
       'nominal': 700000,
       '__muat_norm': 'nganjuk',
       '__bongkar_norm': 'driyo',
+    };
+  }
+
+  if (destinationNorm == 'royal') {
+    return <String, dynamic>{
+      'tempat': 'ROYAL',
+      'lokasi_muat': '',
+      'lokasi_bongkar': 'ROYAL',
+      'nominal': 520000,
+      '__muat_norm': '',
+      '__bongkar_norm': 'royal',
     };
   }
 

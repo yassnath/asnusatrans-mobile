@@ -106,6 +106,19 @@ Map<String, dynamic>? resolveBuiltInIncomePricingRule({
     };
   }
 
+  if (incomePricingCustomerNameMatches(customerKey, 'unergi') &&
+      incomePricingLocationKeyMatches(destinationKey, 'royal')) {
+    return <String, dynamic>{
+      'customer_name': 'Unergi',
+      'lokasi_muat': null,
+      'lokasi_bongkar': 'Royal',
+      'harga_per_ton': 43.0,
+      'flat_total': null,
+      'priority': 210,
+      'is_active': true,
+    };
+  }
+
   if (incomePricingLocationKeyMatches(pickupKey, 't langon') &&
       incomePricingLocationKeyMatches(destinationKey, 'sarana')) {
     return <String, dynamic>{

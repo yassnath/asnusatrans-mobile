@@ -214,8 +214,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
       final driverText = _safeInputText(option['nama_supir']);
       final isDriverManual =
           driverText.isNotEmpty && !_isKnownDriverOption(driverText);
-      final isOngkosKuli =
-          isOngkosKuliCargo(_safeInputText(option['muatan']));
+      final isOngkosKuli = isOngkosKuliCargo(_safeInputText(option['muatan']));
       final row = <String, dynamic>{
         'lokasi_muat': _safeInputText(option['lokasi_muat']),
         'lokasi_muat_manual': '',
@@ -917,11 +916,11 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                               row['lokasi_bongkar'] = value;
                               final hargaChanged =
                                   _applyAutoHargaPerTon(row, force: true);
-                              setState(() {
-                                if (hargaChanged) {
+                              if (hargaChanged) {
+                                setState(() {
                                   _hargaFieldRefreshToken++;
-                                }
-                              });
+                                });
+                              }
                             },
                           ),
                           const SizedBox(height: 8),
@@ -934,11 +933,9 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                               hintText: _t('Muatan', 'Cargo'),
                             ),
                             onChanged: (value) {
-                              final wasOngkosKuli =
-                                  _isOngkosKuliIncomeRow(row);
+                              final wasOngkosKuli = _isOngkosKuliIncomeRow(row);
                               row['muatan'] = value;
-                              final isOngkosKuli =
-                                  _isOngkosKuliIncomeRow(row);
+                              final isOngkosKuli = _isOngkosKuliIncomeRow(row);
                               final ongkosKuliModeChanged =
                                   wasOngkosKuli != isOngkosKuli;
                               var hargaChanged = false;

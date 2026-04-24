@@ -536,6 +536,7 @@ extension _AdminInvoiceListViewStatePreviewSupport
               item['tanggal'];
           payloadRows.add({
             'no': hasData ? '${index + 1}' : '',
+            'sort_date': hasData ? '$armadaStartSource' : '',
             'tanggal':
                 hasData ? _formatInvoiceTableDate(armadaStartSource) : '',
             'plat': hasData ? resolveNoPolisi(row) : '',

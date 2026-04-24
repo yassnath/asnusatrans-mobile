@@ -93,6 +93,7 @@ insert into public.sangu_driver_rules (tempat, lokasi_muat, lokasi_bongkar, nomi
   ('DRIYO', null, 'DRIYO', 520000.00, true),
   ('KLATEN', null, 'KLATEN', 2900000.00, true),
   ('REX', null, 'REX', 690000.00, true),
+  ('ROYAL', null, 'ROYAL', 520000.00, true),
   ('ETIRA ATAS', null, 'ETIRA ATAS', 1035000.00, true),
   ('KLETEK', null, 'KLETEK', 520000.00, true),
   ('RUNGKUT', null, 'RUNGKUT', 575000.00, true),

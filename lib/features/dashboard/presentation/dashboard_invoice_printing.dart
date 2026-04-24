@@ -492,12 +492,12 @@ Future<bool> _printDashboardInvoicePdf(
       return formatInvoiceHargaPerTon(value);
     }
 
-      int baseRowsPerSheet({
-        required bool compact,
-      }) {
-        final halfSheetRows = isCompanyInvoice ? 18 : 21;
-        return compact ? halfSheetRows : (halfSheetRows * 2) + 14;
-      }
+    int baseRowsPerSheet({
+      required bool compact,
+    }) {
+      final halfSheetRows = isCompanyInvoice ? 18 : 21;
+      return compact ? halfSheetRows : (halfSheetRows * 2) + 14;
+    }
 
     List<Map<String, dynamic>> buildPrintableRows({
       required bool compact,
@@ -571,6 +571,7 @@ Future<bool> _printDashboardInvoicePdf(
             item['tanggal'];
         payloadRows.add({
           'no': hasData ? '${index + 1}' : '',
+          'sort_date': hasData ? '$armadaStartSource' : '',
           'tanggal': hasData ? _formatInvoiceTableDate(armadaStartSource) : '',
           'plat': hasData ? resolveNoPolisi(row) : '',
           'muatan': hasData ? '${row['muatan'] ?? '-'}' : '',
@@ -1225,7 +1226,8 @@ Future<bool> _printDashboardInvoicePdf(
                   ),
                   _dashboardPdfCell(
                     hasData
-                        ? _normalizeInvoicePrintLocationLabel(row['lokasi_muat'])
+                        ? _normalizeInvoicePrintLocationLabel(
+                            row['lokasi_muat'])
                         : blankCell,
                     alignCenter: true,
                     hPadding: 4,
@@ -1317,7 +1319,8 @@ Future<bool> _printDashboardInvoicePdf(
               final maxReservedHeight = showFooterSection
                   ? (isCompanyInvoice ? 750.0 : 728.0)
                   : (isCompanyInvoice ? 820.0 : 796.0);
-              final shouldScaleDown = naturalHeight > maxReservedHeight && naturalHeight > 0;
+              final shouldScaleDown =
+                  naturalHeight > maxReservedHeight && naturalHeight > 0;
               final targetHeight =
                   shouldScaleDown ? maxReservedHeight : max(0.0, naturalHeight);
               final targetWidth = shouldScaleDown && aspectRatio > 0
@@ -1625,7 +1628,8 @@ Future<bool> _printDashboardInvoicePdf(
                   child: isCompanyInvoice
                       ? pw.SizedBox()
                       : pw.Padding(
-                          padding: pw.EdgeInsets.only(left: signatureLeftOffset),
+                          padding:
+                              pw.EdgeInsets.only(left: signatureLeftOffset),
                           child: pw.Column(
                             crossAxisAlignment: pw.CrossAxisAlignment.start,
                             children: [
@@ -1684,7 +1688,8 @@ Future<bool> _printDashboardInvoicePdf(
                                   ? const PdfPoint(-1.8, -5)
                                   : const PdfPoint(-3.8, -1.5),
                               child: pw.Column(
-                                crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                                crossAxisAlignment:
+                                    pw.CrossAxisAlignment.stretch,
                                 children: [
                                   pw.Container(
                                     alignment: pw.Alignment.center,
@@ -1853,8 +1858,9 @@ Future<bool> _printDashboardInvoicePdf(
             renderMode: invoiceTableRenderMode,
           )
         : null;
-    final portraitSheets =
-        usePortrait ? splitInvoiceRowsIntoSheets(compact: false) : const <List<Map<String, dynamic>>>[];
+    final portraitSheets = usePortrait
+        ? splitInvoiceRowsIntoSheets(compact: false)
+        : const <List<Map<String, dynamic>>>[];
     final fullExcelTableImages = <_InvoiceTableRenderResult?>[];
     if (usePortrait) {
       for (var pageIndex = 0; pageIndex < portraitSheets.length; pageIndex++) {
@@ -1886,13 +1892,13 @@ Future<bool> _printDashboardInvoicePdf(
         final isLastPage = pageIndex == portraitSheets.length - 1;
         doc.addPage(
           pw.Page(
-          pageFormat: pdfPageFormat,
-          margin: pw.EdgeInsets.fromLTRB(
-            pdfMarginHorizontal,
-            pdfMarginTop,
-            pdfMarginHorizontal,
-            pdfMarginBottom,
-          ),
+            pageFormat: pdfPageFormat,
+            margin: pw.EdgeInsets.fromLTRB(
+              pdfMarginHorizontal,
+              pdfMarginTop,
+              pdfMarginHorizontal,
+              pdfMarginBottom,
+            ),
             build: (_) => buildInvoiceContent(
               compact: false,
               sourceRows: portraitSheets[pageIndex],
@@ -2058,6 +2064,110 @@ extension _AdminInvoiceListViewPrinting on _DashboardInvoicePrintHost {
     ];
   }
 
+  DateTime? _parseInvoicePayloadDate(Map<String, String> row) {
+    final rawSortDate = (row['sort_date'] ?? '').trim();
+    final parsedSortDate = Formatters.parseDate(rawSortDate);
+    if (parsedSortDate != null) return parsedSortDate;
+
+    final rawDisplayDate = (row['tanggal'] ?? '').trim();
+    final match = RegExp(r'^(\d{1,2})-([A-Za-z]{3})-(\d{2,4})$')
+        .firstMatch(rawDisplayDate);
+    if (match == null) return Formatters.parseDate(rawDisplayDate);
+
+    const monthByName = <String, int>{
+      'jan': 1,
+      'feb': 2,
+      'mar': 3,
+      'apr': 4,
+      'may': 5,
+      'jun': 6,
+      'jul': 7,
+      'aug': 8,
+      'sep': 9,
+      'oct': 10,
+      'nov': 11,
+      'dec': 12,
+    };
+    final day = int.tryParse(match.group(1) ?? '');
+    final month = monthByName[(match.group(2) ?? '').toLowerCase()];
+    final yearText = match.group(3) ?? '';
+    final yearRaw = int.tryParse(yearText);
+    if (day == null || month == null || yearRaw == null) return null;
+    final year = yearText.length == 2 ? 2000 + yearRaw : yearRaw;
+    return DateTime(year, month, day);
+  }
+
+  int _invoicePayloadCargoSortPriority(Map<String, String> row) {
+    final cargo = row['muatan'] ?? '';
+    if (isOngkosKuliCargo(cargo)) return 2;
+    if (isTolakanCargo(cargo)) return 1;
+    return 0;
+  }
+
+  List<Map<String, String>> _sortRowsByTanggalAsc(
+    List<Map<String, String>> rows,
+  ) {
+    final copied = rows
+        .map((row) => Map<String, String>.from(row))
+        .toList(growable: false);
+
+    final filledRows = <({int index, Map<String, String> row})>[];
+    final emptyRows = <Map<String, String>>[];
+    for (var index = 0; index < copied.length; index++) {
+      final row = copied[index];
+      if (_isRowMeaningfullyFilled(row)) {
+        filledRows.add((index: index, row: row));
+      } else {
+        emptyRows.add(row);
+      }
+    }
+
+    final fallbackDate = DateTime.fromMillisecondsSinceEpoch(0);
+    filledRows.sort((a, b) {
+      final aDate = _parseInvoicePayloadDate(a.row) ?? fallbackDate;
+      final bDate = _parseInvoicePayloadDate(b.row) ?? fallbackDate;
+      final byDate = aDate.compareTo(bDate);
+      if (byDate != 0) return byDate;
+      final byCargo = _invoicePayloadCargoSortPriority(a.row)
+          .compareTo(_invoicePayloadCargoSortPriority(b.row));
+      if (byCargo != 0) return byCargo;
+      return a.index.compareTo(b.index);
+    });
+
+    final renumberedFilledRows = <Map<String, String>>[];
+    for (var i = 0; i < filledRows.length; i++) {
+      final row = Map<String, String>.from(filledRows[i].row);
+      row['no'] = '${i + 1}';
+      renumberedFilledRows.add(row);
+    }
+
+    final normalizedEmptyRows = emptyRows.map((row) {
+      final copy = Map<String, String>.from(row);
+      copy['no'] = '';
+      return copy;
+    }).toList();
+
+    return <Map<String, String>>[
+      ...renumberedFilledRows,
+      ...normalizedEmptyRows,
+    ];
+  }
+
+  List<Map<String, String>> _sortRowsForInvoiceTable(
+    List<Map<String, String>> rows,
+  ) {
+    final hasDateOrderedCargo = rows.any(
+      (row) =>
+          _isRowMeaningfullyFilled(row) &&
+          (isTolakanCargo(row['muatan'] ?? '') ||
+              isOngkosKuliCargo(row['muatan'] ?? '')),
+    );
+    if (hasDateOrderedCargo) {
+      return _sortRowsByTanggalAsc(rows);
+    }
+    return _sortRowsByBongkarAsc(rows);
+  }
+
   Future<Uint8List?> _rasterizeInvoiceTablePdfBytes(
     Uint8List pdfBytes, {
     required String renderMode,
@@ -2082,7 +2192,7 @@ extension _AdminInvoiceListViewPrinting on _DashboardInvoicePrintHost {
   }) async {
     if (!_canRenderInvoiceTableWithExcel) return null;
 
-    final sortedRows = _sortRowsByBongkarAsc(rows);
+    final sortedRows = _sortRowsForInvoiceTable(rows);
 
     try {
       final tempDir = await Directory.systemTemp.createTemp(
@@ -2170,7 +2280,7 @@ extension _AdminInvoiceListViewPrinting on _DashboardInvoicePrintHost {
     final uri = _invoiceRenderServiceUri();
     if (uri == null) return null;
 
-    final sortedRows = _sortRowsByBongkarAsc(rows);
+    final sortedRows = _sortRowsForInvoiceTable(rows);
 
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
     try {
@@ -2243,7 +2353,7 @@ extension _AdminInvoiceListViewPrinting on _DashboardInvoicePrintHost {
     String renderMode = 'table',
     Map<String, String>? summaryValues,
   }) async {
-    final sortedRows = _sortRowsByBongkarAsc(rows);
+    final sortedRows = _sortRowsForInvoiceTable(rows);
 
     try {
       final pdfFonts = await _loadDashboardPdfFontBundle();

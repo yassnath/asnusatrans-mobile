@@ -81,6 +81,20 @@ void main() {
       expect(rule?['harga_per_ton'], 0.0);
     });
 
+    test('returns built-in Unergi Royal customer-specific rule', () {
+      final rule = resolveBuiltInIncomePricingRule(
+        customerName: 'PT UNERGI INTI PERSADA',
+        pickup: 'T. Langon',
+        destination: 'rOyAl',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule?['customer_name'], 'Unergi');
+      expect(rule?['lokasi_bongkar'], 'Royal');
+      expect(rule?['harga_per_ton'], 43.0);
+      expect(rule?['flat_total'], isNull);
+    });
+
     test('returns null for unrelated route', () {
       final rule = resolveBuiltInIncomePricingRule(
         customerName: 'Giono',
