@@ -799,7 +799,8 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
     PostgrestException error,
     String columns,
   ) {
-    for (final column in DashboardRepository._optionalFixedInvoiceBatchColumns) {
+    for (final column
+        in DashboardRepository._optionalFixedInvoiceBatchColumns) {
       if (!_selectColumnsInclude(columns, column)) continue;
       if (_isMissingColumnError(error, column)) {
         return column;
@@ -812,7 +813,8 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
     PostgrestException error,
     Map<String, dynamic> payload,
   ) {
-    for (final column in DashboardRepository._optionalFixedInvoiceBatchColumns) {
+    for (final column
+        in DashboardRepository._optionalFixedInvoiceBatchColumns) {
       if (!payload.containsKey(column)) continue;
       if (_isMissingColumnError(error, column)) {
         return column;
@@ -873,6 +875,30 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
         (key, _) => _unavailableFixedInvoiceBatchColumns.contains(key),
       );
     return sanitized;
+  }
+
+  Set<String> _missingFixedInvoiceBatchPaymentColumns() {
+    return _unavailableFixedInvoiceBatchColumns
+        .where(DashboardRepository
+            ._requiredFixedInvoiceBatchPaymentColumns.contains)
+        .toSet();
+  }
+
+  Never _throwFixedInvoiceBatchPaymentSchemaError(Set<String> columns) {
+    final sorted = columns.toList()..sort();
+    throw Exception(
+      'Database fixed_invoice_batches belum memiliki kolom wajib untuk '
+      'sinkronisasi pembayaran (${sorted.join(', ')}). Jalankan patch SQL '
+      'supabase/patch_fixed_invoice_payment_columns_20260424.sql di Supabase, '
+      'lalu refresh aplikasi.',
+    );
+  }
+
+  void _ensureFixedInvoiceBatchPaymentColumnsAvailable() {
+    final missingColumns = _missingFixedInvoiceBatchPaymentColumns();
+    if (missingColumns.isNotEmpty) {
+      _throwFixedInvoiceBatchPaymentSchemaError(missingColumns);
+    }
   }
 
   String _invoiceSelectColumnsForCurrentSchema(String columns) {
@@ -990,6 +1016,11 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
           preferredPayload,
         );
         if (missingColumn == null) rethrow;
+        if (DashboardRepository._requiredFixedInvoiceBatchPaymentColumns
+            .contains(missingColumn)) {
+          _unavailableFixedInvoiceBatchColumns.add(missingColumn);
+          _throwFixedInvoiceBatchPaymentSchemaError({missingColumn});
+        }
         _unavailableFixedInvoiceBatchColumns.add(missingColumn);
         final fallbackPayload = _fixedInvoiceBatchPayloadForCurrentSchema(
           preferredPayload,

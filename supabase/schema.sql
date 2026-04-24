@@ -638,7 +638,16 @@ create table if not exists public.fixed_invoice_batches (
 );
 
 alter table public.fixed_invoice_batches
-  add column if not exists payment_details jsonb not null default '[]'::jsonb;
+  add column if not exists invoice_entity text not null default 'cv_ant',
+  add column if not exists status text not null default 'Unpaid',
+  add column if not exists paid_at date,
+  add column if not exists payment_details jsonb not null default '[]'::jsonb,
+  add column if not exists created_at timestamptz not null default timezone('utc', now()),
+  add column if not exists updated_at timestamptz not null default timezone('utc', now());
+
+update public.fixed_invoice_batches
+set payment_details = '[]'::jsonb
+where payment_details is null;
 
 create index if not exists fixed_invoice_batches_created_at_idx
   on public.fixed_invoice_batches (created_at desc);

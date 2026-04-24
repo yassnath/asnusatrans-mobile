@@ -205,6 +205,7 @@ extension DashboardRepositoryFetchExtension on DashboardRepository {
       if (currentRole == 'pengurus') {
         try {
           final rpcRows = await _supabase.rpc('get_fixed_invoice_batches');
+          _ensureFixedInvoiceBatchPaymentColumnsAvailable();
           return _toMapList(rpcRows)
               .map(_normalizeFixedInvoiceBatchRow)
               .toList();
@@ -230,6 +231,7 @@ extension DashboardRepositoryFetchExtension on DashboardRepository {
             .order('updated_at', ascending: false)
             .order('created_at', ascending: false),
       );
+      _ensureFixedInvoiceBatchPaymentColumnsAvailable();
       return _toMapList(res).map(_normalizeFixedInvoiceBatchRow).toList();
     } on PostgrestException catch (e) {
       if (_isMissingFixedInvoiceBatchTableError(e)) {
@@ -287,6 +289,7 @@ extension DashboardRepositoryFetchExtension on DashboardRepository {
     };
 
     try {
+      _ensureFixedInvoiceBatchPaymentColumnsAvailable();
       await _upsertFixedInvoiceBatchWithFallback(payload);
     } on PostgrestException catch (e) {
       if (_isMissingFixedInvoiceBatchTableError(e)) {

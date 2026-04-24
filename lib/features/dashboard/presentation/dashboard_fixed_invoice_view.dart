@@ -939,13 +939,13 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
         updatedAt: nowIso,
         paymentDetails: paymentDetails,
       );
+      await _upsertRemoteFixedBatch(updated);
       if (index >= 0) {
         batches[index] = updated;
       } else {
         batches.add(updated);
       }
       await _saveFixedBatches(batches);
-      await _upsertRemoteFixedBatch(updated);
       if (!mounted) return;
       _snack(
         _t('Status fix invoice diperbarui.', 'Fixed invoice status updated.'),

@@ -138,6 +138,11 @@ class DashboardRepository {
     'paid_at',
     'payment_details',
   };
+  static const _requiredFixedInvoiceBatchPaymentColumns = <String>{
+    'status',
+    'paid_at',
+    'payment_details',
+  };
   static const _companyKeywords = <String>[
     r'\bcv\b',
     r'\bpt\b',
