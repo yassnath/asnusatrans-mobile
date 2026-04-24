@@ -3,10 +3,12 @@ part of 'dashboard_page.dart';
 class _AdminFixedInvoiceView extends StatefulWidget {
   const _AdminFixedInvoiceView({
     required this.repository,
+    required this.refreshToken,
     this.onDataChanged,
   });
 
   final DashboardRepository repository;
+  final int refreshToken;
   final VoidCallback? onDataChanged;
 
   @override
@@ -18,9 +20,14 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
   static const _fixedInvoiceBatchPrefsKey = 'fixed_invoice_batches_v1';
   static const _fixedInvoiceNormalizationDoneKey =
       'fixed_invoice_normalization_done_v1';
+  static const _fixedInvoiceRemotePromotionDoneKey =
+      'fixed_invoice_remote_promotion_done_v1';
   late Future<List<Map<String, dynamic>>> _future;
   final _search = TextEditingController();
+  RealtimeChannel? _fixedInvoiceRealtimeChannel;
+  Timer? _fixedInvoiceRealtimeDebounce;
   bool _backgroundInvoiceNumberNormalizationRunning = false;
+  bool _refreshingFixedInvoices = false;
   late int _selectedMonth;
   late int _selectedYear;
   String _customerKind = 'all';
@@ -53,14 +60,31 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
     _selectedYear = now.year;
     _future = _load();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _subscribeToFixedInvoiceChanges();
       unawaited(_normalizeInvoiceNumbersInBackground());
     });
   }
 
   @override
   void dispose() {
+    _fixedInvoiceRealtimeDebounce?.cancel();
+    final channel = _fixedInvoiceRealtimeChannel;
+    if (channel != null) {
+      unawaited(Supabase.instance.client.removeChannel(channel));
+    }
     _search.dispose();
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant _AdminFixedInvoiceView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.refreshToken != oldWidget.refreshToken) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        unawaited(_refreshFixedInvoices());
+      });
+    }
   }
 
   void _snack(String msg, {bool error = false}) {
@@ -70,6 +94,70 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
       title: error ? _t('Error', 'Error') : _t('Success', 'Success'),
       message: msg,
     );
+  }
+
+  void _subscribeToFixedInvoiceChanges() {
+    if (_fixedInvoiceRealtimeChannel != null) return;
+    try {
+      final channel = Supabase.instance.client.channel(
+        'fixed-invoice-batches-sync',
+      );
+      channel
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'fixed_invoice_batches',
+            callback: (_) => _scheduleFixedInvoiceRefresh(),
+          )
+          .subscribe();
+      _fixedInvoiceRealtimeChannel = channel;
+    } catch (_) {
+      // Manual refresh tetap tersedia jika Realtime belum aktif di Supabase.
+    }
+  }
+
+  void _scheduleFixedInvoiceRefresh() {
+    _fixedInvoiceRealtimeDebounce?.cancel();
+    _fixedInvoiceRealtimeDebounce = Timer(
+      const Duration(milliseconds: 450),
+      () {
+        if (!mounted) return;
+        unawaited(_refreshFixedInvoices());
+      },
+    );
+  }
+
+  Future<void> _refreshFixedInvoices({bool showMessage = false}) async {
+    if (_refreshingFixedInvoices) return;
+    final nextFuture = _load();
+    setState(() {
+      _refreshingFixedInvoices = true;
+      _future = nextFuture;
+    });
+    try {
+      await nextFuture;
+      if (!mounted) return;
+      if (showMessage) {
+        _snack(
+          _t(
+            'Fix invoice disinkronkan dari database.',
+            'Fixed invoices synced from database.',
+          ),
+        );
+      }
+    } catch (error) {
+      if (!mounted) return;
+      if (showMessage) {
+        _snack(
+          error.toString().replaceFirst('Exception: ', ''),
+          error: true,
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _refreshingFixedInvoices = false);
+      }
+    }
   }
 
   Future<void> _normalizeInvoiceNumbersInBackground() async {
@@ -106,10 +194,31 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
 
   Future<List<_FixedInvoiceBatch>> _loadRemoteFixedBatches() async {
     final rows = await widget.repository.fetchFixedInvoiceBatches();
-    return rows
+    final batches = rows
         .map(_FixedInvoiceBatch.fromJson)
         .whereType<_FixedInvoiceBatch>()
         .toList(growable: false);
+    for (final batchId in _duplicateFixedInvoiceBatchIds(batches)) {
+      try {
+        await widget.repository.deleteFixedInvoiceBatch(batchId);
+      } catch (_) {
+        // Tampilan tetap aman karena batch lama sudah difilter dari hasil merge.
+      }
+    }
+    return _dedupeFixedInvoiceBatches(batches);
+  }
+
+  Future<_FixedInvoiceBatch?> _loadRemoteFixedBatchById(String batchId) async {
+    final cleanedBatchId = batchId.trim();
+    if (cleanedBatchId.isEmpty) return null;
+    try {
+      for (final batch in await _loadRemoteFixedBatches()) {
+        if (batch.batchId == cleanedBatchId) return batch;
+      }
+    } catch (_) {
+      // Cache lokal tetap dipakai jika perangkat sedang offline.
+    }
+    return null;
   }
 
   Future<void> _upsertRemoteFixedBatch(_FixedInvoiceBatch batch) {
@@ -141,6 +250,9 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
   }
 
   Future<List<_FixedInvoiceBatch>> _loadMergedFixedBatches() async {
+    final prefs = await SharedPreferences.getInstance();
+    final remotePromotionDone =
+        prefs.getBool(_fixedInvoiceRemotePromotionDoneKey) ?? false;
     final localIds = await _loadFixedIds();
     final localBatches = await _loadFixedBatches();
     final remoteBatches = await _loadRemoteFixedBatches();
@@ -163,6 +275,17 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
       ...localBatches,
       ...legacyBatches,
     ];
+
+    if (remotePromotionDone) {
+      final finalBatches = _mergeFixedInvoiceBatchesWithLocalFallback(
+        remoteBatches: remoteBatches,
+        localBatches: promotedLocalBatches,
+        includeLocalOnly: false,
+      );
+      await _syncLocalCacheFromBatches(finalBatches);
+      return finalBatches;
+    }
+
     final merged = _mergeFixedInvoiceBatchesWithLocalFallback(
       remoteBatches: remoteBatches,
       localBatches: promotedLocalBatches,
@@ -170,10 +293,12 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
     if (merged.isNotEmpty) {
       await Future.wait(merged.map(_upsertRemoteFixedBatch));
     }
+    await prefs.setBool(_fixedInvoiceRemotePromotionDoneKey, true);
     final refreshedRemote = await _loadRemoteFixedBatches();
     final finalBatches = _mergeFixedInvoiceBatchesWithLocalFallback(
       remoteBatches: refreshedRemote,
       localBatches: merged,
+      includeLocalOnly: false,
     );
     await _syncLocalCacheFromBatches(finalBatches);
     return finalBatches;
@@ -366,7 +491,8 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
     );
   }
 
-  List<Map<String, dynamic>> _resolveBatchSourceItems(Map<String, dynamic> item) {
+  List<Map<String, dynamic>> _resolveBatchSourceItems(
+      Map<String, dynamic> item) {
     final sourceItems =
         (item['__batch_items'] as List<dynamic>? ?? const <dynamic>[])
             .whereType<Map>()
@@ -385,8 +511,9 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
     return _FixedInvoiceBatch(
       batchId: batchId,
       invoiceIds: invoiceIds,
-      invoiceNumber: '${item['__batch_invoice_number'] ?? item['no_invoice'] ?? ''}'
-          .trim(),
+      invoiceNumber:
+          '${item['__batch_invoice_number'] ?? item['no_invoice'] ?? ''}'
+              .trim(),
       customerName: '${item['nama_pelanggan'] ?? ''}'.trim(),
       kopDate: '${item['tanggal_kop'] ?? ''}'.trim().isEmpty
           ? null
@@ -398,8 +525,13 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
       paidAt: '${item['paid_at'] ?? ''}'.trim().isEmpty
           ? null
           : '${item['paid_at'] ?? ''}'.trim(),
-      createdAt: '${item['__batch_created_at'] ?? item['created_at'] ?? ''}'
-          .trim(),
+      createdAt:
+          '${item['__batch_created_at'] ?? item['created_at'] ?? ''}'.trim(),
+      updatedAt: '${item['__batch_updated_at'] ?? item['updated_at'] ?? ''}'
+              .trim()
+              .isEmpty
+          ? null
+          : '${item['__batch_updated_at'] ?? item['updated_at'] ?? ''}'.trim(),
       paymentDetails: _toFixedInvoicePaymentEntryList(
         item['__batch_payment_details'],
       ),
@@ -427,12 +559,14 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
     }
     final sourceItems = _resolveBatchSourceItems(item);
     final batches = await _loadFixedBatches();
-    final existingIndex = batches.indexWhere((batch) => batch.batchId == batchId);
-    final currentBatch = existingIndex >= 0
+    final existingIndex =
+        batches.indexWhere((batch) => batch.batchId == batchId);
+    final localSnapshot = existingIndex >= 0
         ? batches[existingIndex].copyWith(
             paymentDetails: batches[existingIndex].paymentDetails.isNotEmpty
                 ? batches[existingIndex].paymentDetails
-                : _toFixedInvoicePaymentEntryList(item['__batch_payment_details']),
+                : _toFixedInvoicePaymentEntryList(
+                    item['__batch_payment_details']),
             status: '${item['status'] ?? batches[existingIndex].status}'.trim(),
             paidAt: '${item['paid_at'] ?? batches[existingIndex].paidAt ?? ''}'
                     .trim()
@@ -442,6 +576,14 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                     .trim(),
           )
         : _buildBatchSnapshotFromItem(item);
+    final latestRemoteBatch = await _loadRemoteFixedBatchById(batchId);
+    final currentBatch = latestRemoteBatch == null
+        ? localSnapshot
+        : _mergeFixedInvoiceBatchesWithLocalFallback(
+            remoteBatches: <_FixedInvoiceBatch>[latestRemoteBatch],
+            localBatches: <_FixedInvoiceBatch>[localSnapshot],
+            includeLocalOnly: false,
+          ).first;
     final initialSummary = _summarizeFixedInvoicePayments(
       batch: currentBatch,
       sourceInvoices: sourceItems,
@@ -453,7 +595,8 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
       barrierColor: AppColors.popupOverlay,
       builder: (context) {
         var selectedStatus = initialSummary.status;
-        DateTime? selectedPaidDate = Formatters.parseDate(initialSummary.paidAt);
+        DateTime? selectedPaidDate =
+            Formatters.parseDate(initialSummary.paidAt);
         final paymentEntries = initialSummary.entries
             .map(
               (entry) => entry.copyWith(
@@ -470,8 +613,8 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
           builder: (context, setDialogState) {
             void recalculateStatus() {
               final anyPaid = paymentEntries.any((entry) => entry.paid);
-              final allPaid =
-                  paymentEntries.isNotEmpty && paymentEntries.every((entry) => entry.paid);
+              final allPaid = paymentEntries.isNotEmpty &&
+                  paymentEntries.every((entry) => entry.paid);
               selectedStatus = allPaid
                   ? 'Paid'
                   : anyPaid
@@ -481,12 +624,14 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                 selectedPaidDate = null;
               } else {
                 selectedPaidDate ??= paymentEntries
-                    .map((entry) => Formatters.parseDate(entry.paidAt))
-                    .whereType<DateTime>()
-                    .fold<DateTime?>(null, (latest, current) {
-                  if (latest == null || current.isAfter(latest)) return current;
-                  return latest;
-                }) ??
+                        .map((entry) => Formatters.parseDate(entry.paidAt))
+                        .whereType<DateTime>()
+                        .fold<DateTime?>(null, (latest, current) {
+                      if (latest == null || current.isAfter(latest)) {
+                        return current;
+                      }
+                      return latest;
+                    }) ??
                     DateTime.now();
               }
             }
@@ -522,9 +667,10 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
             }
 
             Future<void> pickRaidPaidDate(int index) async {
-              final current = Formatters.parseDate(paymentEntries[index].paidAt) ??
-                  selectedPaidDate ??
-                  DateTime.now();
+              final current =
+                  Formatters.parseDate(paymentEntries[index].paidAt) ??
+                      selectedPaidDate ??
+                      DateTime.now();
               final picked = await showDatePicker(
                 context: context,
                 firstDate: DateTime(2020),
@@ -758,8 +904,9 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                     Navigator.pop(context, {
                       'status': selectedStatus,
                       'paid_at': paidAt,
-                      'payment_details':
-                          paymentEntries.map((entry) => entry.toJson()).toList(),
+                      'payment_details': paymentEntries
+                          .map((entry) => entry.toJson())
+                          .toList(),
                     });
                   },
                   style: CvantButtonStyles.filled(
@@ -784,24 +931,26 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
 
     try {
       final index = batches.indexWhere((batch) => batch.batchId == batchId);
+      final current = index >= 0 ? batches[index] : currentBatch;
+      final nowIso = DateTime.now().toIso8601String();
+      final updated = current.copyWith(
+        status: newStatus.isEmpty ? 'Unpaid' : newStatus,
+        paidAt: newPaidAt.isEmpty ? null : newPaidAt,
+        updatedAt: nowIso,
+        paymentDetails: paymentDetails,
+      );
       if (index >= 0) {
-        final current = batches[index];
-        final updated = current.copyWith(
-          status: newStatus.isEmpty ? 'Unpaid' : newStatus,
-          paidAt: newPaidAt.isEmpty ? null : newPaidAt,
-          paymentDetails: paymentDetails,
-        );
         batches[index] = updated;
-        await _saveFixedBatches(batches);
-        await _upsertRemoteFixedBatch(updated);
+      } else {
+        batches.add(updated);
       }
+      await _saveFixedBatches(batches);
+      await _upsertRemoteFixedBatch(updated);
       if (!mounted) return;
       _snack(
         _t('Status fix invoice diperbarui.', 'Fixed invoice status updated.'),
       );
-      setState(() {
-        _future = _load();
-      });
+      await _refreshFixedInvoices();
       widget.onDataChanged?.call();
     } catch (e) {
       if (!mounted) return;
@@ -943,7 +1092,8 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                               final index = entry.key;
                               final detail = entry.value;
                               final detailKey = _fixedInvoicePaymentDetailKey(
-                                invoiceId: '${source['id'] ?? sourceNumber}'.trim(),
+                                invoiceId:
+                                    '${source['id'] ?? sourceNumber}'.trim(),
                                 detailIndex: index,
                               );
                               final paymentEntry = paymentEntryByKey[detailKey];
@@ -1224,6 +1374,7 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
         '__batch_invoice_number': batch.invoiceNumber,
         '__batch_items': batchItems,
         '__batch_created_at': batch.createdAt,
+        '__batch_updated_at': batch.updatedAt,
       });
     }
 
@@ -1293,16 +1444,49 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
               padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
               child: Column(
                 children: [
-                  TextField(
-                    controller: _search,
-                    onChanged: (_) => setState(() {}),
-                    decoration: InputDecoration(
-                      hintText: _t(
-                        'Cari invoice fix...',
-                        'Search fixed invoice...',
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _search,
+                          onChanged: (_) => setState(() {}),
+                          decoration: InputDecoration(
+                            hintText: _t(
+                              'Cari invoice fix...',
+                              'Search fixed invoice...',
+                            ),
+                            prefixIcon: const Icon(Icons.search),
+                          ),
+                        ),
                       ),
-                      prefixIcon: const Icon(Icons.search),
-                    ),
+                      const SizedBox(width: 8),
+                      Tooltip(
+                        message: _t(
+                          'Refresh dari database',
+                          'Refresh from database',
+                        ),
+                        child: OutlinedButton(
+                          onPressed: _refreshingFixedInvoices
+                              ? null
+                              : () => unawaited(
+                                    _refreshFixedInvoices(showMessage: true),
+                                  ),
+                          style: _mobileActionButtonStyle(
+                            context: context,
+                            color: AppColors.blue,
+                          ),
+                          child: _refreshingFixedInvoices
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.refresh, size: 18),
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 8),
                   Row(

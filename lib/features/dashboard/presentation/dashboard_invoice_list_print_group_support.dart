@@ -594,6 +594,7 @@ extension _AdminInvoiceListViewStatePrintGroupSupport
         kopLocationOverride:
             effectiveKopLocation.isEmpty ? null : effectiveKopLocation,
       );
+      final fixedBatchTimestamp = DateTime.now().toIso8601String();
       final printed = await _printInvoicePdf(
         merged.item,
         merged.details,
@@ -618,7 +619,8 @@ extension _AdminInvoiceListViewStatePrintGroupSupport
           paidAt: '${baseItem['paid_at'] ?? ''}'.trim().isEmpty
               ? null
               : '${baseItem['paid_at'] ?? ''}'.trim(),
-          createdAt: DateTime.now().toIso8601String(),
+          createdAt: fixedBatchTimestamp,
+          updatedAt: fixedBatchTimestamp,
         ),
       );
       if (!printed) {

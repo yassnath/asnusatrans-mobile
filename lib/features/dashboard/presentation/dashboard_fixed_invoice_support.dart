@@ -114,6 +114,9 @@ extension _AdminFixedInvoiceSupport on _AdminFixedInvoiceViewState {
     final createdAt =
         '${representative['updated_at'] ?? representative['created_at'] ?? ''}'
             .trim();
+    final updatedAt =
+        '${representative['updated_at'] ?? representative['created_at'] ?? ''}'
+            .trim();
     final status = '${representative['status'] ?? 'Unpaid'}'.trim();
     final paidAt = '${representative['paid_at'] ?? ''}'.trim();
     return _FixedInvoiceBatch(
@@ -133,9 +136,12 @@ extension _AdminFixedInvoiceSupport on _AdminFixedInvoiceViewState {
       paidAt: paidAt.isEmpty ? null : paidAt,
       createdAt:
           createdAt.isEmpty ? DateTime.now().toIso8601String() : createdAt,
+      updatedAt: updatedAt.isEmpty ? null : updatedAt,
     );
   }
 
+  // Kept for older local-cache recovery flows that may be re-enabled later.
+  // ignore: unused_element
   List<_FixedInvoiceBatch> _buildLegacyBatches(
     List<Map<String, dynamic>> items,
   ) {

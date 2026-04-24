@@ -1633,7 +1633,8 @@ Future<bool> _printDashboardInvoicePdf(
                               pw.SizedBox(height: compact ? 58 : 92),
                               pw.Padding(
                                 padding: pw.EdgeInsets.only(
-                                  left: signatureNameOffset + (compact ? 10 : 17),
+                                  left:
+                                      signatureNameOffset + (compact ? -9 : 17),
                                 ),
                                 child: pw.Text(
                                   'A N T O K',

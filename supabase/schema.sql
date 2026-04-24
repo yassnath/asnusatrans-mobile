@@ -643,6 +643,9 @@ alter table public.fixed_invoice_batches
 create index if not exists fixed_invoice_batches_created_at_idx
   on public.fixed_invoice_batches (created_at desc);
 
+create index if not exists fixed_invoice_batches_updated_at_idx
+  on public.fixed_invoice_batches (updated_at desc);
+
 drop trigger if exists trg_fixed_invoice_batches_updated_at on public.fixed_invoice_batches;
 create trigger trg_fixed_invoice_batches_updated_at
 before update on public.fixed_invoice_batches
@@ -1563,7 +1566,7 @@ as $$
   select *
   from public.fixed_invoice_batches
   where public.is_staff() or public.is_pengurus()
-  order by created_at desc;
+  order by updated_at desc nulls last, created_at desc nulls last;
 $$;
 
 create or replace function public.get_fixed_invoice_batch_invoices(p_ids uuid[])
@@ -1694,6 +1697,14 @@ grant select, insert, update, delete on public.fixed_invoice_batches to authenti
 grant select, insert, update, delete on public.customer_orders to authenticated;
 grant select, insert, update, delete on public.customer_notifications to authenticated;
 grant select, insert, update, delete on public.device_push_tokens to authenticated;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.fixed_invoice_batches;
+exception
+  when duplicate_object then null;
+  when undefined_object then null;
+end $$;
 
 revoke all on function public.get_email_for_login(text) from public;
 grant execute on function public.get_email_for_login(text) to anon, authenticated;

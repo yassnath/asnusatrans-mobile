@@ -35,6 +35,7 @@ class _FixedInvoiceBatch {
     this.status = 'Unpaid',
     this.paidAt,
     this.createdAt,
+    this.updatedAt,
     this.paymentDetails = const <_FixedInvoicePaymentEntry>[],
   });
 
@@ -47,6 +48,7 @@ class _FixedInvoiceBatch {
   final String status;
   final String? paidAt;
   final String? createdAt;
+  final String? updatedAt;
   final List<_FixedInvoicePaymentEntry> paymentDetails;
 
   _FixedInvoiceBatch copyWith({
@@ -59,6 +61,7 @@ class _FixedInvoiceBatch {
     String? status,
     String? paidAt,
     String? createdAt,
+    String? updatedAt,
     List<_FixedInvoicePaymentEntry>? paymentDetails,
   }) {
     return _FixedInvoiceBatch(
@@ -71,6 +74,7 @@ class _FixedInvoiceBatch {
       status: status ?? this.status,
       paidAt: paidAt ?? this.paidAt,
       createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
       paymentDetails: paymentDetails ?? this.paymentDetails,
     );
   }
@@ -92,6 +96,7 @@ class _FixedInvoiceBatch {
         'status': status,
         'paid_at': paidAt,
         'created_at': createdAt,
+        'updated_at': updatedAt,
         'payment_details':
             paymentDetails.map((entry) => entry.toJson()).toList(),
       };
@@ -104,6 +109,7 @@ class _FixedInvoiceBatch {
     final rawInvoiceNumber = '${map['invoice_number'] ?? ''}'.trim();
     final status = '${map['status'] ?? 'Unpaid'}'.trim();
     final paidAt = '${map['paid_at'] ?? ''}'.trim();
+    final updatedAt = '${map['updated_at'] ?? ''}'.trim();
     final paymentDetails = _toFixedInvoicePaymentEntryList(
       map['payment_details'],
     );
@@ -132,6 +138,7 @@ class _FixedInvoiceBatch {
       status: status.isEmpty ? 'Unpaid' : status,
       paidAt: paidAt.isEmpty ? null : paidAt,
       createdAt: createdAt,
+      updatedAt: updatedAt.isEmpty ? null : updatedAt,
       paymentDetails: paymentDetails,
     );
   }
@@ -341,7 +348,8 @@ List<_FixedInvoicePaymentEntry> _buildFixedInvoicePaymentEntries({
   required List<Map<String, dynamic>> sourceInvoices,
 }) {
   final storedByKey = <String, _FixedInvoicePaymentEntry>{
-    for (final entry in batch?.paymentDetails ?? const <_FixedInvoicePaymentEntry>[])
+    for (final entry
+        in batch?.paymentDetails ?? const <_FixedInvoicePaymentEntry>[])
       entry.detailKey: entry,
   };
   final fallbackPaidAt = (batch?.paidAt ?? '').trim();
@@ -396,7 +404,8 @@ List<_FixedInvoicePaymentEntry> _buildFixedInvoicePaymentEntries({
         invoice,
         effectiveRows.length,
       );
-      final paid = stored?.paid == true || (stored == null && markAllPaidByBatch);
+      final paid =
+          stored?.paid == true || (stored == null && markAllPaidByBatch);
       final paidAt = (stored?.paidAt ?? '').trim().isNotEmpty
           ? stored!.paidAt
           : (markAllPaidByBatch ? fallbackPaidAt : null);
@@ -481,29 +490,127 @@ _FixedInvoicePaymentSummary _summarizeFixedInvoicePayments({
 List<_FixedInvoiceBatch> _mergeFixedInvoiceBatchesWithLocalFallback({
   required List<_FixedInvoiceBatch> remoteBatches,
   required List<_FixedInvoiceBatch> localBatches,
+  bool includeLocalOnly = true,
 }) {
-  if (remoteBatches.isEmpty) return localBatches;
-  if (localBatches.isEmpty) return remoteBatches;
-  final localById = <String, _FixedInvoiceBatch>{
-    for (final batch in localBatches) batch.batchId: batch,
-  };
-  final merged = remoteBatches.map((remote) {
-    final local = localById[remote.batchId];
-    if (local == null) return remote;
-    final paymentDetails = remote.paymentDetails.isNotEmpty
-        ? remote.paymentDetails
-        : local.paymentDetails;
-    return remote.copyWith(
-      paymentDetails: paymentDetails,
-      paidAt: (remote.paidAt ?? '').trim().isNotEmpty ? remote.paidAt : local.paidAt,
-      status: remote.status.trim().isNotEmpty ? remote.status : local.status,
-    );
-  }).toList(growable: true);
-  final remoteIds = remoteBatches.map((batch) => batch.batchId).toSet();
-  merged.addAll(
-    localBatches.where((batch) => !remoteIds.contains(batch.batchId)),
+  final remoteInvoiceIds = remoteBatches
+      .expand((batch) => batch.invoiceIds)
+      .map((id) => id.trim())
+      .where((id) => id.isNotEmpty)
+      .toSet();
+  final eligibleLocalBatches = includeLocalOnly
+      ? localBatches
+      : localBatches
+          .where(
+            (batch) =>
+                batch.invoiceIds.any((id) => remoteInvoiceIds.contains(id)),
+          )
+          .toList(growable: false);
+  return _dedupeFixedInvoiceBatches(
+    <_FixedInvoiceBatch>[...remoteBatches, ...eligibleLocalBatches],
   );
+}
+
+List<_FixedInvoiceBatch> _dedupeFixedInvoiceBatches(
+  Iterable<_FixedInvoiceBatch> batches,
+) {
+  final merged = <_FixedInvoiceBatch>[];
+  for (final batch in batches) {
+    if (batch.invoiceIds.isEmpty) continue;
+    var next = batch;
+    for (var index = merged.length - 1; index >= 0; index--) {
+      final existing = merged[index];
+      if (!_fixedInvoiceBatchOverlaps(existing, next)) continue;
+      next = _mergeFixedInvoiceBatchDuplicate(existing, next);
+      merged.removeAt(index);
+    }
+    merged.add(next);
+  }
+  merged.sort((a, b) {
+    final bTime = _fixedInvoiceBatchSortTime(b);
+    final aTime = _fixedInvoiceBatchSortTime(a);
+    final byTime = bTime.compareTo(aTime);
+    if (byTime != 0) return byTime;
+    return a.batchId.compareTo(b.batchId);
+  });
   return merged;
+}
+
+Set<String> _duplicateFixedInvoiceBatchIds(
+  Iterable<_FixedInvoiceBatch> batches,
+) {
+  final source = batches.toList(growable: false);
+  if (source.length < 2) return const <String>{};
+  final canonical = _dedupeFixedInvoiceBatches(source);
+  final canonicalBatchIds = canonical
+      .map((batch) => batch.batchId.trim())
+      .where((id) => id.isNotEmpty)
+      .toSet();
+  final canonicalInvoiceIds = canonical
+      .expand((batch) => batch.invoiceIds)
+      .map((id) => id.trim())
+      .where((id) => id.isNotEmpty)
+      .toSet();
+  final duplicates = <String>{};
+  for (final batch in source) {
+    final batchId = batch.batchId.trim();
+    if (batchId.isEmpty || canonicalBatchIds.contains(batchId)) continue;
+    if (batch.invoiceIds.any((id) => canonicalInvoiceIds.contains(id.trim()))) {
+      duplicates.add(batchId);
+    }
+  }
+  return duplicates;
+}
+
+bool _fixedInvoiceBatchOverlaps(
+  _FixedInvoiceBatch a,
+  _FixedInvoiceBatch b,
+) {
+  if (a.batchId.trim().isNotEmpty && a.batchId == b.batchId) return true;
+  final ids = a.invoiceIds.map((id) => id.trim()).toSet();
+  return b.invoiceIds.any((id) => ids.contains(id.trim()));
+}
+
+DateTime _fixedInvoiceBatchSortTime(_FixedInvoiceBatch batch) {
+  return Formatters.parseDate(batch.updatedAt) ??
+      Formatters.parseDate(batch.createdAt) ??
+      DateTime.fromMillisecondsSinceEpoch(0);
+}
+
+_FixedInvoiceBatch _mergeFixedInvoiceBatchDuplicate(
+  _FixedInvoiceBatch existing,
+  _FixedInvoiceBatch incoming,
+) {
+  final existingTime = _fixedInvoiceBatchSortTime(existing);
+  final incomingTime = _fixedInvoiceBatchSortTime(incoming);
+  final primary = incomingTime.isAfter(existingTime) ? incoming : existing;
+  final fallback = identical(primary, incoming) ? existing : incoming;
+  final invoiceIds = <String>{
+    ...primary.invoiceIds.map((id) => id.trim()).where((id) => id.isNotEmpty),
+    ...fallback.invoiceIds.map((id) => id.trim()).where((id) => id.isNotEmpty),
+  }.toList()
+    ..sort();
+  return primary.copyWith(
+    invoiceIds: invoiceIds,
+    invoiceNumber: primary.invoiceNumber.trim().isNotEmpty
+        ? primary.invoiceNumber
+        : fallback.invoiceNumber,
+    customerName: primary.customerName.trim().isNotEmpty
+        ? primary.customerName
+        : fallback.customerName,
+    kopDate: (primary.kopDate ?? '').trim().isNotEmpty
+        ? primary.kopDate
+        : fallback.kopDate,
+    kopLocation: (primary.kopLocation ?? '').trim().isNotEmpty
+        ? primary.kopLocation
+        : fallback.kopLocation,
+    status: primary.status.trim().isNotEmpty ? primary.status : fallback.status,
+    paidAt: (primary.paidAt ?? '').trim().isNotEmpty
+        ? primary.paidAt
+        : fallback.paidAt,
+    paymentDetails: primary.paymentDetails.isNotEmpty
+        ? primary.paymentDetails
+        : fallback.paymentDetails,
+  );
 }
 
 List<_FixedInvoiceBatch> _buildLegacyFixedInvoiceBatchesFromInvoices({
@@ -526,7 +633,8 @@ List<_FixedInvoiceBatch> _buildLegacyFixedInvoiceBatchesFromInvoices({
       continue;
     }
     final rawInvoiceNumber = '${invoice['no_invoice'] ?? ''}'.trim();
-    final kopDate = '${invoice['tanggal_kop'] ?? invoice['tanggal'] ?? ''}'.trim();
+    final kopDate =
+        '${invoice['tanggal_kop'] ?? invoice['tanggal'] ?? ''}'.trim();
     final customerName = '${invoice['nama_pelanggan'] ?? ''}'.trim();
     final normalizedInvoiceNumber = rawInvoiceNumber.isEmpty
         ? rawInvoiceNumber
@@ -557,6 +665,11 @@ List<_FixedInvoiceBatch> _buildLegacyFixedInvoiceBatchesFromInvoices({
         createdAt: '${invoice['created_at'] ?? ''}'.trim().isEmpty
             ? DateTime.now().toIso8601String()
             : '${invoice['created_at'] ?? ''}'.trim(),
+        updatedAt: '${invoice['updated_at'] ?? invoice['created_at'] ?? ''}'
+                .trim()
+                .isEmpty
+            ? null
+            : '${invoice['updated_at'] ?? invoice['created_at'] ?? ''}'.trim(),
       ),
     );
   }

@@ -58,6 +58,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
   };
   static const _fixedInvoicePrefsKey = 'fixed_invoice_ids_v1';
   static const _fixedInvoiceBatchPrefsKey = 'fixed_invoice_batches_v1';
+  static const _fixedInvoiceRemotePromotionDoneKey =
+      'fixed_invoice_remote_promotion_done_v1';
   static const _invoiceListColumns =
       'id,no_invoice,invoice_entity,tanggal,tanggal_kop,lokasi_kop,nama_pelanggan,email,no_telp,due_date,'
       'lokasi_muat,lokasi_bongkar,armada_start_date,armada_end_date,'
@@ -551,24 +553,30 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     if (_backgroundFixedInvoiceSyncRunning) return false;
     _backgroundFixedInvoiceSyncRunning = true;
     try {
+      final prefs = await SharedPreferences.getInstance();
+      final remotePromotionDone =
+          prefs.getBool(_fixedInvoiceRemotePromotionDoneKey) ?? false;
       final localIds = await _loadLocalFixedInvoiceIds();
       final localBatches = await _loadLocalFixedInvoiceBatches();
-      if (localBatches.isNotEmpty) {
+      if (!remotePromotionDone && localBatches.isNotEmpty) {
         await Future.wait<void>(
-          localBatches.map(_upsertRemoteFixedInvoiceBatch),
+          _dedupeFixedInvoiceBatches(localBatches)
+              .map(_upsertRemoteFixedInvoiceBatch),
         );
+        await prefs.setBool(_fixedInvoiceRemotePromotionDoneKey, true);
       }
 
       final remoteBatches = await _loadRemoteFixedInvoiceBatches();
       if (remoteBatches.isEmpty) return false;
+      final canonicalBatches = _dedupeFixedInvoiceBatches(remoteBatches);
 
-      final remoteIds = remoteBatches
+      final remoteIds = canonicalBatches
           .expand((batch) => batch.invoiceIds)
           .map((id) => id.trim())
           .where((id) => id.isNotEmpty)
           .toSet();
 
-      await _syncLocalFixedInvoiceCache(remoteBatches);
+      await _syncLocalFixedInvoiceCache(canonicalBatches);
 
       return !setEquals(localIds, remoteIds);
     } catch (_) {
@@ -823,7 +831,14 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         await _upsertRemoteFixedInvoiceBatch(batch);
       }
     }
-    return batches;
+    for (final batchId in _duplicateFixedInvoiceBatchIds(batches)) {
+      try {
+        await widget.repository.deleteFixedInvoiceBatch(batchId);
+      } catch (_) {
+        // Best effort: tampilan tetap tidak dobel karena hasil fetch didedupe.
+      }
+    }
+    return _dedupeFixedInvoiceBatches(batches);
   }
 
   Future<void> _upsertRemoteFixedInvoiceBatch(_FixedInvoiceBatch batch) {
@@ -855,6 +870,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
   }
 
   Future<List<_FixedInvoiceBatch>> _loadMergedFixedInvoiceBatches() async {
+    final prefs = await SharedPreferences.getInstance();
+    final remotePromotionDone =
+        prefs.getBool(_fixedInvoiceRemotePromotionDoneKey) ?? false;
     final localIds = await _loadLocalFixedInvoiceIds();
     final localBatches = await _loadLocalFixedInvoiceBatches();
     final remoteBatches = await _loadRemoteFixedInvoiceBatches();
@@ -877,17 +895,28 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       ...localBatches,
       ...legacyBatches,
     ];
+    if (remotePromotionDone) {
+      final merged = _mergeFixedInvoiceBatchesWithLocalFallback(
+        remoteBatches: remoteBatches,
+        localBatches: promotedLocalBatches,
+        includeLocalOnly: false,
+      );
+      await _syncLocalFixedInvoiceCache(merged);
+      return merged;
+    }
     final merged = _mergeFixedInvoiceBatchesWithLocalFallback(
       remoteBatches: remoteBatches,
       localBatches: promotedLocalBatches,
     );
     if (merged.isNotEmpty) {
       await Future.wait(merged.map(_upsertRemoteFixedInvoiceBatch));
+      await prefs.setBool(_fixedInvoiceRemotePromotionDoneKey, true);
     }
     final refreshedRemote = await _loadRemoteFixedInvoiceBatches();
     final finalBatches = _mergeFixedInvoiceBatchesWithLocalFallback(
       remoteBatches: refreshedRemote,
       localBatches: merged,
+      includeLocalOnly: false,
     );
     await _syncLocalFixedInvoiceCache(finalBatches);
     return finalBatches;
@@ -957,7 +986,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         .toList()
       ..sort();
     final seed = ids.isEmpty ? 'batch' : ids.join('_');
-    return '${DateTime.now().microsecondsSinceEpoch}_$seed';
+    return 'fixed_$seed';
   }
 
   Future<_FixedInvoiceBatch?> _buildFixedInvoiceBatchFromInvoiceIds(
@@ -966,23 +995,28 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
   }) async {
     if (preferredBatch != null) return preferredBatch;
     if (invoiceIds.isEmpty) return null;
-    final sourceInvoices = await widget.repository.fetchInvoicesByIds(invoiceIds);
+    final sourceInvoices =
+        await widget.repository.fetchInvoicesByIds(invoiceIds);
     final generatedBatches = _buildLegacyFixedInvoiceBatchesFromInvoices(
       invoices: sourceInvoices,
       fixedIds: invoiceIds,
     );
     if (generatedBatches.isNotEmpty) {
+      final nowIso = DateTime.now().toIso8601String();
       return generatedBatches.first.copyWith(
         batchId: _buildFixedInvoiceBatchId(invoiceIds),
-        createdAt: DateTime.now().toIso8601String(),
+        createdAt: nowIso,
+        updatedAt: nowIso,
       );
     }
+    final nowIso = DateTime.now().toIso8601String();
     return _FixedInvoiceBatch(
       batchId: _buildFixedInvoiceBatchId(invoiceIds),
       invoiceIds: invoiceIds.toList(growable: false),
       invoiceNumber: '',
       customerName: '',
-      createdAt: DateTime.now().toIso8601String(),
+      createdAt: nowIso,
+      updatedAt: nowIso,
     );
   }
 
@@ -1029,10 +1063,13 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       await widget.repository.deleteFixedInvoiceBatch(batchId);
     }
     await _upsertRemoteFixedInvoiceBatch(effectiveBatch);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_fixedInvoiceRemotePromotionDoneKey, true);
     final remoteBatches = await _loadRemoteFixedInvoiceBatches();
     final merged = _mergeFixedInvoiceBatchesWithLocalFallback(
       remoteBatches: remoteBatches,
       localBatches: batches,
+      includeLocalOnly: false,
     );
     await _syncLocalFixedInvoiceCache(merged);
   }
@@ -1182,9 +1219,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     }
 
     allPrintableIncomes.sort(
-      (a, b) =>
-          resolveInvoiceDepartureSortDate(b)
-              .compareTo(resolveInvoiceDepartureSortDate(a)),
+      (a, b) => resolveInvoiceDepartureSortDate(b)
+          .compareTo(resolveInvoiceDepartureSortDate(a)),
     );
 
     if (allPrintableIncomes.isEmpty) {
@@ -1951,6 +1987,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                               ? null
                               : editedKopLocation,
                         );
+                        final fixedBatchTimestamp =
+                            DateTime.now().toIso8601String();
                         printQueue.add({
                           'item': merged.item,
                           'details': merged.details,
@@ -1980,7 +2018,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                                 '${baseItem['paid_at'] ?? ''}'.trim().isEmpty
                                     ? null
                                     : '${baseItem['paid_at'] ?? ''}'.trim(),
-                            createdAt: DateTime.now().toIso8601String(),
+                            createdAt: fixedBatchTimestamp,
+                            updatedAt: fixedBatchTimestamp,
                           ),
                         });
                       }
@@ -2154,10 +2193,11 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     }
 
     bool isIncomeReportPaid(Map<String, dynamic> invoice) {
-      final paidAt = resolveIncomeReportPaidAt(invoice);
-      if (paidAt.isNotEmpty) return true;
       final status = resolveIncomeReportStatus(invoice).trim().toLowerCase();
-      return status.contains('paid') && !status.contains('unpaid');
+      if (status.contains('partial')) return false;
+      if (status.contains('paid') && !status.contains('unpaid')) return true;
+      final paidAt = resolveIncomeReportPaidAt(invoice);
+      return paidAt.isNotEmpty && !status.contains('unpaid');
     }
 
     double parseEditableReportAmount(dynamic value) {
@@ -2218,6 +2258,94 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
           invoice['created_at'];
     }
 
+    String reportPaymentDateOnly(DateTime date) {
+      final mm = date.month.toString().padLeft(2, '0');
+      final dd = date.day.toString().padLeft(2, '0');
+      return '${date.year}-$mm-$dd';
+    }
+
+    String latestReportPaidAt(Iterable<String?> values) {
+      final dates = values
+          .map((value) => Formatters.parseDate(value))
+          .whereType<DateTime>()
+          .toList(growable: false);
+      if (dates.isEmpty) return '';
+      dates.sort((a, b) => a.compareTo(b));
+      return reportPaymentDateOnly(dates.last);
+    }
+
+    ({
+      double paidAmount,
+      double remainingAmount,
+      String paidAt,
+      String status,
+      bool paidLocked,
+    }) resolveFixedBatchReportPayment({
+      required _FixedInvoiceBatch batch,
+      required _FixedInvoicePaymentSummary paymentSummary,
+      required double total,
+    }) {
+      final batchStatus = batch.status.trim();
+      final statusLower = batchStatus.toLowerCase();
+      final storedPaidEntries =
+          batch.paymentDetails.where((entry) => entry.paid).toList();
+      final storedBaseTotal = batch.paymentDetails.fold<double>(
+        0,
+        (sum, entry) => sum + entry.total,
+      );
+      final storedPaidBase = storedPaidEntries.fold<double>(
+        0,
+        (sum, entry) => sum + entry.total,
+      );
+      final summaryBaseTotal = paymentSummary.entries.fold<double>(
+        0,
+        (sum, entry) => sum + entry.total,
+      );
+      final paymentBaseTotal = max(
+        max(paymentSummary.totalAmount, summaryBaseTotal),
+        storedBaseTotal,
+      );
+      final paidBaseAmount = max(paymentSummary.paidAmount, storedPaidBase);
+      final latestPaidAt = latestReportPaidAt([
+        batch.paidAt,
+        paymentSummary.paidAt,
+        ...paymentSummary.entries.where((entry) => entry.paid).map(
+              (entry) => entry.paidAt,
+            ),
+        ...storedPaidEntries.map((entry) => entry.paidAt),
+      ]);
+
+      final isExplicitPaid = statusLower == 'paid' ||
+          (statusLower.contains('paid') &&
+              !statusLower.contains('unpaid') &&
+              !statusLower.contains('partial'));
+      if (isExplicitPaid || paymentSummary.allPaid) {
+        return (
+          paidAmount: total,
+          remainingAmount: 0.0,
+          paidAt: latestPaidAt,
+          status: 'Paid',
+          paidLocked: true,
+        );
+      }
+
+      final ratio = paymentBaseTotal > 0 ? total / paymentBaseTotal : 1.0;
+      final paidAmount = min(total, max(0.0, paidBaseAmount * ratio));
+      final remainingAmount = max(0.0, total - paidAmount);
+      final hasPartialPayment = paidAmount > 0 || paymentSummary.anyPaid;
+      final status = hasPartialPayment || statusLower.contains('partial')
+          ? 'Partial'
+          : (batchStatus.isEmpty ? 'Unpaid' : batchStatus);
+
+      return (
+        paidAmount: paidAmount,
+        remainingAmount: remainingAmount,
+        paidAt: hasPartialPayment ? latestPaidAt : '',
+        status: status,
+        paidLocked: false,
+      );
+    }
+
     String summarizeInvoiceDestinations(List<Map<String, dynamic>> invoices) {
       final tujuan = <String>{};
       for (final invoice in invoices) {
@@ -2269,8 +2397,6 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       final reportDate = (batch.kopDate ?? '').trim().isEmpty
           ? resolveIncomeReportDate(batchItems.first)
           : batch.kopDate;
-      final paidAt = (paymentSummary.paidAt ?? '').trim();
-      final status = paymentSummary.status;
       final jumlah = batchItems.fold<double>(
         0,
         (sum, item) => sum + resolveSingleInvoiceJumlah(item),
@@ -2283,15 +2409,11 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         0,
         (sum, item) => sum + resolveSingleInvoiceTotal(item),
       );
-      final paymentBaseTotal = paymentSummary.entries.fold<double>(
-        0,
-        (sum, entry) => sum + entry.total,
+      final reportPayment = resolveFixedBatchReportPayment(
+        batch: batch,
+        paymentSummary: paymentSummary,
+        total: total,
       );
-      final paymentRatio =
-          paymentBaseTotal > 0 ? (total / paymentBaseTotal) : 1.0;
-      final scaledPaidAmount =
-          min(total, max(0.0, paymentSummary.paidAmount * paymentRatio));
-      final scaledRemainingAmount = max(0.0, total - scaledPaidAmount);
       final departureDate = batchItems
           .map(resolveSingleInvoiceDepartureDate)
           .map(Formatters.parseDate)
@@ -2306,9 +2428,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         'no_invoice': invoiceNumber,
         'invoice_entity': batchItems.first['invoice_entity'],
         'nama_pelanggan': customerName,
-        'status': status,
+        'status': reportPayment.status,
         'tanggal_kop': reportDate,
-        'paid_at': paidAt,
+        'paid_at': reportPayment.paidAt,
         'total_biaya': jumlah,
         'pph': pph,
         'total_bayar': total,
@@ -2319,8 +2441,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         '__batch_items': batchItems,
         '__batch_invoice_ids': batch.invoiceIds,
         '__batch_id': batch.batchId,
-        '__paid_amount': scaledPaidAmount,
-        '__remaining_amount': scaledRemainingAmount,
+        '__paid_amount': reportPayment.paidAmount,
+        '__remaining_amount': reportPayment.remainingAmount,
+        '__report_paid_locked': reportPayment.paidLocked,
         '__payment_details':
             paymentSummary.entries.map((entry) => entry.toJson()).toList(),
         '__departure_date': departureDate?.toIso8601String(),
@@ -2414,11 +2537,14 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
           final total = resolveSingleInvoiceTotal(item);
           final paidAmount = _toNum(item['__paid_amount']);
           final remainingAmount = _toNum(item['__remaining_amount']);
-          final paidLocked = isIncomeReportPaid(item);
+          final paidLocked =
+              item['__report_paid_locked'] == true || isIncomeReportPaid(item);
           final defaultBayar = paidLocked ? total : paidAmount;
           final defaultSisa = paidLocked
               ? 0.0
-              : (remainingAmount > 0 ? remainingAmount : max(0.0, total - paidAmount));
+              : (remainingAmount > 0
+                  ? remainingAmount
+                  : max(0.0, total - paidAmount));
 
           rows.add({
             '__key':
@@ -2661,6 +2787,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
           if (explicit.isEmpty && value <= 0) return '';
           return formatReportAmount(value);
         }
+
         int textMeasure(String value) {
           final normalized = value.replaceAll('\r', '');
           return normalized
@@ -2762,8 +2889,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
 
         pw.MemoryImage? reportLogo;
         try {
-          final logoBytes =
-              await _loadBinaryAssetWithFileFallback('assets/images/iconapk.png');
+          final logoBytes = await _loadBinaryAssetWithFileFallback(
+              'assets/images/iconapk.png');
           reportLogo = pw.MemoryImage(logoBytes);
         } catch (_) {
           reportLogo = null;
@@ -2921,6 +3048,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
           if (width is pw.FixedColumnWidth) return width.width;
           return fallback;
         }
+
         if (useIncomeInvoiceTable) {
           final customerIndex = 2;
           final bayarIndex = showIncomePphColumn ? 6 : 5;
@@ -3325,569 +3453,579 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                      Text(
-                        _t('Range Report', 'Report Range'),
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: () =>
-                                  setDialogState(() => range = 'month'),
-                              style: CvantButtonStyles.outlined(
-                                context,
-                                color: range == 'month'
-                                    ? AppColors.blue
-                                    : AppColors.textMutedFor(context),
-                                borderColor: range == 'month'
-                                    ? AppColors.blue
-                                    : AppColors.cardBorder(context),
-                              ),
-                              child: Text(_t('Bulanan', 'Monthly')),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: () =>
-                                  setDialogState(() => range = 'year'),
-                              style: CvantButtonStyles.outlined(
-                                context,
-                                color: range == 'year'
-                                    ? AppColors.success
-                                    : AppColors.textMutedFor(context),
-                                borderColor: range == 'year'
-                                    ? AppColors.success
-                                    : AppColors.cardBorder(context),
-                              ),
-                              child: Text(_t('Tahunan', 'Yearly')),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        onChanged: (value) =>
-                            setDialogState(() => keywordText = value),
-                        decoration: InputDecoration(
-                          hintText: _t(
-                            'Cari data report (semua kolom)...',
-                            'Search report data (all columns)...',
-                          ),
-                          prefixIcon: const Icon(Icons.search),
+                        Text(
+                          _t('Range Report', 'Report Range'),
+                          style: const TextStyle(fontWeight: FontWeight.w700),
                         ),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        _t('Jenis Customer', 'Customer Type'),
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: () =>
-                                  setDialogState(() => customerKind = 'all'),
-                              style: CvantButtonStyles.outlined(
-                                context,
-                                color: customerKind == 'all'
-                                    ? AppColors.blue
-                                    : AppColors.textMutedFor(context),
-                                borderColor: customerKind == 'all'
-                                    ? AppColors.blue
-                                    : AppColors.cardBorder(context),
-                              ),
-                              child: Text(_t('Semua', 'All')),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: () => setDialogState(
-                                () => customerKind =
-                                    Formatters.invoiceEntityCvAnt,
-                              ),
-                              style: CvantButtonStyles.outlined(
-                                context,
-                                color: customerKind ==
-                                        Formatters.invoiceEntityCvAnt
-                                    ? AppColors.success
-                                    : AppColors.textMutedFor(context),
-                                borderColor: customerKind ==
-                                        Formatters.invoiceEntityCvAnt
-                                    ? AppColors.success
-                                    : AppColors.cardBorder(context),
-                              ),
-                              child: const Text('CV. ANT'),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: () => setDialogState(
-                                () => customerKind =
-                                    Formatters.invoiceEntityPtAnt,
-                              ),
-                              style: CvantButtonStyles.outlined(
-                                context,
-                                color: customerKind ==
-                                        Formatters.invoiceEntityPtAnt
-                                    ? AppColors.cyan
-                                    : AppColors.textMutedFor(context),
-                                borderColor: customerKind ==
-                                        Formatters.invoiceEntityPtAnt
-                                    ? AppColors.cyan
-                                    : AppColors.cardBorder(context),
-                              ),
-                              child: const Text('PT. ANT'),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: () => setDialogState(
-                                () => customerKind =
-                                    Formatters.invoiceEntityPersonal,
-                              ),
-                              style: CvantButtonStyles.outlined(
-                                context,
-                                color: customerKind ==
-                                        Formatters.invoiceEntityPersonal
-                                    ? AppColors.warning
-                                    : AppColors.textMutedFor(context),
-                                borderColor: customerKind ==
-                                        Formatters.invoiceEntityPersonal
-                                    ? AppColors.warning
-                                    : AppColors.cardBorder(context),
-                              ),
-                              child: Text(_t('Pribadi', 'Personal')),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        _t('Periode Manual', 'Manual Period'),
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          if (range == 'month') ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
                             Expanded(
-                              flex: 2,
-                              child: DropdownButtonFormField<int>(
-                                initialValue: selectedMonth,
-                                decoration: InputDecoration(
-                                  labelText: _t('Bulan', 'Month'),
+                              child: OutlinedButton(
+                                onPressed: () =>
+                                    setDialogState(() => range = 'month'),
+                                style: CvantButtonStyles.outlined(
+                                  context,
+                                  color: range == 'month'
+                                      ? AppColors.blue
+                                      : AppColors.textMutedFor(context),
+                                  borderColor: range == 'month'
+                                      ? AppColors.blue
+                                      : AppColors.cardBorder(context),
                                 ),
-                                items: List.generate(
-                                  12,
-                                  (index) => DropdownMenuItem<int>(
-                                    value: index + 1,
-                                    child: Text(monthLabel(index + 1)),
-                                  ),
-                                ),
-                                onChanged: (value) {
-                                  if (value == null) return;
-                                  setDialogState(() => selectedMonth = value);
-                                },
+                                child: Text(_t('Bulanan', 'Monthly')),
                               ),
                             ),
                             const SizedBox(width: 8),
-                          ],
-                          Expanded(
-                            child: DropdownButtonFormField<int>(
-                              initialValue:
-                                  availableYears.contains(selectedYear)
-                                      ? selectedYear
-                                      : availableYears.first,
-                              decoration: InputDecoration(
-                                labelText: _t('Tahun', 'Year'),
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: () =>
+                                    setDialogState(() => range = 'year'),
+                                style: CvantButtonStyles.outlined(
+                                  context,
+                                  color: range == 'year'
+                                      ? AppColors.success
+                                      : AppColors.textMutedFor(context),
+                                  borderColor: range == 'year'
+                                      ? AppColors.success
+                                      : AppColors.cardBorder(context),
+                                ),
+                                child: Text(_t('Tahunan', 'Yearly')),
                               ),
-                              items: availableYears
-                                  .map(
-                                    (year) => DropdownMenuItem<int>(
-                                      value: year,
-                                      child: Text('$year'),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          onChanged: (value) =>
+                              setDialogState(() => keywordText = value),
+                          decoration: InputDecoration(
+                            hintText: _t(
+                              'Cari data report (semua kolom)...',
+                              'Search report data (all columns)...',
+                            ),
+                            prefixIcon: const Icon(Icons.search),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          _t('Jenis Customer', 'Customer Type'),
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: () =>
+                                    setDialogState(() => customerKind = 'all'),
+                                style: CvantButtonStyles.outlined(
+                                  context,
+                                  color: customerKind == 'all'
+                                      ? AppColors.blue
+                                      : AppColors.textMutedFor(context),
+                                  borderColor: customerKind == 'all'
+                                      ? AppColors.blue
+                                      : AppColors.cardBorder(context),
+                                ),
+                                child: Text(_t('Semua', 'All')),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: () => setDialogState(
+                                  () => customerKind =
+                                      Formatters.invoiceEntityCvAnt,
+                                ),
+                                style: CvantButtonStyles.outlined(
+                                  context,
+                                  color: customerKind ==
+                                          Formatters.invoiceEntityCvAnt
+                                      ? AppColors.success
+                                      : AppColors.textMutedFor(context),
+                                  borderColor: customerKind ==
+                                          Formatters.invoiceEntityCvAnt
+                                      ? AppColors.success
+                                      : AppColors.cardBorder(context),
+                                ),
+                                child: const Text('CV. ANT'),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: () => setDialogState(
+                                  () => customerKind =
+                                      Formatters.invoiceEntityPtAnt,
+                                ),
+                                style: CvantButtonStyles.outlined(
+                                  context,
+                                  color: customerKind ==
+                                          Formatters.invoiceEntityPtAnt
+                                      ? AppColors.cyan
+                                      : AppColors.textMutedFor(context),
+                                  borderColor: customerKind ==
+                                          Formatters.invoiceEntityPtAnt
+                                      ? AppColors.cyan
+                                      : AppColors.cardBorder(context),
+                                ),
+                                child: const Text('PT. ANT'),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: () => setDialogState(
+                                  () => customerKind =
+                                      Formatters.invoiceEntityPersonal,
+                                ),
+                                style: CvantButtonStyles.outlined(
+                                  context,
+                                  color: customerKind ==
+                                          Formatters.invoiceEntityPersonal
+                                      ? AppColors.warning
+                                      : AppColors.textMutedFor(context),
+                                  borderColor: customerKind ==
+                                          Formatters.invoiceEntityPersonal
+                                      ? AppColors.warning
+                                      : AppColors.cardBorder(context),
+                                ),
+                                child: Text(_t('Pribadi', 'Personal')),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          _t('Periode Manual', 'Manual Period'),
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            if (range == 'month') ...[
+                              Expanded(
+                                flex: 2,
+                                child: DropdownButtonFormField<int>(
+                                  initialValue: selectedMonth,
+                                  decoration: InputDecoration(
+                                    labelText: _t('Bulan', 'Month'),
+                                  ),
+                                  items: List.generate(
+                                    12,
+                                    (index) => DropdownMenuItem<int>(
+                                      value: index + 1,
+                                      child: Text(monthLabel(index + 1)),
                                     ),
-                                  )
-                                  .toList(),
-                              onChanged: (value) {
-                                if (value == null) return;
-                                setDialogState(() => selectedYear = value);
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      CheckboxListTile(
-                        contentPadding: EdgeInsets.zero,
-                        dense: true,
-                        value: includeIncome,
-                        onChanged: (value) =>
-                            setDialogState(() => includeIncome = value ?? true),
-                        title: Text(_t('Income', 'Income')),
-                      ),
-                      CheckboxListTile(
-                        contentPadding: EdgeInsets.zero,
-                        dense: true,
-                        value: includeExpense,
-                        onChanged: (value) => setDialogState(
-                            () => includeExpense = value ?? true),
-                        title: Text(_t('Expense', 'Expense')),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _t('Checklist Status', 'Status Checklist'),
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      const SizedBox(height: 6),
-                      if (allStatuses.isEmpty)
-                        Text(
-                          _t('Tidak ada status tersedia.',
-                              'No status available.'),
-                          style:
-                              TextStyle(color: AppColors.textMutedFor(context)),
-                        )
-                      else
-                        SizedBox(
-                          height: max(60, min(180, 36.0 * allStatuses.length)),
-                          child: ListView.builder(
-                            itemCount: allStatuses.length,
-                            itemBuilder: (context, index) {
-                              final status = allStatuses[index];
-                              final checked = selectedStatuses.contains(status);
-                              return CheckboxListTile(
-                                contentPadding: EdgeInsets.zero,
-                                dense: true,
-                                value: checked,
+                                  ),
+                                  onChanged: (value) {
+                                    if (value == null) return;
+                                    setDialogState(() => selectedMonth = value);
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                            ],
+                            Expanded(
+                              child: DropdownButtonFormField<int>(
+                                initialValue:
+                                    availableYears.contains(selectedYear)
+                                        ? selectedYear
+                                        : availableYears.first,
+                                decoration: InputDecoration(
+                                  labelText: _t('Tahun', 'Year'),
+                                ),
+                                items: availableYears
+                                    .map(
+                                      (year) => DropdownMenuItem<int>(
+                                        value: year,
+                                        child: Text('$year'),
+                                      ),
+                                    )
+                                    .toList(),
                                 onChanged: (value) {
-                                  setDialogState(() {
-                                    if (value == true) {
-                                      selectedStatuses.add(status);
-                                    } else {
-                                      selectedStatuses.remove(status);
-                                    }
-                                  });
+                                  if (value == null) return;
+                                  setDialogState(() => selectedYear = value);
                                 },
-                                title: Text(status),
-                              );
-                            },
-                          ),
-                        ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _t(
-                          includeIncome && !includeExpense
-                              ? 'Hasil filter: ${previewRows.length} invoice • Dipilih: $selectedCount'
-                              : 'Hasil filter: ${previewRows.length} data • Dipilih: $selectedCount',
-                          includeIncome && !includeExpense
-                              ? 'Filtered result: ${previewRows.length} invoices • Selected: $selectedCount'
-                              : 'Filtered result: ${previewRows.length} rows • Selected: $selectedCount',
-                        ),
-                        style: TextStyle(
-                          color: AppColors.textMutedFor(context),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Text(
-                            _t(
-                              includeIncome && !includeExpense
-                                  ? 'Pilih Invoice Manual'
-                                  : 'Pilih Data Manual',
-                              includeIncome && !includeExpense
-                                  ? 'Manual Invoice Selection'
-                                  : 'Manual Data Selection',
+                              ),
                             ),
-                            style: const TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                          const Spacer(),
-                          TextButton(
-                            onPressed: previewRows.isEmpty
-                                ? null
-                                : () => setDialogState(() {
-                                      for (final row in previewRows) {
-                                        rowSelections['${row['__key']}'] = true;
-                                      }
-                                    }),
-                            child: Text(_t('Pilih Semua', 'Select All')),
-                          ),
-                          TextButton(
-                            onPressed: previewRows.isEmpty
-                                ? null
-                                : () => setDialogState(() {
-                                      for (final row in previewRows) {
-                                        rowSelections['${row['__key']}'] =
-                                            false;
-                                      }
-                                    }),
-                            child: Text(_t('Hapus Pilihan', 'Clear Selection')),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      if (previewRows.isEmpty)
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        CheckboxListTile(
+                          contentPadding: EdgeInsets.zero,
+                          dense: true,
+                          value: includeIncome,
+                          onChanged: (value) => setDialogState(
+                              () => includeIncome = value ?? true),
+                          title: Text(_t('Income', 'Income')),
+                        ),
+                        CheckboxListTile(
+                          contentPadding: EdgeInsets.zero,
+                          dense: true,
+                          value: includeExpense,
+                          onChanged: (value) => setDialogState(
+                              () => includeExpense = value ?? true),
+                          title: Text(_t('Expense', 'Expense')),
+                        ),
+                        const SizedBox(height: 8),
                         Text(
-                          _t('Tidak ada data pada filter ini.',
-                              'No data for this filter.'),
-                          style:
-                              TextStyle(color: AppColors.textMutedFor(context)),
-                        )
-                      else
-                        SizedBox(
-                          height: incomeInvoiceReport ? 320 : 220,
-                          child: ListView.separated(
-                            itemCount: previewRows.length,
-                            separatorBuilder: (_, __) => Divider(
-                              height: 1,
-                              color: AppColors.cardBorder(context),
-                            ),
-                            itemBuilder: (context, index) {
-                              final row = previewRows[index];
-                              final key = '${row['__key']}';
-                              final checked = rowSelections[key] == true;
-                              final income = _toNum(row['__income']);
-                              final expense = _toNum(row['__expense']);
-                              final showIncomePph = incomeInvoiceReport &&
-                                  (customerKind ==
-                                          Formatters.invoiceEntityCvAnt ||
-                                      customerKind ==
-                                          Formatters.invoiceEntityPtAnt ||
-                                      (customerKind !=
-                                              Formatters
-                                                  .invoiceEntityPersonal &&
-                                          previewRows.any((item) =>
-                                              _toNum(item['__pph']) > 0)));
-                              final paidAt = '${row['__paid_at'] ?? ''}'.trim();
-                              final tujuanLabel =
-                                  '${row['__tujuan'] ?? '-'}'.trim();
-                              final title = incomeInvoiceReport
-                                  ? '${row['__number'] ?? '-'} • ${row['__customer'] ?? row['__name'] ?? '-'}'
-                                  : '${row['__number'] ?? '-'} • ${Formatters.dmy(row['__date'])}';
-                              final subtitle = incomeInvoiceReport
-                                  ? [
-                                      '${_t('Tanggal', 'Date')}: ${Formatters.dmy(row['__date'])}',
-                                      '${_t('Jumlah', 'Amount')}: ${Formatters.rupiah(_toNum(row['__jumlah']))}',
-                                      if (showIncomePph)
-                                        '${_t('PPH', 'PPH')}: ${Formatters.rupiah(_toNum(row['__pph']))}',
-                                      '${_t('Total', 'Total')}: ${Formatters.rupiah(_toNum(row['__total']))}',
-                                      if (paidAt.isNotEmpty)
-                                        '${_t('Tgl Bayar', 'Paid Date')}: ${Formatters.dmy(paidAt)}',
-                                    ].join(' • ')
-                                  : income > 0
-                                      ? [
-                                          '${_t('Income', 'Income')}: ${Formatters.rupiah(income)}',
-                                          if (tujuanLabel.isNotEmpty &&
-                                              tujuanLabel != '-')
-                                            tujuanLabel,
-                                        ].join(' • ')
-                                      : '${_t('Expense', 'Expense')}: ${Formatters.rupiah(expense)}';
-                              final bayarController =
-                                  reportBayarControllers[key];
-                              final sisaController = reportSisaControllers[key];
-                              final paidLocked = row['__paid_locked'] == true;
-                              final total = _toNum(row['__total']);
-
-                              if (!incomeInvoiceReport ||
-                                  bayarController == null ||
-                                  sisaController == null) {
+                          _t('Checklist Status', 'Status Checklist'),
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 6),
+                        if (allStatuses.isEmpty)
+                          Text(
+                            _t('Tidak ada status tersedia.',
+                                'No status available.'),
+                            style: TextStyle(
+                                color: AppColors.textMutedFor(context)),
+                          )
+                        else
+                          SizedBox(
+                            height:
+                                max(60, min(180, 36.0 * allStatuses.length)),
+                            child: ListView.builder(
+                              itemCount: allStatuses.length,
+                              itemBuilder: (context, index) {
+                                final status = allStatuses[index];
+                                final checked =
+                                    selectedStatuses.contains(status);
                                 return CheckboxListTile(
                                   contentPadding: EdgeInsets.zero,
                                   dense: true,
                                   value: checked,
-                                  onChanged: (value) => setDialogState(
-                                    () => rowSelections[key] = value ?? false,
-                                  ),
-                                  title: Text(
-                                    title,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  subtitle: Text(
-                                    subtitle,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  controlAffinity:
-                                      ListTileControlAffinity.leading,
+                                  onChanged: (value) {
+                                    setDialogState(() {
+                                      if (value == true) {
+                                        selectedStatuses.add(status);
+                                      } else {
+                                        selectedStatuses.remove(status);
+                                      }
+                                    });
+                                  },
+                                  title: Text(status),
                                 );
-                              }
-
-                              return Padding(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 4),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    CheckboxListTile(
-                                      contentPadding: EdgeInsets.zero,
-                                      dense: true,
-                                      value: checked,
-                                      onChanged: (value) => setDialogState(
-                                        () => rowSelections[key] =
-                                            value ?? false,
-                                      ),
-                                      title: Text(
-                                        title,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      subtitle: Text(
-                                        subtitle,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      controlAffinity:
-                                          ListTileControlAffinity.leading,
-                                    ),
-                                    Padding(
-                                      padding: const EdgeInsets.only(
-                                        left: 42,
-                                        right: 4,
-                                        bottom: 6,
-                                      ),
-                                      child: Row(
-                                        children: [
-                                          Expanded(
-                                            child: TextField(
-                                              controller: bayarController,
-                                              enabled: checked,
-                                              readOnly: paidLocked,
-                                              keyboardType:
-                                                  TextInputType.number,
-                                              decoration: InputDecoration(
-                                                isDense: true,
-                                                labelText:
-                                                    _t('Bayar', 'Paid'),
-                                                hintText: '0',
-                                              ),
-                                              onChanged: paidLocked
-                                                  ? null
-                                                  : (value) {
-                                                      if (reportSisaEdited[
-                                                              key] ==
-                                                          true) {
-                                                        return;
-                                                      }
-                                                      final remaining = max(
-                                                        0,
-                                                        total -
-                                                            parseEditableReportAmount(
-                                                              value,
-                                                            ),
-                                                      );
-                                                      final text =
-                                                          formatEditableReportAmount(
-                                                        remaining,
-                                                      );
-                                                      if (sisaController
-                                                              .text !=
-                                                          text) {
-                                                        sisaController.value =
-                                                            TextEditingValue(
-                                                          text: text,
-                                                          selection:
-                                                              TextSelection
-                                                                  .collapsed(
-                                                            offset: text.length,
-                                                          ),
-                                                        );
-                                                      }
-                                                    },
-                                            ),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Expanded(
-                                            child: TextField(
-                                              controller: sisaController,
-                                              enabled: checked,
-                                              readOnly: paidLocked,
-                                              keyboardType:
-                                                  TextInputType.number,
-                                              decoration: InputDecoration(
-                                                isDense: true,
-                                                labelText: _t('Sisa',
-                                                    'Remaining'),
-                                                hintText: paidLocked ? '' : '0',
-                                              ),
-                                              onChanged: paidLocked
-                                                  ? null
-                                                  : (value) {
-                                                      reportSisaEdited[key] =
-                                                          value
-                                                              .trim()
-                                                              .isNotEmpty;
-                                                    },
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
+                              },
+                            ),
+                          ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _t(
+                            includeIncome && !includeExpense
+                                ? 'Hasil filter: ${previewRows.length} invoice • Dipilih: $selectedCount'
+                                : 'Hasil filter: ${previewRows.length} data • Dipilih: $selectedCount',
+                            includeIncome && !includeExpense
+                                ? 'Filtered result: ${previewRows.length} invoices • Selected: $selectedCount'
+                                : 'Filtered result: ${previewRows.length} rows • Selected: $selectedCount',
+                          ),
+                          style: TextStyle(
+                            color: AppColors.textMutedFor(context),
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
-                    ],
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Text(
+                              _t(
+                                includeIncome && !includeExpense
+                                    ? 'Pilih Invoice Manual'
+                                    : 'Pilih Data Manual',
+                                includeIncome && !includeExpense
+                                    ? 'Manual Invoice Selection'
+                                    : 'Manual Data Selection',
+                              ),
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                            const Spacer(),
+                            TextButton(
+                              onPressed: previewRows.isEmpty
+                                  ? null
+                                  : () => setDialogState(() {
+                                        for (final row in previewRows) {
+                                          rowSelections['${row['__key']}'] =
+                                              true;
+                                        }
+                                      }),
+                              child: Text(_t('Pilih Semua', 'Select All')),
+                            ),
+                            TextButton(
+                              onPressed: previewRows.isEmpty
+                                  ? null
+                                  : () => setDialogState(() {
+                                        for (final row in previewRows) {
+                                          rowSelections['${row['__key']}'] =
+                                              false;
+                                        }
+                                      }),
+                              child:
+                                  Text(_t('Hapus Pilihan', 'Clear Selection')),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        if (previewRows.isEmpty)
+                          Text(
+                            _t('Tidak ada data pada filter ini.',
+                                'No data for this filter.'),
+                            style: TextStyle(
+                                color: AppColors.textMutedFor(context)),
+                          )
+                        else
+                          SizedBox(
+                            height: incomeInvoiceReport ? 320 : 220,
+                            child: ListView.separated(
+                              itemCount: previewRows.length,
+                              separatorBuilder: (_, __) => Divider(
+                                height: 1,
+                                color: AppColors.cardBorder(context),
+                              ),
+                              itemBuilder: (context, index) {
+                                final row = previewRows[index];
+                                final key = '${row['__key']}';
+                                final checked = rowSelections[key] == true;
+                                final income = _toNum(row['__income']);
+                                final expense = _toNum(row['__expense']);
+                                final showIncomePph = incomeInvoiceReport &&
+                                    (customerKind ==
+                                            Formatters.invoiceEntityCvAnt ||
+                                        customerKind ==
+                                            Formatters.invoiceEntityPtAnt ||
+                                        (customerKind !=
+                                                Formatters
+                                                    .invoiceEntityPersonal &&
+                                            previewRows.any((item) =>
+                                                _toNum(item['__pph']) > 0)));
+                                final paidAt =
+                                    '${row['__paid_at'] ?? ''}'.trim();
+                                final tujuanLabel =
+                                    '${row['__tujuan'] ?? '-'}'.trim();
+                                final title = incomeInvoiceReport
+                                    ? '${row['__number'] ?? '-'} • ${row['__customer'] ?? row['__name'] ?? '-'}'
+                                    : '${row['__number'] ?? '-'} • ${Formatters.dmy(row['__date'])}';
+                                final subtitle = incomeInvoiceReport
+                                    ? [
+                                        '${_t('Tanggal', 'Date')}: ${Formatters.dmy(row['__date'])}',
+                                        '${_t('Jumlah', 'Amount')}: ${Formatters.rupiah(_toNum(row['__jumlah']))}',
+                                        if (showIncomePph)
+                                          '${_t('PPH', 'PPH')}: ${Formatters.rupiah(_toNum(row['__pph']))}',
+                                        '${_t('Total', 'Total')}: ${Formatters.rupiah(_toNum(row['__total']))}',
+                                        if (paidAt.isNotEmpty)
+                                          '${_t('Tgl Bayar', 'Paid Date')}: ${Formatters.dmy(paidAt)}',
+                                      ].join(' • ')
+                                    : income > 0
+                                        ? [
+                                            '${_t('Income', 'Income')}: ${Formatters.rupiah(income)}',
+                                            if (tujuanLabel.isNotEmpty &&
+                                                tujuanLabel != '-')
+                                              tujuanLabel,
+                                          ].join(' • ')
+                                        : '${_t('Expense', 'Expense')}: ${Formatters.rupiah(expense)}';
+                                final bayarController =
+                                    reportBayarControllers[key];
+                                final sisaController =
+                                    reportSisaControllers[key];
+                                final paidLocked = row['__paid_locked'] == true;
+                                final total = _toNum(row['__total']);
+
+                                if (!incomeInvoiceReport ||
+                                    bayarController == null ||
+                                    sisaController == null) {
+                                  return CheckboxListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    dense: true,
+                                    value: checked,
+                                    onChanged: (value) => setDialogState(
+                                      () => rowSelections[key] = value ?? false,
+                                    ),
+                                    title: Text(
+                                      title,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    subtitle: Text(
+                                      subtitle,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    controlAffinity:
+                                        ListTileControlAffinity.leading,
+                                  );
+                                }
+
+                                return Padding(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 4),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      CheckboxListTile(
+                                        contentPadding: EdgeInsets.zero,
+                                        dense: true,
+                                        value: checked,
+                                        onChanged: (value) => setDialogState(
+                                          () => rowSelections[key] =
+                                              value ?? false,
+                                        ),
+                                        title: Text(
+                                          title,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        subtitle: Text(
+                                          subtitle,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        controlAffinity:
+                                            ListTileControlAffinity.leading,
+                                      ),
+                                      Padding(
+                                        padding: const EdgeInsets.only(
+                                          left: 42,
+                                          right: 4,
+                                          bottom: 6,
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Expanded(
+                                              child: TextField(
+                                                controller: bayarController,
+                                                enabled: checked,
+                                                readOnly: paidLocked,
+                                                keyboardType:
+                                                    TextInputType.number,
+                                                decoration: InputDecoration(
+                                                  isDense: true,
+                                                  labelText:
+                                                      _t('Bayar', 'Paid'),
+                                                  hintText: '0',
+                                                ),
+                                                onChanged: paidLocked
+                                                    ? null
+                                                    : (value) {
+                                                        if (reportSisaEdited[
+                                                                key] ==
+                                                            true) {
+                                                          return;
+                                                        }
+                                                        final remaining = max(
+                                                          0,
+                                                          total -
+                                                              parseEditableReportAmount(
+                                                                value,
+                                                              ),
+                                                        );
+                                                        final text =
+                                                            formatEditableReportAmount(
+                                                          remaining,
+                                                        );
+                                                        if (sisaController
+                                                                .text !=
+                                                            text) {
+                                                          sisaController.value =
+                                                              TextEditingValue(
+                                                            text: text,
+                                                            selection:
+                                                                TextSelection
+                                                                    .collapsed(
+                                                              offset:
+                                                                  text.length,
+                                                            ),
+                                                          );
+                                                        }
+                                                      },
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Expanded(
+                                              child: TextField(
+                                                controller: sisaController,
+                                                enabled: checked,
+                                                readOnly: paidLocked,
+                                                keyboardType:
+                                                    TextInputType.number,
+                                                decoration: InputDecoration(
+                                                  isDense: true,
+                                                  labelText:
+                                                      _t('Sisa', 'Remaining'),
+                                                  hintText:
+                                                      paidLocked ? '' : '0',
+                                                ),
+                                                onChanged: paidLocked
+                                                    ? null
+                                                    : (value) {
+                                                        reportSisaEdited[key] =
+                                                            value
+                                                                .trim()
+                                                                .isNotEmpty;
+                                                      },
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              actions: [
-                OutlinedButton(
-                  onPressed: () => Navigator.pop(context),
-                  style: CvantButtonStyles.outlined(
-                    context,
-                    color: AppColors.isLight(context)
-                        ? AppColors.textSecondaryLight
-                        : const Color(0xFFE2E8F0),
-                    borderColor: AppColors.neutralOutline,
+                actions: [
+                  OutlinedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: CvantButtonStyles.outlined(
+                      context,
+                      color: AppColors.isLight(context)
+                          ? AppColors.textSecondaryLight
+                          : const Color(0xFFE2E8F0),
+                      borderColor: AppColors.neutralOutline,
+                    ),
+                    child: Text(_t('Batal', 'Cancel')),
                   ),
-                  child: Text(_t('Batal', 'Cancel')),
-                ),
-                FilledButton.icon(
-                  onPressed: () {
-                    if (!includeIncome && !includeExpense) return;
-                    Navigator.pop(context, {
-                      'range': range,
-                      'includeIncome': includeIncome,
-                      'includeExpense': includeExpense,
-                      'customerKind': customerKind,
-                      'month': selectedMonth,
-                      'year': selectedYear,
-                      'statuses': selectedStatuses.toList(),
-                      'keyword': keywordText.trim(),
-                      'selectedKeys': rowSelections.entries
-                          .where((entry) => entry.value)
-                          .map((entry) => entry.key)
-                          .toList(),
-                      'bayarInputs': reportBayarControllers.map(
-                        (key, controller) => MapEntry(key, controller.text),
-                      ),
-                      'sisaInputs': reportSisaControllers.map(
-                        (key, controller) => MapEntry(key, controller.text),
-                      ),
-                    });
-                  },
-                  style: CvantButtonStyles.filled(context,
-                      color: AppColors.success),
-                  icon: const Icon(Icons.preview_outlined),
-                  label: Text(_t('Preview PDF', 'Preview PDF')),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
+                  FilledButton.icon(
+                    onPressed: () {
+                      if (!includeIncome && !includeExpense) return;
+                      Navigator.pop(context, {
+                        'range': range,
+                        'includeIncome': includeIncome,
+                        'includeExpense': includeExpense,
+                        'customerKind': customerKind,
+                        'month': selectedMonth,
+                        'year': selectedYear,
+                        'statuses': selectedStatuses.toList(),
+                        'keyword': keywordText.trim(),
+                        'selectedKeys': rowSelections.entries
+                            .where((entry) => entry.value)
+                            .map((entry) => entry.key)
+                            .toList(),
+                        'bayarInputs': reportBayarControllers.map(
+                          (key, controller) => MapEntry(key, controller.text),
+                        ),
+                        'sisaInputs': reportSisaControllers.map(
+                          (key, controller) => MapEntry(key, controller.text),
+                        ),
+                      });
+                    },
+                    style: CvantButtonStyles.filled(context,
+                        color: AppColors.success),
+                    icon: const Icon(Icons.preview_outlined),
+                    label: Text(_t('Preview PDF', 'Preview PDF')),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
     } finally {
       for (final controller in reportBayarControllers.values) {
         controller.dispose();
@@ -3923,16 +4061,14 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         (selection['selectedKeys'] as List<dynamic>? ?? const <dynamic>[])
             .map((item) => '$item')
             .toSet();
-    final bayarInputs =
-        ((selection['bayarInputs'] as Map?)?.map(
-              (key, value) => MapEntry('$key', '$value'),
-            ) ??
-            const <String, String>{});
-    final sisaInputs =
-        ((selection['sisaInputs'] as Map?)?.map(
-              (key, value) => MapEntry('$key', '$value'),
-            ) ??
-            const <String, String>{});
+    final bayarInputs = ((selection['bayarInputs'] as Map?)?.map(
+          (key, value) => MapEntry('$key', '$value'),
+        ) ??
+        const <String, String>{});
+    final sisaInputs = ((selection['sisaInputs'] as Map?)?.map(
+          (key, value) => MapEntry('$key', '$value'),
+        ) ??
+        const <String, String>{});
     final keyword = '${selection['keyword'] ?? ''}';
 
     if (!includeIncomeSelected && !includeExpenseSelected) {
@@ -3960,34 +4096,29 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         : allRows
             .where((row) => selectedKeys.contains('${row['__key']}'))
             .map((row) {
-              if (!(includeIncomeSelected && !includeExpenseSelected) ||
-                  '${row['__type']}' != 'Income') {
-                return row;
-              }
-              final key = '${row['__key']}';
-              final total = _toNum(row['__total']);
-              final paidLocked = row['__paid_locked'] == true;
-              final bayarText = paidLocked
-                  ? formatEditableReportAmount(total)
-                  : (bayarInputs[key] ?? '').toString().trim();
-              final sisaText = paidLocked
-                  ? ''
-                  : (sisaInputs[key] ?? '').toString().trim();
-              final bayar = paidLocked
-                  ? total
-                  : parseEditableReportAmount(bayarText);
-              final sisa = paidLocked
-                  ? 0.0
-                  : parseEditableReportAmount(sisaText);
-              return {
-                ...row,
-                '__bayar': bayar,
-                '__sisa': sisa,
-                '__bayar_text': bayarText,
-                '__sisa_text': sisaText,
-              };
-            })
-            .toList();
+            if (!(includeIncomeSelected && !includeExpenseSelected) ||
+                '${row['__type']}' != 'Income') {
+              return row;
+            }
+            final key = '${row['__key']}';
+            final total = _toNum(row['__total']);
+            final paidLocked = row['__paid_locked'] == true;
+            final bayarText = paidLocked
+                ? formatEditableReportAmount(total)
+                : (bayarInputs[key] ?? '').toString().trim();
+            final sisaText =
+                paidLocked ? '' : (sisaInputs[key] ?? '').toString().trim();
+            final bayar =
+                paidLocked ? total : parseEditableReportAmount(bayarText);
+            final sisa = paidLocked ? 0.0 : parseEditableReportAmount(sisaText);
+            return {
+              ...row,
+              '__bayar': bayar,
+              '__sisa': sisa,
+              '__bayar_text': bayarText,
+              '__sisa_text': sisaText,
+            };
+          }).toList();
 
     if (rows.isEmpty) {
       _snack(

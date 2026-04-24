@@ -1606,7 +1606,7 @@ extension _AdminInvoiceListViewStatePreviewSupport
                               pw.Padding(
                                 padding: pw.EdgeInsets.only(
                                   left: signatureNameOffset +
-                                      (compact ? 10 : 17),
+                                      (compact ? -9 : 17),
                                 ),
                                 child: pw.Text(
                                   'A N T O K',

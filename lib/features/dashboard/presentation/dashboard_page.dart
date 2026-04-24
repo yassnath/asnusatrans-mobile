@@ -13,6 +13,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/app_colors.dart';
@@ -337,7 +338,8 @@ Future<bool> _dispatchPdfBytesToPrinter({
       await artifactDir.create(recursive: true);
     }
     unawaited(_cleanupOldWindowsPrintArtifacts(artifactDir));
-    final safeBaseName = name.toLowerCase().endsWith('.pdf') ? name : '$name.pdf';
+    final safeBaseName =
+        name.toLowerCase().endsWith('.pdf') ? name : '$name.pdf';
     final safeName = safeBaseName.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
     final file = File(
       _joinBundledAssetPath(
@@ -561,6 +563,7 @@ class _DashboardPageState extends State<DashboardPage> {
       ValueNotifier<List<ActivityItem>?>(null);
   StreamSubscription<PushNavigationIntent>? _pushIntentSubscription;
   int _adminIndex = 0;
+  int _fixedInvoiceRefreshToken = 0;
   int _customerIndex = 0;
   _InvoicePrefillData? _invoicePrefill;
   int _staffApprovalBadgeCount = 0;
@@ -777,6 +780,13 @@ class _DashboardPageState extends State<DashboardPage> {
         _customerIndex = 3;
       });
       return;
+    }
+  }
+
+  void _selectAdminIndex(int index) {
+    _adminIndex = index;
+    if (widget.session.isAdminOrOwner && index == 2) {
+      _fixedInvoiceRefreshToken++;
     }
   }
 
@@ -1078,7 +1088,7 @@ class _DashboardPageState extends State<DashboardPage> {
                 if (isCustomer) {
                   _customerIndex = index;
                 } else {
-                  _adminIndex = index;
+                  _selectAdminIndex(index);
                 }
               });
               Navigator.of(context).pop();
@@ -1196,12 +1206,13 @@ class _DashboardPageState extends State<DashboardPage> {
           isOwner: widget.session.isOwner,
           onDataChanged: () => setState(_reload),
           onQuickMenuSelect: (index) {
-            setState(() => _adminIndex = index);
+            setState(() => _selectAdminIndex(index));
           },
         );
       case 2:
         return _AdminFixedInvoiceView(
           repository: widget.repository,
+          refreshToken: _fixedInvoiceRefreshToken,
           onDataChanged: () => setState(_reload),
         );
       case 3:
@@ -1233,7 +1244,7 @@ class _DashboardPageState extends State<DashboardPage> {
         return _AdminFleetListView(
           repository: widget.repository,
           onQuickMenuSelect: (index) {
-            setState(() => _adminIndex = index);
+            setState(() => _selectAdminIndex(index));
           },
         );
       case 7:
@@ -1285,7 +1296,7 @@ class _DashboardPageState extends State<DashboardPage> {
           isOwner: false,
           onDataChanged: () => setState(_reload),
           onQuickMenuSelect: (index) {
-            setState(() => _adminIndex = index);
+            setState(() => _selectAdminIndex(index));
           },
         );
       case 2:
