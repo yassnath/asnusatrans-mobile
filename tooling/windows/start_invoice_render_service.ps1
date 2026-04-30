@@ -10,6 +10,7 @@ $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..\..')
 Set-Location $repoRoot
 
 Write-Host "Starting invoice render service on http://$BindHost`:$Port"
+Write-Host "Renderer: windows-excel-com (exact Windows invoice output)"
 Write-Host ""
 Write-Host "Detected IPv4 addresses for mobile access:" -ForegroundColor Cyan
 $lanAddresses = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
@@ -30,6 +31,6 @@ if ([string]::IsNullOrWhiteSpace($sampleIp)) {
 }
 Write-Host ""
 Write-Host "APK build example:" -ForegroundColor Cyan
-Write-Host "flutter build apk --dart-define=INVOICE_RENDER_SERVICE_URL=http://$sampleIp`:$Port"
+Write-Host "flutter build apk --dart-define=INVOICE_RENDER_SERVICE_URL=http://$sampleIp`:$Port --dart-define=INVOICE_RENDER_SERVICE_ALLOW_HTTP=true"
 Write-Host ""
 dart run tooling/windows/invoice_render_service.dart --host $BindHost --port $Port

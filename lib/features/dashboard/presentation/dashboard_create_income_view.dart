@@ -108,11 +108,14 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
   String _selectedCustomerOptionId = _customerManualOptionId;
   int _detailFieldRefreshToken = 0;
   int _hargaFieldRefreshToken = 0;
+  int _detailRowKeySeed = 0;
   String? _linkedCustomerId;
   String? _linkedOrderId;
   bool get _isEn => LanguageController.language.value == AppLanguage.en;
   String _t(String id, String en) => _isEn ? en : id;
   void _refreshState(VoidCallback fn) => setState(fn);
+  String _newDetailRowKey() =>
+      '${DateTime.now().microsecondsSinceEpoch}-${_detailRowKeySeed++}';
 
   @override
   void initState() {
@@ -216,6 +219,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
           driverText.isNotEmpty && !_isKnownDriverOption(driverText);
       final isOngkosKuli = isOngkosKuliCargo(_safeInputText(option['muatan']));
       final row = <String, dynamic>{
+        '__row_key': _newDetailRowKey(),
         'lokasi_muat': _safeInputText(option['lokasi_muat']),
         'lokasi_muat_manual': '',
         'lokasi_muat_is_manual':
@@ -344,11 +348,13 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
     final firstArmadaId = '${first['armada_id']}'.trim();
     final firstArmadaManual = '${first['armada_manual'] ?? ''}'.trim();
     final armadaIdByPlate = _buildArmadaIdByPlate(armadas);
-    final firstResolvedArmadaId = _resolveArmadaIdFromInput(
-      armadaId: firstArmadaId,
-      armadaManual: firstArmadaManual,
-      armadaIdByPlate: armadaIdByPlate,
-    );
+    final firstResolvedArmadaId = _isManualArmadaRow(first)
+        ? ''
+        : _resolveArmadaIdFromInput(
+            armadaId: firstArmadaId,
+            armadaManual: firstArmadaManual,
+            armadaIdByPlate: armadaIdByPlate,
+          );
     final hasArmadaSelection =
         firstResolvedArmadaId.isNotEmpty || firstArmadaManual.isNotEmpty;
     if (!_isOngkosKuliIncomeRow(first) &&
@@ -369,7 +375,9 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
         .map(
           (row) => _resolveArmadaIdFromInput(
             armadaId: '${row['armada_id']}'.trim(),
-            armadaManual: '${row['armada_manual'] ?? ''}'.trim(),
+            armadaManual: _isManualArmadaRow(row)
+                ? ''
+                : '${row['armada_manual'] ?? ''}'.trim(),
             armadaIdByPlate: armadaIdByPlate,
           ),
         )
@@ -406,18 +414,20 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
     final detailsPayload = _details.map((row) {
       final armadaId = '${row['armada_id']}'.trim();
       final armadaManualRaw = _nullableInputText(row['armada_manual']) ?? '';
-      final resolvedArmadaId = _resolveArmadaIdFromInput(
-        armadaId: armadaId,
-        armadaManual: armadaManualRaw,
-        armadaIdByPlate: armadaIdByPlate,
-      );
-      final useManual = resolvedArmadaId.isEmpty && armadaManualRaw.isNotEmpty;
+      final useManual = _isManualArmadaRow(row) && armadaManualRaw.isNotEmpty;
+      final resolvedArmadaId = useManual
+          ? ''
+          : _resolveArmadaIdFromInput(
+              armadaId: armadaId,
+              armadaManual: armadaManualRaw,
+              armadaIdByPlate: armadaIdByPlate,
+            );
       final isOngkosKuli = _isOngkosKuliIncomeRow(row);
       return <String, dynamic>{
         'lokasi_muat': _nullableInputText(row['lokasi_muat']),
         'lokasi_bongkar': _nullableInputText(row['lokasi_bongkar']),
         'muatan': _nullableInputText(row['muatan']),
-        'nama_supir': _nullableInputText(row['nama_supir']),
+        'nama_supir': useManual ? null : _nullableInputText(row['nama_supir']),
         'armada_id': resolvedArmadaId.isEmpty ? null : resolvedArmadaId,
         'armada_manual': useManual ? armadaManualRaw : null,
         'armada_label': useManual ? armadaManualRaw : null,
@@ -521,10 +531,10 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
         message: _t(
           widget.session.isPengurus
               ? 'Income berhasil dikirim untuk ACC admin/owner.'
-              : 'Invoice income berhasil ditambahkan.',
+              : 'Income berhasil ditambahkan.',
           widget.session.isPengurus
               ? 'Income has been submitted for admin/owner approval.'
-              : 'Income invoice was added successfully.',
+              : 'Income was added successfully.',
         ),
         okLabel: 'OK',
         showOkButton: true,
@@ -862,8 +872,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                                 }
                                 final hargaChanged = _applyAutoHargaPerTon(
                                   row,
-                                  force: row['harga_auto'] == true ||
-                                      row['subtotal_auto'] == true,
+                                  force: true,
                                 );
                                 if (hargaChanged) {
                                   _hargaFieldRefreshToken++;
@@ -890,8 +899,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                                 row['lokasi_muat_is_manual'] = true;
                                 final hargaChanged = _applyAutoHargaPerTon(
                                   row,
-                                  force: row['harga_auto'] == true ||
-                                      row['subtotal_auto'] == true,
+                                  force: true,
                                 );
                                 setState(() {
                                   if (hargaChanged) {
@@ -905,7 +913,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                             const SizedBox(height: 8),
                           TextFormField(
                             key: ValueKey(
-                              'lokasi_bongkar-$index-$_detailFieldRefreshToken',
+                              'lokasi_bongkar-$index-${row['__row_key'] ?? _detailFieldRefreshToken}',
                             ),
                             initialValue: '${row['lokasi_bongkar']}',
                             decoration: InputDecoration(

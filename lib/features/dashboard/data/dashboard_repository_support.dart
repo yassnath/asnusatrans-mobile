@@ -689,6 +689,7 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
       'kop_location': '${row['kop_location'] ?? ''}'.trim(),
       'status': '${row['status'] ?? 'Unpaid'}'.trim(),
       'paid_at': '${row['paid_at'] ?? ''}'.trim(),
+      'manual_paid_amount': _num(row['manual_paid_amount']),
       'payment_details': _toMapList(row['payment_details']),
       'created_at': '${row['created_at'] ?? ''}'.trim(),
       'updated_at': '${row['updated_at'] ?? ''}'.trim(),
@@ -889,7 +890,7 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
     throw Exception(
       'Database fixed_invoice_batches belum memiliki kolom wajib untuk '
       'sinkronisasi pembayaran (${sorted.join(', ')}). Jalankan patch SQL '
-      'supabase/patch_fixed_invoice_payment_columns_20260424.sql di Supabase, '
+      'supabase/patch_fixed_invoice_manual_payment_20260427.sql di Supabase, '
       'lalu refresh aplikasi.',
     );
   }
@@ -1334,6 +1335,9 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
 
   bool _incomePricingLocationMatches(String inputKey, String ruleKey) {
     if (inputKey.isEmpty || ruleKey.isEmpty) return false;
+    if (incomePricingIsNonBetoyoPickupRuleKey(ruleKey)) {
+      return !incomePricingIsBetoyoLocationKey(inputKey);
+    }
     if (inputKey == ruleKey) return true;
 
     final inputCompact = inputKey.replaceAll(' ', '');
@@ -1393,82 +1397,124 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
     required String customerName,
     required String pickup,
     required String destination,
+    String cargo = '',
   }) {
-    if (rules.isEmpty) return null;
-    final destinationKey = _normalizeIncomePricingText(destination);
-    if (destinationKey.isEmpty) return null;
-    final pickupKey = _normalizeIncomePricingText(pickup);
+    Map<String, dynamic>? findBestRule({
+      required String searchPickup,
+      required String searchDestination,
+    }) {
+      if (rules.isEmpty) return null;
+      final destinationKey = _normalizeIncomePricingText(searchDestination);
+      if (destinationKey.isEmpty) return null;
+      final pickupKey = _normalizeIncomePricingText(searchPickup);
 
-    int specificityScore(String value) {
-      if (value.isEmpty) return 0;
-      final tokenCount =
-          value.split(' ').where((part) => part.isNotEmpty).length;
-      return (tokenCount * 100) + value.length;
+      int specificityScore(String value) {
+        if (value.isEmpty) return 0;
+        final tokenCount =
+            value.split(' ').where((part) => part.isNotEmpty).length;
+        return (tokenCount * 100) + value.length;
+      }
+
+      int customerScore(String ruleCustomer) {
+        final normalizedRuleCustomer = _normalizeCompanyText(ruleCustomer);
+        if (normalizedRuleCustomer.isEmpty) return 100;
+        if (!_incomePricingCustomerMatches(customerName, ruleCustomer)) {
+          return -1;
+        }
+        final normalizedCustomerName = _normalizeCompanyText(customerName);
+        if (normalizedCustomerName == normalizedRuleCustomer) {
+          return 5000 + specificityScore(normalizedRuleCustomer);
+        }
+        return 4200 + specificityScore(normalizedRuleCustomer);
+      }
+
+      int lokasiScore(String inputKey, String ruleKey) {
+        if (ruleKey.isEmpty) return 120;
+        if (inputKey.isEmpty) return 0;
+        if (!_incomePricingLocationMatches(inputKey, ruleKey)) return 0;
+        final inputCompact = inputKey.replaceAll(' ', '');
+        final ruleCompact = ruleKey.replaceAll(' ', '');
+        if (inputKey == ruleKey || inputCompact == ruleCompact) {
+          return 1500 + specificityScore(ruleKey);
+        }
+        return 900 + specificityScore(ruleKey);
+      }
+
+      Map<String, dynamic>? bestRule;
+      var bestScore = -1;
+      for (final rule in rules) {
+        final ruleBongkarKey =
+            _normalizeIncomePricingText('${rule['lokasi_bongkar'] ?? ''}');
+        if (!_incomePricingLocationMatches(destinationKey, ruleBongkarKey)) {
+          continue;
+        }
+
+        final currentCustomerScore =
+            customerScore('${rule['customer_name'] ?? ''}');
+        if (currentCustomerScore < 0) continue;
+
+        final ruleMuatKey =
+            _normalizeIncomePricingText('${rule['lokasi_muat'] ?? ''}');
+        if (ruleMuatKey.isEmpty &&
+            incomePricingIsBetoyoLocationKey(pickupKey)) {
+          continue;
+        }
+        if (pickupKey.isNotEmpty &&
+            ruleMuatKey.isNotEmpty &&
+            !_incomePricingLocationMatches(pickupKey, ruleMuatKey)) {
+          continue;
+        }
+
+        final priority = int.tryParse('${rule['priority'] ?? ''}') ??
+            _num(rule['priority']).toInt();
+        final score = currentCustomerScore +
+            lokasiScore(pickupKey, ruleMuatKey) +
+            lokasiScore(destinationKey, ruleBongkarKey) +
+            priority;
+        if (score > bestScore) {
+          bestScore = score;
+          bestRule = rule;
+        }
+      }
+      return bestRule;
     }
 
-    int customerScore(String ruleCustomer) {
-      final normalizedRuleCustomer = _normalizeCompanyText(ruleCustomer);
-      if (normalizedRuleCustomer.isEmpty) return 100;
-      if (!_incomePricingCustomerMatches(customerName, ruleCustomer)) {
-        return -1;
+    final builtInRule = resolveBuiltInIncomePricingRuleForCargo(
+      customerName: customerName,
+      pickup: pickup,
+      destination: destination,
+      cargo: cargo,
+    );
+
+    Map<String, dynamic>? preferBuiltInCustomerRule(
+      Map<String, dynamic>? databaseRule,
+    ) {
+      if (builtInRule == null) return databaseRule;
+      if (databaseRule == null) return builtInRule;
+      final builtInCustomer =
+          _normalizeCompanyText('${builtInRule['customer_name'] ?? ''}');
+      final databaseCustomer =
+          _normalizeCompanyText('${databaseRule['customer_name'] ?? ''}');
+      if (builtInCustomer.isNotEmpty && databaseCustomer.isEmpty) {
+        return builtInRule;
       }
-      final normalizedCustomerName = _normalizeCompanyText(customerName);
-      if (normalizedCustomerName == normalizedRuleCustomer) {
-        return 5000 + specificityScore(normalizedRuleCustomer);
-      }
-      return 4200 + specificityScore(normalizedRuleCustomer);
+      return databaseRule;
     }
 
-    int lokasiScore(String inputKey, String ruleKey) {
-      if (ruleKey.isEmpty) return 120;
-      if (inputKey.isEmpty) return 0;
-      if (!_incomePricingLocationMatches(inputKey, ruleKey)) return 0;
-      final inputCompact = inputKey.replaceAll(' ', '');
-      final ruleCompact = ruleKey.replaceAll(' ', '');
-      if (inputKey == ruleKey || inputCompact == ruleCompact) {
-        return 1500 + specificityScore(ruleKey);
-      }
-      return 900 + specificityScore(ruleKey);
+    if (isTolakanCargo(cargo)) {
+      final reverseRule = findBestRule(
+        searchPickup: destination,
+        searchDestination: pickup,
+      );
+      final preferredReverseRule = preferBuiltInCustomerRule(reverseRule);
+      if (preferredReverseRule != null) return preferredReverseRule;
     }
-
-    Map<String, dynamic>? bestRule;
-    var bestScore = -1;
-    for (final rule in rules) {
-      final ruleBongkarKey =
-          _normalizeIncomePricingText('${rule['lokasi_bongkar'] ?? ''}');
-      if (!_incomePricingLocationMatches(destinationKey, ruleBongkarKey)) {
-        continue;
-      }
-
-      final currentCustomerScore =
-          customerScore('${rule['customer_name'] ?? ''}');
-      if (currentCustomerScore < 0) continue;
-
-      final ruleMuatKey =
-          _normalizeIncomePricingText('${rule['lokasi_muat'] ?? ''}');
-      if (pickupKey.isNotEmpty &&
-          ruleMuatKey.isNotEmpty &&
-          !_incomePricingLocationMatches(pickupKey, ruleMuatKey)) {
-        continue;
-      }
-
-      final priority = int.tryParse('${rule['priority'] ?? ''}') ??
-          _num(rule['priority']).toInt();
-      final score = currentCustomerScore +
-          lokasiScore(pickupKey, ruleMuatKey) +
-          lokasiScore(destinationKey, ruleBongkarKey) +
-          priority;
-      if (score > bestScore) {
-        bestScore = score;
-        bestRule = rule;
-      }
-    }
-    return bestRule ??
-        resolveBuiltInIncomePricingRule(
-          customerName: customerName,
-          pickup: pickup,
-          destination: destination,
-        );
+    return preferBuiltInCustomerRule(
+      findBestRule(
+        searchPickup: pickup,
+        searchDestination: destination,
+      ),
+    );
   }
 
   double? _resolveHargaPerTonRuleNominal(
@@ -1521,15 +1567,17 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
       customerName: customerName,
       pickup: pickup,
       destination: destination,
+      cargo: '${detail['muatan'] ?? ''}'.trim(),
     );
+    final muatan = '${detail['muatan'] ?? ''}'.trim();
     if (!_isSpecialIncomePricingBackfillCandidate(
-      matchedRule,
-      destination: destination,
-    )) {
+          matchedRule,
+          destination: destination,
+        ) &&
+        !isTolakanCargo(muatan)) {
       return null;
     }
 
-    final muatan = '${detail['muatan'] ?? ''}'.trim();
     final nextHarga = _resolveHargaPerTonRuleNominal(
       matchedRule,
       muatan: muatan,

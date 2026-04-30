@@ -1,3 +1,5 @@
+import 'tolakan_logic.dart';
+
 String normalizeIncomePricingRuleKey(String value) {
   return value
       .toLowerCase()
@@ -6,12 +8,29 @@ String normalizeIncomePricingRuleKey(String value) {
       .trim();
 }
 
+bool incomePricingIsBetoyoLocationKey(String value) {
+  final key = normalizeIncomePricingRuleKey(value);
+  return key == 'betoyo' || key.replaceAll(' ', '') == 'betoyo';
+}
+
+bool incomePricingIsNonBetoyoPickupRuleKey(String value) {
+  final key = normalizeIncomePricingRuleKey(value);
+  final compact = key.replaceAll(' ', '');
+  return key == 'selain betoyo' ||
+      key == 'non betoyo' ||
+      compact == 'selainbetoyo' ||
+      compact == 'nonbetoyo';
+}
+
 bool isOngkosKuliCargo(String value) {
   return normalizeIncomePricingRuleKey(value) == 'ongkos kuli';
 }
 
 bool incomePricingLocationKeyMatches(String inputKey, String ruleKey) {
   if (inputKey.isEmpty || ruleKey.isEmpty) return false;
+  if (incomePricingIsNonBetoyoPickupRuleKey(ruleKey)) {
+    return !incomePricingIsBetoyoLocationKey(inputKey);
+  }
   if (inputKey == ruleKey) return true;
 
   final inputCompact = inputKey.replaceAll(' ', '');
@@ -77,6 +96,7 @@ Map<String, dynamic>? resolveBuiltInIncomePricingRule({
   final customerKey = normalizeIncomePricingRuleKey(customerName);
   final pickupKey = normalizeIncomePricingRuleKey(pickup);
   final destinationKey = normalizeIncomePricingRuleKey(destination);
+  final pickupIsBetoyo = incomePricingIsBetoyoLocationKey(pickupKey);
 
   if (incomePricingCustomerNameMatches(customerKey, 'giono') &&
       incomePricingLocationKeyMatches(pickupKey, 'nganjuk') &&
@@ -119,6 +139,20 @@ Map<String, dynamic>? resolveBuiltInIncomePricingRule({
     };
   }
 
+  if (!pickupIsBetoyo &&
+      incomePricingLocationKeyMatches(destinationKey, 'batang')) {
+    final isBornava = incomePricingCustomerNameMatches(customerKey, 'bornava');
+    return <String, dynamic>{
+      'customer_name': isBornava ? 'Bornava' : null,
+      'lokasi_muat': null,
+      'lokasi_bongkar': 'Batang',
+      'harga_per_ton': isBornava ? 225.0 : 235.0,
+      'flat_total': null,
+      'priority': isBornava ? 220 : 120,
+      'is_active': true,
+    };
+  }
+
   if (incomePricingLocationKeyMatches(pickupKey, 't langon') &&
       incomePricingLocationKeyMatches(destinationKey, 'sarana')) {
     return <String, dynamic>{
@@ -138,14 +172,15 @@ Map<String, dynamic>? resolveBuiltInIncomePricingRule({
       'customer_name': null,
       'lokasi_muat': 'Betoyo',
       'lokasi_bongkar': 'Muncar',
-      'harga_per_ton': 193.0,
+      'harga_per_ton': 195.0,
       'flat_total': null,
       'priority': 110,
       'is_active': true,
     };
   }
 
-  if (incomePricingLocationKeyMatches(destinationKey, 'gempol')) {
+  if (!pickupIsBetoyo &&
+      incomePricingLocationKeyMatches(destinationKey, 'gempol')) {
     return <String, dynamic>{
       'customer_name': null,
       'lokasi_muat': null,
@@ -157,5 +192,65 @@ Map<String, dynamic>? resolveBuiltInIncomePricingRule({
     };
   }
 
+  if (!pickupIsBetoyo &&
+      incomePricingLocationKeyMatches(destinationKey, 'bumindo')) {
+    return <String, dynamic>{
+      'customer_name': null,
+      'lokasi_muat': null,
+      'lokasi_bongkar': 'Bumindo',
+      'harga_per_ton': 55.0,
+      'flat_total': null,
+      'priority': 120,
+      'is_active': true,
+    };
+  }
+
+  if (!pickupIsBetoyo &&
+      incomePricingLocationKeyMatches(destinationKey, 'temanggung')) {
+    return <String, dynamic>{
+      'customer_name': null,
+      'lokasi_muat': null,
+      'lokasi_bongkar': 'Temanggung',
+      'harga_per_ton': 165.0,
+      'flat_total': null,
+      'priority': 120,
+      'is_active': true,
+    };
+  }
+
+  if (!pickupIsBetoyo &&
+      incomePricingLocationKeyMatches(destinationKey, 'danliris')) {
+    return <String, dynamic>{
+      'customer_name': null,
+      'lokasi_muat': null,
+      'lokasi_bongkar': 'Danliris',
+      'harga_per_ton': 155.0,
+      'flat_total': null,
+      'priority': 120,
+      'is_active': true,
+    };
+  }
+
   return null;
+}
+
+Map<String, dynamic>? resolveBuiltInIncomePricingRuleForCargo({
+  required String customerName,
+  required String pickup,
+  required String destination,
+  required String cargo,
+}) {
+  final directRule = resolveBuiltInIncomePricingRule(
+    customerName: customerName,
+    pickup: pickup,
+    destination: destination,
+  );
+  if (!isTolakanCargo(cargo)) return directRule;
+
+  final reverseRule = resolveBuiltInIncomePricingRule(
+    customerName: customerName,
+    pickup: destination,
+    destination: pickup,
+  );
+  return reverseRule ?? directRule;
 }

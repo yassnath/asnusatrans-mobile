@@ -11,6 +11,8 @@ void main() {
       expect(normalizeSanguPlace('Tuban Jenu'), 'tuban jenu');
       expect(normalizeSanguPlace('GeMpOl'), 'gempol');
       expect(normalizeSanguPlace('Royal Mix'), 'royal');
+      expect(normalizeSanguPlace('TEMANGGUNG'), 'temanggung');
+      expect(normalizeSanguPlace('bumindo'), 'bumindo');
     });
 
     test('prioritizes batang to langon route with fixed nominal', () {
@@ -61,6 +63,30 @@ void main() {
       expect(rule['lokasi_bongkar'], 'SARANA');
     });
 
+    test('prioritizes T. Langon to Muncar route with fixed nominal', () {
+      final rule = resolvePrioritizedSanguRouteRule(
+        pickup: 'T. LANGON',
+        destination: 'muncar',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule!['nominal'], 3000000);
+      expect(rule['lokasi_muat'], 'T. LANGON');
+      expect(rule['lokasi_bongkar'], 'MUNCAR');
+    });
+
+    test('prioritizes Betoyo to Muncar route with fixed nominal', () {
+      final rule = resolvePrioritizedSanguRouteRule(
+        pickup: 'Betoyo',
+        destination: 'MUNCAR',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule!['nominal'], 3100000);
+      expect(rule['lokasi_muat'], 'BETOYO');
+      expect(rule['lokasi_bongkar'], 'MUNCAR');
+    });
+
     test('prioritizes nganjuk to driyo route with fixed nominal', () {
       final rule = resolvePrioritizedSanguRouteRule(
         pickup: 'NGANJUK',
@@ -82,6 +108,28 @@ void main() {
       expect(rule, isNotNull);
       expect(rule!['nominal'], 520000);
       expect(rule['lokasi_bongkar'], 'ROYAL');
+    });
+
+    test('prioritizes temanggung destination with fixed nominal', () {
+      final rule = resolvePrioritizedSanguRouteRule(
+        pickup: 'T. Langon',
+        destination: 'TeMaNgGuNg',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule!['nominal'], 2435000);
+      expect(rule['lokasi_bongkar'], 'TEMANGGUNG');
+    });
+
+    test('prioritizes bumindo destination with fixed nominal', () {
+      final rule = resolvePrioritizedSanguRouteRule(
+        pickup: 'T. Langon',
+        destination: 'BuMiNdO',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule!['nominal'], 690000);
+      expect(rule['lokasi_bongkar'], 'BUMINDO');
     });
 
     test('returns null for unrelated route', () {

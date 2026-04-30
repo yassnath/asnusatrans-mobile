@@ -222,7 +222,8 @@ extension DashboardRepositoryFetchExtension on DashboardRepository {
 
       const fixedInvoiceBatchColumns =
           'batch_id,invoice_ids,invoice_number,customer_name,kop_date,'
-          'kop_location,status,paid_at,payment_details,created_at,updated_at';
+          'kop_location,status,paid_at,manual_paid_amount,payment_details,'
+          'created_at,updated_at';
       final res = await _runFixedInvoiceBatchSelectWithFallback(
         fixedInvoiceBatchColumns,
         (columns) => _supabase
@@ -251,6 +252,7 @@ extension DashboardRepositoryFetchExtension on DashboardRepository {
     String? createdAt,
     String? status,
     String? paidAt,
+    double manualPaidAmount = 0,
     List<Map<String, dynamic>>? paymentDetails,
   }) async {
     final cleanedBatchId = batchId.trim();
@@ -281,6 +283,7 @@ extension DashboardRepositoryFetchExtension on DashboardRepository {
           (kopLocation ?? '').trim().isEmpty ? null : kopLocation!.trim(),
       'status': (status ?? '').trim().isEmpty ? 'Unpaid' : status!.trim(),
       'paid_at': (paidAt ?? '').trim().isEmpty ? null : paidAt!.trim(),
+      'manual_paid_amount': manualPaidAmount < 0 ? 0 : manualPaidAmount,
       'payment_details': paymentDetails ?? const <Map<String, dynamic>>[],
       'created_at': (createdAt ?? '').trim().isEmpty
           ? DateTime.now().toIso8601String()

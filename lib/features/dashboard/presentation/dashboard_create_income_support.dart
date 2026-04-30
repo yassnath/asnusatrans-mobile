@@ -99,6 +99,7 @@ extension _AdminCreateIncomeViewStateSupport on _AdminCreateIncomeViewState {
       customerName: customerName ?? _customer.text.trim(),
       lokasiMuat: lokasiMuat,
       lokasiBongkar: lokasiBongkar,
+      muatan: muatan ?? '',
     );
     return _resolveHargaPerTonValueShared(
       matchedRule,
@@ -117,6 +118,7 @@ extension _AdminCreateIncomeViewStateSupport on _AdminCreateIncomeViewState {
       customerName: customerName ?? _customer.text.trim(),
       lokasiMuat: lokasiMuat,
       lokasiBongkar: lokasiBongkar,
+      muatan: muatan ?? '',
     );
     return _resolveHargaFlatTotalShared(
       matchedRule,
@@ -205,12 +207,6 @@ extension _AdminCreateIncomeViewStateSupport on _AdminCreateIncomeViewState {
       }
       plate = _normalizePlateText('${selected?['plat_nomor'] ?? ''}');
     }
-    if (plate.isEmpty) {
-      final manual = '${row['armada_manual'] ?? ''}'.trim();
-      if (manual.isNotEmpty) {
-        plate = _extractPlateFromText(manual) ?? _normalizePlateText(manual);
-      }
-    }
     if (plate.isEmpty) return null;
     for (final entry
         in _AdminCreateIncomeViewState._defaultDriverByPlate.entries) {
@@ -244,11 +240,33 @@ extension _AdminCreateIncomeViewStateSupport on _AdminCreateIncomeViewState {
     row['nama_supir_auto'] = true;
   }
 
+  bool _isManualArmadaRow(Map<String, dynamic> row) {
+    return row['armada_is_manual'] == true ||
+        ('${row['armada_id'] ?? ''}'.trim().isEmpty &&
+            '${row['armada_manual'] ?? ''}'.trim().isNotEmpty);
+  }
+
+  void _clearDriverForManualArmadaIfNeeded(Map<String, dynamic> row) {
+    if (!_isManualArmadaRow(row)) return;
+    final currentDriver = '${row['nama_supir'] ?? ''}'.trim();
+    if (currentDriver.isEmpty ||
+        row['nama_supir_auto'] == true ||
+        _isKnownDriverOption(currentDriver)) {
+      row['nama_supir'] = '';
+      row['nama_supir_manual'] = '';
+      row['nama_supir_is_manual'] = false;
+      row['nama_supir_auto'] = false;
+    }
+  }
+
   void _syncDriverWithArmadaSelection(
     Map<String, dynamic> row, {
     required List<Map<String, dynamic>> armadas,
     bool overrideManualDriver = false,
   }) {
+    _clearDriverForManualArmadaIfNeeded(row);
+    if (_isManualArmadaRow(row)) return;
+
     final defaultDriver =
         _resolveDefaultDriverForRow(row, armadas: armadas)?.trim() ?? '';
     if (row['nama_supir_is_manual'] == true && !overrideManualDriver) {
@@ -392,6 +410,7 @@ extension _AdminCreateIncomeViewStateSupport on _AdminCreateIncomeViewState {
 
   Map<String, dynamic> _newDetail() {
     return {
+      '__row_key': _newDetailRowKey(),
       'lokasi_muat': '',
       'lokasi_muat_manual': '',
       'lokasi_muat_is_manual': false,
@@ -482,30 +501,17 @@ extension _AdminCreateIncomeViewStateSupport on _AdminCreateIncomeViewState {
 
   void _normalizeManualRowsToArmadaId(List<Map<String, dynamic>> armadas) {
     if (_details.isEmpty) return;
-    final armadaIdByPlate = _buildArmadaIdByPlate(armadas);
-    if (armadaIdByPlate.isEmpty) return;
     var changed = false;
-    for (final row in _details) {
-      final currentArmadaId = '${row['armada_id'] ?? ''}'.trim();
-      final currentManual = '${row['armada_manual'] ?? ''}'.trim();
-      if (currentArmadaId.isNotEmpty || currentManual.isEmpty) continue;
-      final resolvedArmadaId = _resolveArmadaIdFromInput(
-        armadaId: currentArmadaId,
-        armadaManual: currentManual,
-        armadaIdByPlate: armadaIdByPlate,
-      );
-      if (resolvedArmadaId.isEmpty) continue;
-      row['armada_id'] = resolvedArmadaId;
-      row['armada_manual'] = '';
-      row['armada_is_manual'] = false;
-      changed = true;
-    }
     for (final row in _details) {
       final beforeDriver = '${row['nama_supir'] ?? ''}'.trim();
       final beforeManual = '${row['nama_supir_manual'] ?? ''}'.trim();
       final beforeIsManual = row['nama_supir_is_manual'] == true;
       final beforeIsAuto = row['nama_supir_auto'] == true;
-      _applyDefaultDriverForRow(row, armadas: armadas);
+      if (_isManualArmadaRow(row)) {
+        _clearDriverForManualArmadaIfNeeded(row);
+      } else {
+        _applyDefaultDriverForRow(row, armadas: armadas);
+      }
       if (beforeDriver != '${row['nama_supir'] ?? ''}'.trim() ||
           beforeManual != '${row['nama_supir_manual'] ?? ''}'.trim() ||
           beforeIsManual != (row['nama_supir_is_manual'] == true) ||

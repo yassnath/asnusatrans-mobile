@@ -14,7 +14,8 @@ class AppSecurity {
   };
 
   static void validateRuntimeConfigOrThrow() {
-    if (!_isAllowedRemoteUrl(AppConfig.supabaseUrl, allowLocalhost: kDebugMode)) {
+    if (!_isAllowedRemoteUrl(AppConfig.supabaseUrl,
+        allowLocalhost: kDebugMode)) {
       throw StateError(
         'SUPABASE_URL harus menggunakan HTTPS yang valid'
         '${kDebugMode ? ' atau localhost untuk debug' : ''}.',
@@ -24,11 +25,14 @@ class AppSecurity {
     if (AppConfig.hasInvoiceRenderService &&
         !_isAllowedRemoteUrl(
           AppConfig.invoiceRenderServiceUrl,
-          allowLocalhost: kDebugMode,
+          allowLocalhost:
+              kDebugMode || AppConfig.allowInsecureInvoiceRenderService,
+          allowPrivateNetwork:
+              kDebugMode || AppConfig.allowInsecureInvoiceRenderService,
         )) {
       throw StateError(
         'INVOICE_RENDER_SERVICE_URL harus menggunakan HTTPS yang valid'
-        '${kDebugMode ? ' atau localhost untuk debug' : ''}.',
+        '${kDebugMode ? ' atau localhost/private network untuk debug' : ''}.',
       );
     }
   }
@@ -37,11 +41,17 @@ class AppSecurity {
     String rawUrl, {
     String? appendPathSegment,
     bool allowLocalhost = false,
+    bool allowPrivateNetwork = false,
   }) {
     final value = rawUrl.trim();
     if (value.isEmpty) return null;
     final uri = Uri.tryParse(value);
-    if (uri == null || !_isAllowedRemoteUrl(value, allowLocalhost: allowLocalhost)) {
+    if (uri == null ||
+        !_isAllowedRemoteUrl(
+          value,
+          allowLocalhost: allowLocalhost,
+          allowPrivateNetwork: allowPrivateNetwork,
+        )) {
       return null;
     }
 
@@ -93,7 +103,8 @@ class AppSecurity {
     return message;
   }
 
-  static void debugLog(String message, {Object? error, StackTrace? stackTrace}) {
+  static void debugLog(String message,
+      {Object? error, StackTrace? stackTrace}) {
     if (!kDebugMode) return;
     final buffer = StringBuffer(message);
     if (error != null) buffer.write(' | $error');
@@ -176,6 +187,7 @@ class AppSecurity {
   static bool _isAllowedRemoteUrl(
     String rawUrl, {
     required bool allowLocalhost,
+    bool allowPrivateNetwork = false,
   }) {
     final uri = Uri.tryParse(rawUrl.trim());
     if (uri == null || uri.host.trim().isEmpty) return false;
@@ -183,7 +195,27 @@ class AppSecurity {
     final host = uri.host.toLowerCase();
     final isLocalhost = host == 'localhost' || host == '127.0.0.1';
     if (scheme == 'https') return true;
-    return allowLocalhost && isLocalhost && scheme == 'http';
+    if (scheme != 'http') return false;
+    if (allowLocalhost && isLocalhost) return true;
+    return allowPrivateNetwork && _isPrivateNetworkHost(host);
+  }
+
+  static bool _isPrivateNetworkHost(String host) {
+    final parts = host.split('.');
+    if (parts.length != 4) return false;
+    final numbers = <int>[];
+    for (final part in parts) {
+      final value = int.tryParse(part);
+      if (value == null || value < 0 || value > 255) return false;
+      numbers.add(value);
+    }
+
+    final first = numbers[0];
+    final second = numbers[1];
+    return first == 10 ||
+        (first == 172 && second >= 16 && second <= 31) ||
+        (first == 192 && second == 168) ||
+        (first == 169 && second == 254);
   }
 
   static String formatRemainingCooldown(Duration duration) {

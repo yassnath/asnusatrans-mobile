@@ -331,12 +331,6 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       }
       plate = _normalizePlateText('${selected?['plat_nomor'] ?? ''}');
     }
-    if (plate.isEmpty) {
-      final manual = '${row['armada_manual'] ?? ''}'.trim();
-      if (manual.isNotEmpty) {
-        plate = _extractPlateFromText(manual) ?? _normalizePlateText(manual);
-      }
-    }
     if (plate.isEmpty) return null;
     for (final entry in _defaultDriverByPlate.entries) {
       if (_normalizePlateText(entry.key) == plate) {
@@ -369,11 +363,33 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     row['nama_supir_auto'] = true;
   }
 
+  bool _isManualArmadaRow(Map<String, dynamic> row) {
+    return row['armada_is_manual'] == true ||
+        ('${row['armada_id'] ?? ''}'.trim().isEmpty &&
+            '${row['armada_manual'] ?? ''}'.trim().isNotEmpty);
+  }
+
+  void _clearDriverForManualArmadaIfNeeded(Map<String, dynamic> row) {
+    if (!_isManualArmadaRow(row)) return;
+    final currentDriver = '${row['nama_supir'] ?? ''}'.trim();
+    if (currentDriver.isEmpty ||
+        row['nama_supir_auto'] == true ||
+        _isKnownDriverOption(currentDriver)) {
+      row['nama_supir'] = '';
+      row['nama_supir_manual'] = '';
+      row['nama_supir_is_manual'] = false;
+      row['nama_supir_auto'] = false;
+    }
+  }
+
   void _syncDriverWithArmadaSelection(
     Map<String, dynamic> row, {
     required List<Map<String, dynamic>> armadas,
     bool overrideManualDriver = false,
   }) {
+    _clearDriverForManualArmadaIfNeeded(row);
+    if (_isManualArmadaRow(row)) return;
+
     final defaultDriver =
         _resolveDefaultDriverForRow(row, armadas: armadas)?.trim() ?? '';
     if (row['nama_supir_is_manual'] == true && !overrideManualDriver) {
@@ -852,6 +868,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       createdAt: batch.createdAt,
       status: batch.status,
       paidAt: batch.paidAt,
+      manualPaidAmount: batch.manualPaidAmount,
       paymentDetails:
           batch.paymentDetails.map((entry) => entry.toJson()).toList(),
     );
@@ -2306,6 +2323,10 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         storedBaseTotal,
       );
       final paidBaseAmount = max(paymentSummary.paidAmount, storedPaidBase);
+      final manualPaidAmount = max(
+        batch.manualPaidAmount,
+        paymentSummary.manualPaidAmount,
+      );
       final latestPaidAt = latestReportPaidAt([
         batch.paidAt,
         paymentSummary.paidAt,
@@ -2314,6 +2335,18 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
             ),
         ...storedPaidEntries.map((entry) => entry.paidAt),
       ]);
+
+      if (manualPaidAmount > 0) {
+        final paidAmount = min(total, manualPaidAmount);
+        final remainingAmount = max(0.0, total - paidAmount);
+        return (
+          paidAmount: paidAmount,
+          remainingAmount: remainingAmount,
+          paidAt: latestPaidAt,
+          status: remainingAmount <= 0.01 ? 'Paid' : 'Partial',
+          paidLocked: remainingAmount <= 0.01,
+        );
+      }
 
       final isExplicitPaid = statusLower == 'paid' ||
           (statusLower.contains('paid') &&
@@ -2878,22 +2911,27 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         headerFont = headerFont.clamp(7.0, 8.5).toDouble();
         cellFont = cellFont.clamp(6.2, 7.5).toDouble();
 
+        bool reportDecorationsEnabled() => false;
+
         final pageFormat = format;
+        final showReportHeader = reportDecorationsEnabled();
+        final showSummaryBox = reportDecorationsEnabled();
         final pdfFonts = await _loadDashboardPdfFontBundle();
         late final pw.Font reportTitleFont;
-        try {
-          reportTitleFont = await PdfGoogleFonts.archivoBlack();
-        } catch (_) {
-          reportTitleFont = pw.Font.helveticaBold();
-        }
-
         pw.MemoryImage? reportLogo;
-        try {
-          final logoBytes = await _loadBinaryAssetWithFileFallback(
-              'assets/images/iconapk.png');
-          reportLogo = pw.MemoryImage(logoBytes);
-        } catch (_) {
-          reportLogo = null;
+        if (showReportHeader) {
+          try {
+            reportTitleFont = await PdfGoogleFonts.archivoBlack();
+          } catch (_) {
+            reportTitleFont = pw.Font.helveticaBold();
+          }
+          try {
+            final logoBytes = await _loadBinaryAssetWithFileFallback(
+                'assets/images/iconapk.png');
+            reportLogo = pw.MemoryImage(logoBytes);
+          } catch (_) {
+            reportLogo = null;
+          }
         }
 
         final headers = useIncomeInvoiceTable
@@ -3085,6 +3123,16 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
           for (int i = 0; i < headers.length; i++) i: pw.Alignment.center,
         };
         final totalRowNumber = reportTableData.length;
+        final paidIncomeRowNumbers = <int>{
+          if (useIncomeInvoiceTable)
+            for (var i = 0; i < rows.length; i++)
+              if ('${rows[i]['__type']}' == 'Income' &&
+                  _toNum(rows[i]['__total']) > 0 &&
+                  (_toNum(rows[i]['__sisa']) <= 0.01 ||
+                      rows[i]['__paid_locked'] == true ||
+                      '${rows[i]['__status'] ?? ''}'.toLowerCase() == 'paid'))
+                i + 1,
+        };
 
         double oneLineReportFontSize({
           required int index,
@@ -3307,8 +3355,10 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
             pageFormat: pageFormat,
             margin: const pw.EdgeInsets.all(20),
             build: (context) => [
-              buildReportHeader(),
-              pw.SizedBox(height: 10),
+              if (showReportHeader) ...[
+                buildReportHeader(),
+                pw.SizedBox(height: 10),
+              ],
               pw.TableHelper.fromTextArray(
                 border: pw.TableBorder.all(
                   color: PdfColors.black,
@@ -3330,9 +3380,20 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                 headers: headerWidgets,
                 data: reportTableData,
                 cellDecoration: useIncomeInvoiceTable
-                    ? (index, data, rowNum) => rowNum == totalRowNumber
-                        ? const pw.BoxDecoration(color: PdfColors.grey200)
-                        : const pw.BoxDecoration()
+                    ? (index, data, rowNum) {
+                        if (rowNum == totalRowNumber) {
+                          return const pw.BoxDecoration(
+                            color: PdfColors.grey200,
+                          );
+                        }
+                        if (index == 0 &&
+                            paidIncomeRowNumbers.contains(rowNum)) {
+                          return const pw.BoxDecoration(
+                            color: PdfColor.fromInt(0xFFD9EAD3),
+                          );
+                        }
+                        return const pw.BoxDecoration();
+                      }
                     : null,
                 cellBuilder: (index, data, rowNum) => buildOneLineReportText(
                   '$data',
@@ -3341,8 +3402,10 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                   totalRow: useIncomeInvoiceTable && rowNum == totalRowNumber,
                 ),
               ),
-              pw.SizedBox(height: 12),
-              buildSummaryBox(),
+              if (showSummaryBox) ...[
+                pw.SizedBox(height: 12),
+                buildSummaryBox(),
+              ],
             ],
           ),
         );

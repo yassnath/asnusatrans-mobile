@@ -40,6 +40,7 @@ String normalizeSanguPlace(String value) {
   if (normalized.contains('kediri')) return 'kediri';
   if (normalized.contains('sragen')) return 'sragen';
   if (normalized.contains('bimoli')) return 'bimoli';
+  if (normalized.contains('bumindo')) return 'bumindo';
   if (normalized.contains('batang')) return 'batang';
   if (normalized.contains('kig')) return 'kig';
   if (normalized.contains('kendal')) return 'kendal';
@@ -50,6 +51,8 @@ String normalizeSanguPlace(String value) {
   if (normalized.contains('molindo')) return 'molindo';
   if (normalized.contains('muncar')) return 'muncar';
   if (normalized.contains('royal')) return 'royal';
+  if (normalized.contains('temanggung')) return 'temanggung';
+  if (normalized.contains('danliris')) return 'danliris';
   if (normalized.contains('tongas')) return 'tongas';
   if (normalized.contains('tanggulangin')) return 'tanggulangin';
   if (normalized.contains('tim')) return 'tim';
@@ -100,6 +103,30 @@ Map<String, dynamic>? resolvePrioritizedSanguRouteRule({
     };
   }
 
+  final langonToMuncar = pickupNorm == 'langon' && destinationNorm == 'muncar';
+  if (langonToMuncar) {
+    return <String, dynamic>{
+      'tempat': 'T. LANGON - MUNCAR',
+      'lokasi_muat': 'T. LANGON',
+      'lokasi_bongkar': 'MUNCAR',
+      'nominal': 3000000,
+      '__muat_norm': 'langon',
+      '__bongkar_norm': 'muncar',
+    };
+  }
+
+  final betoyoToMuncar = pickupNorm == 'betoyo' && destinationNorm == 'muncar';
+  if (betoyoToMuncar) {
+    return <String, dynamic>{
+      'tempat': 'BETOYO - MUNCAR',
+      'lokasi_muat': 'BETOYO',
+      'lokasi_bongkar': 'MUNCAR',
+      'nominal': 3100000,
+      '__muat_norm': 'betoyo',
+      '__bongkar_norm': 'muncar',
+    };
+  }
+
   final nganjukToDriyo = pickupNorm == 'nganjuk' && destinationNorm == 'driyo';
   if (nganjukToDriyo) {
     return <String, dynamic>{
@@ -120,6 +147,28 @@ Map<String, dynamic>? resolvePrioritizedSanguRouteRule({
       'nominal': 520000,
       '__muat_norm': '',
       '__bongkar_norm': 'royal',
+    };
+  }
+
+  if (destinationNorm == 'temanggung') {
+    return <String, dynamic>{
+      'tempat': 'TEMANGGUNG',
+      'lokasi_muat': '',
+      'lokasi_bongkar': 'TEMANGGUNG',
+      'nominal': 2435000,
+      '__muat_norm': '',
+      '__bongkar_norm': 'temanggung',
+    };
+  }
+
+  if (destinationNorm == 'bumindo') {
+    return <String, dynamic>{
+      'tempat': 'BUMINDO',
+      'lokasi_muat': '',
+      'lokasi_bongkar': 'BUMINDO',
+      'nominal': 690000,
+      '__muat_norm': '',
+      '__bongkar_norm': 'bumindo',
     };
   }
 

@@ -2002,6 +2002,7 @@ class _StatusPill extends StatelessWidget {
     final isActive = lower.contains('active') && !isNonActive;
     final isCancelled = lower.contains('cancel') || lower.contains('reject');
     final isUnpaid = lower.contains('unpaid');
+    final isPartial = lower.contains('partial');
     final isWaiting = lower.contains('waiting') || lower.contains('pending');
     final isPaid = lower.contains('paid') && !isUnpaid;
     final isRecorded = lower.contains('recorded');
@@ -2017,15 +2018,17 @@ class _StatusPill extends StatelessWidget {
                         ? AppColors.danger
                         : isUnpaid
                             ? AppColors.warning
-                            : isWaiting
-                                ? AppColors.warning
-                                : isRecorded
-                                    ? AppColors.neutralOutline
-                                    : isPaid
-                                        ? AppColors.success
-                                        : lower.contains('accept')
-                                            ? AppColors.blue
-                                            : AppColors.warning;
+                            : isPartial
+                                ? AppColors.blue
+                                : isWaiting
+                                    ? AppColors.warning
+                                    : isRecorded
+                                        ? AppColors.neutralOutline
+                                        : isPaid
+                                            ? AppColors.success
+                                            : lower.contains('accept')
+                                                ? AppColors.blue
+                                                : AppColors.warning;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

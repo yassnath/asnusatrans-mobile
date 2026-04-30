@@ -231,6 +231,7 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
       kopLocation: batch.kopLocation,
       status: batch.status,
       paidAt: batch.paidAt,
+      manualPaidAmount: batch.manualPaidAmount,
       createdAt: batch.createdAt,
       paymentDetails:
           batch.paymentDetails.map((entry) => entry.toJson()).toList(),
@@ -525,6 +526,7 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
       paidAt: '${item['paid_at'] ?? ''}'.trim().isEmpty
           ? null
           : '${item['paid_at'] ?? ''}'.trim(),
+      manualPaidAmount: fixedInvoiceNum(item['manual_paid_amount']),
       createdAt:
           '${item['__batch_created_at'] ?? item['created_at'] ?? ''}'.trim(),
       updatedAt: '${item['__batch_updated_at'] ?? item['updated_at'] ?? ''}'
@@ -574,6 +576,10 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                 ? null
                 : '${item['paid_at'] ?? batches[existingIndex].paidAt ?? ''}'
                     .trim(),
+            manualPaidAmount: fixedInvoiceNum(
+              item['manual_paid_amount'] ??
+                  batches[existingIndex].manualPaidAmount,
+            ),
           )
         : _buildBatchSnapshotFromItem(item);
     final latestRemoteBatch = await _loadRemoteFixedBatchById(batchId);
@@ -597,6 +603,12 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
         var selectedStatus = initialSummary.status;
         DateTime? selectedPaidDate =
             Formatters.parseDate(initialSummary.paidAt);
+        final manualPaidController = TextEditingController(
+          text: currentBatch.manualPaidAmount > 0
+              ? Formatters.rupiah(currentBatch.manualPaidAmount)
+                  .replaceFirst('Rp ', '')
+              : '',
+        );
         final paymentEntries = initialSummary.entries
             .map(
               (entry) => entry.copyWith(
@@ -612,15 +624,18 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             void recalculateStatus() {
-              final anyPaid = paymentEntries.any((entry) => entry.paid);
-              final allPaid = paymentEntries.isNotEmpty &&
-                  paymentEntries.every((entry) => entry.paid);
+              final manualPaid = fixedInvoiceNum(manualPaidController.text);
+              final anyPaid =
+                  manualPaid > 0 || paymentEntries.any((entry) => entry.paid);
+              final allPaid = manualPaid >= initialSummary.totalAmount - 0.01 ||
+                  (paymentEntries.isNotEmpty &&
+                      paymentEntries.every((entry) => entry.paid));
               selectedStatus = allPaid
                   ? 'Paid'
                   : anyPaid
                       ? 'Partial'
                       : 'Unpaid';
-              if (selectedStatus != 'Paid') {
+              if (!anyPaid) {
                 selectedPaidDate = null;
               } else {
                 selectedPaidDate ??= paymentEntries
@@ -632,6 +647,7 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                       }
                       return latest;
                     }) ??
+                    Formatters.parseDate(currentBatch.paidAt) ??
                     DateTime.now();
               }
             }
@@ -721,7 +737,7 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                           for (var i = 0; i < paymentEntries.length; i++) {
                             paymentEntries[i] = paymentEntries[i].copyWith(
                               paid: false,
-                              paidAt: null,
+                              clearPaidAt: true,
                             );
                           }
                           selectedPaidDate = null;
@@ -739,14 +755,33 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                     ),
                     const SizedBox(height: 10),
                     InkWell(
-                      onTap: selectedStatus == 'Paid' ? pickPaidDate : null,
+                      onTap: selectedStatus != 'Unpaid' ? pickPaidDate : null,
                       borderRadius: BorderRadius.circular(10),
                       child: InputDecorator(
                         decoration: InputDecoration(
-                          labelText: _t('Tanggal Pelunasan', 'Payment Date'),
+                          labelText: _t('Tanggal Bayar', 'Payment Date'),
                         ),
                         child: Text(paidDateLabel()),
                       ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: manualPaidController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: InputDecoration(
+                        labelText: _t(
+                          'Nominal bayar manual',
+                          'Manual paid amount',
+                        ),
+                        hintText: '15.000.000',
+                        helperText: _t(
+                          'Isi jika customer bayar nominal bulat, bukan per raid.',
+                          'Use this when the customer pays a rounded amount.',
+                        ),
+                      ),
+                      onChanged: (_) => setDialogState(recalculateStatus),
                     ),
                     const SizedBox(height: 12),
                     Row(
@@ -760,6 +795,7 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                           onPressed: () => setDialogState(() {
                             selectedStatus = 'Paid';
                             selectedPaidDate ??= DateTime.now();
+                            manualPaidController.text = '';
                             final batchDate = _toDbDate(selectedPaidDate!);
                             for (var i = 0; i < paymentEntries.length; i++) {
                               paymentEntries[i] = paymentEntries[i].copyWith(
@@ -774,10 +810,11 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                           onPressed: () => setDialogState(() {
                             selectedStatus = 'Unpaid';
                             selectedPaidDate = null;
+                            manualPaidController.clear();
                             for (var i = 0; i < paymentEntries.length; i++) {
                               paymentEntries[i] = paymentEntries[i].copyWith(
                                 paid: false,
-                                paidAt: null,
+                                clearPaidAt: true,
                               );
                             }
                           }),
@@ -812,6 +849,7 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                                           ? (entry.paidAt ??
                                               _toDbDate(DateTime.now()))
                                           : null,
+                                      clearPaidAt: value != true,
                                     );
                                     recalculateStatus();
                                   }),
@@ -898,12 +936,18 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                     if (selectedStatus == 'Paid' && selectedPaidDate != null) {
                       applyBatchPaidDate(selectedPaidDate!);
                     }
-                    final paidAt = selectedStatus == 'Paid'
+                    final manualPaidAmount = fixedInvoiceNum(
+                      manualPaidController.text,
+                    );
+                    final hasAnyPayment = manualPaidAmount > 0 ||
+                        paymentEntries.any((entry) => entry.paid);
+                    final paidAt = hasAnyPayment
                         ? _toDbDate(selectedPaidDate ?? DateTime.now())
                         : null;
                     Navigator.pop(context, {
                       'status': selectedStatus,
                       'paid_at': paidAt,
+                      'manual_paid_amount': manualPaidAmount,
                       'payment_details': paymentEntries
                           .map((entry) => entry.toJson())
                           .toList(),
@@ -925,6 +969,7 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
     if (result == null) return;
     final newStatus = (result['status'] ?? 'Unpaid').toString().trim();
     final newPaidAt = (result['paid_at'] ?? '').toString().trim();
+    final manualPaidAmount = fixedInvoiceNum(result['manual_paid_amount']);
     final paymentDetails = _toFixedInvoicePaymentEntryList(
       result['payment_details'],
     );
@@ -936,6 +981,8 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
       final updated = current.copyWith(
         status: newStatus.isEmpty ? 'Unpaid' : newStatus,
         paidAt: newPaidAt.isEmpty ? null : newPaidAt,
+        clearPaidAt: newPaidAt.isEmpty,
+        manualPaidAmount: manualPaidAmount,
         updatedAt: nowIso,
         paymentDetails: paymentDetails,
       );
@@ -1024,6 +1071,16 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                     '${_t('Bayar', 'Paid')}: ${Formatters.rupiah(paymentSummary.paidAmount)} • ${_t('Sisa', 'Remaining')}: ${Formatters.rupiah(paymentSummary.remainingAmount)}',
                     style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
+                  if (paymentSummary.manualPaidAmount > 0) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      '${_t('Bayar manual', 'Manual paid')}: ${Formatters.rupiah(paymentSummary.manualPaidAmount)}',
+                      style: TextStyle(
+                        color: AppColors.success,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   Text(
                     _t('Invoice yang digabung', 'Merged source invoices'),
@@ -1365,6 +1422,7 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
         'total_bayar': total,
         'status': paymentSummary.status,
         'paid_at': paymentSummary.paidAt,
+        'manual_paid_amount': batch.manualPaidAmount,
         '__batch_payment_details':
             batch.paymentDetails.map((entry) => entry.toJson()).toList(),
         '__batch_paid_amount': paymentSummary.paidAmount,

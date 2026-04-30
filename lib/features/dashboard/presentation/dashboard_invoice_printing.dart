@@ -12,6 +12,21 @@ class _InvoiceTableRenderResult {
   final String renderSource;
 }
 
+const _exactInvoiceRendererName = 'windows-excel-com';
+
+bool _requiresExactMobileInvoiceRenderer() =>
+    !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+
+String _exactMobileInvoiceRendererRequiredMessage() {
+  final serviceStatus = AppConfig.hasInvoiceRenderService
+      ? 'Render service sudah dikonfigurasi, tetapi belum berhasil mengembalikan tabel invoice.'
+      : 'INVOICE_RENDER_SERVICE_URL belum diisi.';
+  return 'Output invoice mobile dikunci agar 100% sama dengan Windows. '
+      '$serviceStatus Jalankan Windows Excel invoice render service atau service HTTPS '
+      'yang memakai renderer $_exactInvoiceRendererName, lalu build/run mobile dengan '
+      'INVOICE_RENDER_SERVICE_URL.';
+}
+
 String _normalizeDashboardArmadaNameKey(String value) {
   return value
       .toLowerCase()
@@ -607,6 +622,9 @@ Future<bool> _printDashboardInvoicePdf(
           bytes = cloudBytes;
           renderSource = 'Excel cloud service';
         }
+      }
+      if (bytes == null && _requiresExactMobileInvoiceRenderer()) {
+        throw Exception(_exactMobileInvoiceRendererRequiredMessage());
       }
       bytes ??= await host._renderInvoiceTableImagePortable(
         rows: payloadRows,
@@ -1991,13 +2009,67 @@ extension _AdminInvoiceListViewPrinting on _DashboardInvoicePrintHost {
   bool get _canRenderInvoiceTableViaCloudService =>
       !kIsWeb && AppConfig.hasInvoiceRenderService;
 
-  Uri? _invoiceRenderServiceUri() {
+  Uri? _invoiceRenderServiceUri({
+    String appendPathSegment = 'render-table',
+  }) {
     if (!_canRenderInvoiceTableViaCloudService) return null;
+    final allowInsecureLocalService =
+        kDebugMode || AppConfig.allowInsecureInvoiceRenderService;
     return AppSecurity.buildSecureRemoteUri(
       AppConfig.invoiceRenderServiceUrl,
-      appendPathSegment: 'render-table',
-      allowLocalhost: kDebugMode,
+      appendPathSegment: appendPathSegment,
+      allowLocalhost: allowInsecureLocalService,
+      allowPrivateNetwork: allowInsecureLocalService,
     );
+  }
+
+  bool _isExactInvoiceRendererName(String value) {
+    return value.trim().toLowerCase() == _exactInvoiceRendererName;
+  }
+
+  Future<bool> _validateExactMobileInvoiceRenderService() async {
+    if (!_requiresExactMobileInvoiceRenderer()) return true;
+    final uri = _invoiceRenderServiceUri(appendPathSegment: 'health');
+    if (uri == null) return false;
+
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
+    try {
+      final request = await client.getUrl(uri);
+      request.headers.set(HttpHeaders.acceptHeader, 'application/json');
+      final response = await request.close().timeout(
+            const Duration(seconds: 8),
+          );
+      final body = await utf8.decoder.bind(response).join();
+      if (response.statusCode != HttpStatus.ok) {
+        AppSecurity.debugLog(
+          'Exact invoice render health check failed (${response.statusCode})',
+          error: body,
+        );
+        return false;
+      }
+
+      final decoded = jsonDecode(body);
+      if (decoded is! Map) return false;
+      final renderer = '${decoded['renderer'] ?? ''}';
+      final exact = decoded['exactWindowsInvoiceOutput'] == true;
+      final valid = exact && _isExactInvoiceRendererName(renderer);
+      if (!valid) {
+        AppSecurity.debugLog(
+          'Invoice render service is not exact Windows renderer',
+          error: decoded,
+        );
+      }
+      return valid;
+    } catch (error, stackTrace) {
+      AppSecurity.debugLog(
+        'Exact invoice render health check error',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return false;
+    } finally {
+      client.close(force: true);
+    }
   }
 
   bool _isRowMeaningfullyFilled(Map<String, String> row) {
@@ -2018,50 +2090,6 @@ extension _AdminInvoiceListViewPrinting on _DashboardInvoicePrintHost {
       }
     }
     return false;
-  }
-
-  /// Sort by bongkar ASC (A-Z), empty bongkar at bottom.
-  /// After sorting, re-number `no` only for rows that actually contain data.
-  /// Blank/filler rows keep `no` empty.
-  List<Map<String, String>> _sortRowsByBongkarAsc(
-    List<Map<String, String>> rows,
-  ) {
-    final copied = rows
-        .map((row) => Map<String, String>.from(row))
-        .toList(growable: false);
-
-    final filledRows = copied.where(_isRowMeaningfullyFilled).toList();
-    final emptyRows =
-        copied.where((row) => !_isRowMeaningfullyFilled(row)).toList();
-
-    filledRows.sort((a, b) {
-      final bongkarA = (a['bongkar'] ?? '').trim().toLowerCase();
-      final bongkarB = (b['bongkar'] ?? '').trim().toLowerCase();
-
-      if (bongkarA.isEmpty && bongkarB.isEmpty) return 0;
-      if (bongkarA.isEmpty) return 1;
-      if (bongkarB.isEmpty) return -1;
-
-      return bongkarA.compareTo(bongkarB);
-    });
-
-    final renumberedFilledRows = <Map<String, String>>[];
-    for (var i = 0; i < filledRows.length; i++) {
-      final row = Map<String, String>.from(filledRows[i]);
-      row['no'] = '${i + 1}';
-      renumberedFilledRows.add(row);
-    }
-
-    final normalizedEmptyRows = emptyRows.map((row) {
-      final copy = Map<String, String>.from(row);
-      copy['no'] = '';
-      return copy;
-    }).toList();
-
-    return <Map<String, String>>[
-      ...renumberedFilledRows,
-      ...normalizedEmptyRows,
-    ];
   }
 
   DateTime? _parseInvoicePayloadDate(Map<String, String> row) {
@@ -2156,16 +2184,7 @@ extension _AdminInvoiceListViewPrinting on _DashboardInvoicePrintHost {
   List<Map<String, String>> _sortRowsForInvoiceTable(
     List<Map<String, String>> rows,
   ) {
-    final hasDateOrderedCargo = rows.any(
-      (row) =>
-          _isRowMeaningfullyFilled(row) &&
-          (isTolakanCargo(row['muatan'] ?? '') ||
-              isOngkosKuliCargo(row['muatan'] ?? '')),
-    );
-    if (hasDateOrderedCargo) {
-      return _sortRowsByTanggalAsc(rows);
-    }
-    return _sortRowsByBongkarAsc(rows);
+    return _sortRowsByTanggalAsc(rows);
   }
 
   Future<Uint8List?> _rasterizeInvoiceTablePdfBytes(
@@ -2279,6 +2298,9 @@ extension _AdminInvoiceListViewPrinting on _DashboardInvoicePrintHost {
   }) async {
     final uri = _invoiceRenderServiceUri();
     if (uri == null) return null;
+    if (!await _validateExactMobileInvoiceRenderService()) {
+      return null;
+    }
 
     final sortedRows = _sortRowsForInvoiceTable(rows);
 
@@ -2312,6 +2334,18 @@ extension _AdminInvoiceListViewPrinting on _DashboardInvoicePrintHost {
           error: errorText,
         );
         return null;
+      }
+
+      if (_requiresExactMobileInvoiceRenderer()) {
+        final renderer =
+            response.headers.value('x-cvant-invoice-renderer') ?? '';
+        if (!_isExactInvoiceRendererName(renderer)) {
+          AppSecurity.debugLog(
+            'Invoice render response came from non-exact renderer',
+            error: renderer,
+          );
+          return null;
+        }
       }
 
       return _rasterizeInvoiceTablePdfBytes(

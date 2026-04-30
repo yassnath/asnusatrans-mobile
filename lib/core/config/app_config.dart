@@ -14,6 +14,8 @@ class AppConfig {
       String.fromEnvironment('SUPABASE_ANON_KEY');
   static const _envInvoiceRenderServiceUrl =
       String.fromEnvironment('INVOICE_RENDER_SERVICE_URL');
+  static const _envInvoiceRenderServiceAllowHttp =
+      String.fromEnvironment('INVOICE_RENDER_SERVICE_ALLOW_HTTP');
   static const _envFirebaseApiKey = String.fromEnvironment('FIREBASE_API_KEY');
   static const _envFirebaseProjectId =
       String.fromEnvironment('FIREBASE_PROJECT_ID');
@@ -46,6 +48,11 @@ class AppConfig {
       _envInvoiceRenderServiceUrl.trim();
 
   static bool get hasInvoiceRenderService => invoiceRenderServiceUrl.isNotEmpty;
+
+  static bool get allowInsecureInvoiceRenderService {
+    final value = _envInvoiceRenderServiceAllowHttp.trim().toLowerCase();
+    return value == '1' || value == 'true' || value == 'yes' || value == 'on';
+  }
 
   static String get firebaseApiKey => _envFirebaseApiKey.trim();
 

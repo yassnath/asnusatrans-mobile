@@ -572,15 +572,17 @@ extension _AdminInvoiceListViewStatePreviewSupport
           if (cloudBytes != null) {
             bytes = cloudBytes;
             renderSource = 'Excel cloud service';
-          } else {
-            bytes = await _renderInvoiceTableImagePortable(
-              rows: payloadRows,
-              rowCount: printableRows.length,
-              renderMode: renderMode,
-              summaryValues: summaryValues,
-            );
           }
         }
+        if (bytes == null && _requiresExactMobileInvoiceRenderer()) {
+          throw Exception(_exactMobileInvoiceRendererRequiredMessage());
+        }
+        bytes ??= await _renderInvoiceTableImagePortable(
+          rows: payloadRows,
+          rowCount: printableRows.length,
+          renderMode: renderMode,
+          summaryValues: summaryValues,
+        );
         if (bytes == null) return null;
         final decodedImage = img.decodeImage(bytes);
         final aspectRatio = decodedImage == null || decodedImage.height == 0

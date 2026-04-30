@@ -75,6 +75,8 @@ Future<void> _handleRequest(
         jsonEncode({
           'ok': true,
           'service': 'invoice-render-service',
+          'renderer': 'windows-excel-com',
+          'exactWindowsInvoiceOutput': true,
           'time': DateTime.now().toIso8601String(),
         }),
       );
@@ -92,6 +94,10 @@ Future<void> _handleRequest(
       );
       request.response.statusCode = HttpStatus.ok;
       request.response.headers.contentType = ContentType('application', 'pdf');
+      request.response.headers.set(
+        'X-CVANT-Invoice-Renderer',
+        'windows-excel-com',
+      );
       request.response.add(pdfBytes);
       await request.response.close();
       return;

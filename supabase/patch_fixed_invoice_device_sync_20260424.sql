@@ -10,6 +10,7 @@ create table if not exists public.fixed_invoice_batches (
   kop_location text,
   status text not null default 'Unpaid',
   paid_at date,
+  manual_paid_amount numeric(14,2) not null default 0,
   payment_details jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
@@ -19,6 +20,7 @@ alter table public.fixed_invoice_batches
   add column if not exists invoice_entity text not null default 'cv_ant',
   add column if not exists status text not null default 'Unpaid',
   add column if not exists paid_at date,
+  add column if not exists manual_paid_amount numeric(14,2) not null default 0,
   add column if not exists payment_details jsonb not null default '[]'::jsonb,
   add column if not exists created_at timestamptz not null default timezone('utc', now()),
   add column if not exists updated_at timestamptz not null default timezone('utc', now());
@@ -26,6 +28,10 @@ alter table public.fixed_invoice_batches
 update public.fixed_invoice_batches
 set payment_details = '[]'::jsonb
 where payment_details is null;
+
+update public.fixed_invoice_batches
+set manual_paid_amount = 0
+where manual_paid_amount is null;
 
 create index if not exists fixed_invoice_batches_created_at_idx
   on public.fixed_invoice_batches (created_at desc);

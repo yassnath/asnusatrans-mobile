@@ -328,6 +328,8 @@ def health() -> dict[str, Any]:
     return {
         "ok": True,
         "service": "invoice-render-service",
+        "renderer": "libreoffice-compatible",
+        "exactWindowsInvoiceOutput": False,
         "templatePath": str(TEMPLATE_PATH),
     }
 
@@ -341,7 +343,11 @@ def render_table(payload: InvoiceRenderPayload) -> Response:
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    return Response(content=pdf_bytes, media_type="application/pdf")
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"X-CVANT-Invoice-Renderer": "libreoffice-compatible"},
+    )
 
 
 @app.exception_handler(Exception)

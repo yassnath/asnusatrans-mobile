@@ -10,6 +10,30 @@ void main() {
       expect(isOngkosKuliCargo('Batubara'), isFalse);
     });
 
+    test('matches Selain Betoyo pickup rule only outside Betoyo', () {
+      expect(
+        incomePricingLocationKeyMatches(
+          normalizeIncomePricingRuleKey('Kendal'),
+          normalizeIncomePricingRuleKey('Selain Betoyo'),
+        ),
+        isTrue,
+      );
+      expect(
+        incomePricingLocationKeyMatches(
+          normalizeIncomePricingRuleKey('T. Langon'),
+          normalizeIncomePricingRuleKey('Selain Betoyo'),
+        ),
+        isTrue,
+      );
+      expect(
+        incomePricingLocationKeyMatches(
+          normalizeIncomePricingRuleKey('Betoyo'),
+          normalizeIncomePricingRuleKey('Selain Betoyo'),
+        ),
+        isFalse,
+      );
+    });
+
     test('returns built-in Giono sewa rule for Nganjuk to Driyo', () {
       final rule = resolveBuiltInIncomePricingRule(
         customerName: 'gIoNo',
@@ -38,6 +62,68 @@ void main() {
       expect(rule?['flat_total'], isNull);
     });
 
+    test('returns built-in Bumindo fallback rule', () {
+      final rule = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'T. Langon',
+        destination: 'BuMiNdO',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule?['lokasi_bongkar'], 'Bumindo');
+      expect(rule?['harga_per_ton'], 55.0);
+      expect(rule?['flat_total'], isNull);
+    });
+
+    test('returns built-in Temanggung fallback rule', () {
+      final rule = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'T. Langon',
+        destination: 'temanggung',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule?['lokasi_bongkar'], 'Temanggung');
+      expect(rule?['harga_per_ton'], 165.0);
+      expect(rule?['flat_total'], isNull);
+    });
+
+    test('returns generic fallback rule when pickup is still empty', () {
+      final rule = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: '',
+        destination: 'temanggung',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule?['lokasi_muat'], isNull);
+      expect(rule?['lokasi_bongkar'], 'Temanggung');
+      expect(rule?['harga_per_ton'], 165.0);
+    });
+
+    test('does not apply generic fallback rule to Betoyo pickup', () {
+      final rule = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'Betoyo',
+        destination: 'temanggung',
+      );
+
+      expect(rule, isNull);
+    });
+
+    test('returns built-in Danliris fallback rule', () {
+      final rule = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'T. Langon',
+        destination: 'DANLIRIS',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule?['lokasi_bongkar'], 'Danliris');
+      expect(rule?['harga_per_ton'], 155.0);
+      expect(rule?['flat_total'], isNull);
+    });
+
     test('returns built-in T. Langon to Sarana fallback rule', () {
       final rule = resolveBuiltInIncomePricingRule(
         customerName: 'Siapa Saja',
@@ -62,8 +148,22 @@ void main() {
       expect(rule, isNotNull);
       expect(rule?['lokasi_muat'], 'Betoyo');
       expect(rule?['lokasi_bongkar'], 'Muncar');
-      expect(rule?['harga_per_ton'], 193.0);
+      expect(rule?['harga_per_ton'], 195.0);
       expect(rule?['flat_total'], isNull);
+    });
+
+    test('returns reverse base rule for Tolakan cargo before halving', () {
+      final rule = resolveBuiltInIncomePricingRuleForCargo(
+        customerName: 'Siapa Saja',
+        pickup: 'Muncar',
+        destination: 'Betoyo',
+        cargo: 'Muatan TOLAKAN',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule?['lokasi_muat'], 'Betoyo');
+      expect(rule?['lokasi_bongkar'], 'Muncar');
+      expect(rule?['harga_per_ton'], 195.0);
     });
 
     test('returns built-in Hasan geser rule for T. Langon to T. Langon', () {
@@ -95,11 +195,49 @@ void main() {
       expect(rule?['flat_total'], isNull);
     });
 
+    test('returns Bornava-specific Batang rule case-insensitively', () {
+      final rule = resolveBuiltInIncomePricingRule(
+        customerName: 'pt BoRnAvA indobara mandiri',
+        pickup: 'T. Langon',
+        destination: 'BaTaNg',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule?['customer_name'], 'Bornava');
+      expect(rule?['lokasi_bongkar'], 'Batang');
+      expect(rule?['harga_per_ton'], 225.0);
+    });
+
+    test('returns generic Batang rule outside Bornava', () {
+      final rule = resolveBuiltInIncomePricingRule(
+        customerName: 'CV Tritunggal Makmur Abadi',
+        pickup: 'T. Langon',
+        destination: 'batang',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule?['customer_name'], isNull);
+      expect(rule?['lokasi_bongkar'], 'Batang');
+      expect(rule?['harga_per_ton'], 235.0);
+    });
+
+    test('returns generic Batang rule when pickup is still empty', () {
+      final rule = resolveBuiltInIncomePricingRule(
+        customerName: 'CV Tritunggal Makmur Abadi',
+        pickup: '',
+        destination: 'batang',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule?['lokasi_bongkar'], 'Batang');
+      expect(rule?['harga_per_ton'], 235.0);
+    });
+
     test('returns null for unrelated route', () {
       final rule = resolveBuiltInIncomePricingRule(
         customerName: 'Giono',
         pickup: 'T. Langon',
-        destination: 'Batang',
+        destination: 'Tidak Ada',
       );
 
       expect(rule, isNull);

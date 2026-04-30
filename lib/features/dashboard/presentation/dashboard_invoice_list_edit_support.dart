@@ -38,12 +38,14 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
       required String customerName,
       required String lokasiMuat,
       required String lokasiBongkar,
+      String? muatan,
     }) {
       return _resolveHargaRuleShared(
         rules: hargaPerTonRules,
         customerName: customerName,
         lokasiMuat: lokasiMuat,
         lokasiBongkar: lokasiBongkar,
+        muatan: muatan ?? '',
       );
     }
 
@@ -57,6 +59,7 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
         customerName: customerName,
         lokasiMuat: lokasiMuat,
         lokasiBongkar: lokasiBongkar,
+        muatan: muatan,
       );
       return _resolveHargaPerTonValueShared(
         matched,
@@ -74,6 +77,7 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
         customerName: customerName,
         lokasiMuat: lokasiMuat,
         lokasiBongkar: lokasiBongkar,
+        muatan: muatan,
       );
       return _resolveHargaFlatTotalShared(
         matched,
@@ -140,14 +144,16 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
     Map<String, dynamic> mapDetailRow(Map<String, dynamic> row) {
       final rawArmadaId = '${row['armada_id'] ?? ''}'.trim();
       final rawManual =
-          '${row['armada_manual'] ?? row['armada_label'] ?? row['armada'] ?? ''}'
+          '${row['armada_manual'] ?? row['armada_label'] ?? row['armada'] ?? row['plat_nomor'] ?? row['no_polisi'] ?? ''}'
               .trim();
-      final resolvedArmadaId = _resolveArmadaIdFromInput(
-        armadaId: rawArmadaId,
-        armadaManual: rawManual,
-        armadaIdByPlate: armadaIdByPlate,
-      );
-      final useManual = resolvedArmadaId.isEmpty && rawManual.isNotEmpty;
+      final useManual = rawArmadaId.isEmpty && rawManual.isNotEmpty;
+      final resolvedArmadaId = useManual
+          ? ''
+          : _resolveArmadaIdFromInput(
+              armadaId: rawArmadaId,
+              armadaManual: rawManual,
+              armadaIdByPlate: armadaIdByPlate,
+            );
       final muatText = '${row['lokasi_muat'] ?? ''}'.trim();
       final muatIsManual = muatText.isNotEmpty &&
           !_AdminInvoiceListViewState._defaultMuatOptions.contains(muatText);
@@ -194,6 +200,9 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
         'subtotal_auto': resolvedSubtotal != null &&
             _toNum(subtotalText) == resolvedSubtotal,
       };
+      if (useManual) {
+        _clearDriverForManualArmadaIfNeeded(mappedRow);
+      }
       final defaultDriver =
           _resolveDefaultDriverForRow(mappedRow, armadas: armadas)?.trim() ??
               '';
@@ -411,8 +420,7 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                       }
                                       final hargaChanged = applyAutoHargaPerTon(
                                         row,
-                                        force: row['harga_auto'] == true ||
-                                            row['subtotal_auto'] == true,
+                                        force: true,
                                       );
                                       if (hargaChanged) {
                                         editHargaFieldRefreshToken++;
@@ -439,8 +447,7 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                       row['lokasi_muat_is_manual'] = true;
                                       final hargaChanged = applyAutoHargaPerTon(
                                         row,
-                                        force: row['harga_auto'] == true ||
-                                            row['subtotal_auto'] == true,
+                                        force: true,
                                       );
                                       setDialogState(() {
                                         if (hargaChanged) {
@@ -487,6 +494,8 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                     row['muatan'] = value;
                                     final isOngkosKuli =
                                         _isOngkosKuliIncomeRow(row);
+                                    final ongkosKuliModeChanged =
+                                        wasOngkosKuli != isOngkosKuli;
                                     var hargaChanged = false;
                                     if (isOngkosKuli) {
                                       _enableDirectTotalOnlyIncomeRow(row);
@@ -499,12 +508,16 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                         force: true,
                                       );
                                     }
-                                    setDialogState(() {
-                                      editDetailFieldRefreshToken++;
-                                      if (hargaChanged) {
-                                        editHargaFieldRefreshToken++;
-                                      }
-                                    });
+                                    if (ongkosKuliModeChanged || hargaChanged) {
+                                      setDialogState(() {
+                                        if (ongkosKuliModeChanged) {
+                                          editDetailFieldRefreshToken++;
+                                        }
+                                        if (hargaChanged) {
+                                          editHargaFieldRefreshToken++;
+                                        }
+                                      });
+                                    }
                                   },
                                 ),
                                 const SizedBox(height: 8),
@@ -1040,11 +1053,15 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                             '${first['armada_manual'] ?? ''}'
                                                 .trim();
                                         final firstResolvedArmadaId =
-                                            _resolveArmadaIdFromInput(
-                                          armadaId: firstArmadaId,
-                                          armadaManual: firstArmadaManual,
-                                          armadaIdByPlate: armadaIdByPlate,
-                                        );
+                                            _isManualArmadaRow(first)
+                                                ? ''
+                                                : _resolveArmadaIdFromInput(
+                                                    armadaId: firstArmadaId,
+                                                    armadaManual:
+                                                        firstArmadaManual,
+                                                    armadaIdByPlate:
+                                                        armadaIdByPlate,
+                                                  );
                                         final hasArmadaSelection =
                                             firstResolvedArmadaId.isNotEmpty ||
                                                 firstArmadaManual.isNotEmpty;
@@ -1090,12 +1107,17 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                                     row['armada_manual'],
                                                   ) ??
                                                   '';
-                                          final resolvedArmadaId =
-                                              _resolveArmadaIdFromInput(
-                                            armadaId: armadaId,
-                                            armadaManual: armadaManualRaw,
-                                            armadaIdByPlate: armadaIdByPlate,
-                                          );
+                                          final useManual =
+                                              _isManualArmadaRow(row) &&
+                                                  armadaManualRaw.isNotEmpty;
+                                          final resolvedArmadaId = useManual
+                                              ? ''
+                                              : _resolveArmadaIdFromInput(
+                                                  armadaId: armadaId,
+                                                  armadaManual: armadaManualRaw,
+                                                  armadaIdByPlate:
+                                                      armadaIdByPlate,
+                                                );
                                           Map<String, dynamic>? selectedArmada;
                                           if (resolvedArmadaId.isNotEmpty) {
                                             for (final armada in armadas) {
@@ -1107,9 +1129,6 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                               }
                                             }
                                           }
-                                          final useManual =
-                                              resolvedArmadaId.isEmpty &&
-                                                  armadaManualRaw.isNotEmpty;
                                           final isOngkosKuli =
                                               _isOngkosKuliIncomeRow(row);
                                           final resolvedPlate =
@@ -1136,7 +1155,9 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                               row['muatan'],
                                             ),
                                             'nama_supir': normalizeNullable(
-                                              row['nama_supir'],
+                                              useManual
+                                                  ? null
+                                                  : row['nama_supir'],
                                             ),
                                             'armada_id':
                                                 resolvedArmadaId.isEmpty

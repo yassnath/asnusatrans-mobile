@@ -136,11 +136,13 @@ class DashboardRepository {
   static const _optionalFixedInvoiceBatchColumns = <String>{
     'status',
     'paid_at',
+    'manual_paid_amount',
     'payment_details',
   };
   static const _requiredFixedInvoiceBatchPaymentColumns = <String>{
     'status',
     'paid_at',
+    'manual_paid_amount',
     'payment_details',
   };
   static const _companyKeywords = <String>[
@@ -1087,20 +1089,22 @@ class DashboardRepository {
           destination: baseRoute.destination,
           cargo: effectiveCargo,
         );
+        final isTolakan = isTolakanCargo(effectiveCargo);
+        final displayRouteDiffers = displayRoute.pickup != baseRoute.pickup ||
+            displayRoute.destination != baseRoute.destination;
+        final displayRouteMatch = isTolakan && displayRouteDiffers
+            ? _findSanguRuleMatch(
+                rules,
+                pickup: displayRoute.pickup,
+                destination: displayRoute.destination,
+              )
+            : null;
         final baseMatch = _findSanguRuleMatch(
           rules,
           pickup: baseRoute.pickup,
           destination: baseRoute.destination,
         );
-        final match = baseMatch ??
-            (displayRoute.pickup == baseRoute.pickup &&
-                    displayRoute.destination == baseRoute.destination
-                ? null
-                : _findSanguRuleMatch(
-                    rules,
-                    pickup: displayRoute.pickup,
-                    destination: displayRoute.destination,
-                  ));
+        final match = displayRouteMatch ?? baseMatch;
 
         if (baseRoute.pickup.isEmpty &&
             baseRoute.destination.isEmpty &&
@@ -1122,7 +1126,6 @@ class DashboardRepository {
         final detailKey = normalizeDetailKey(detailName);
         final matchedNominal = _num(match?['nominal'] ?? 0);
         final preservedBaseNominal = preservedBaseAmountByName[detailKey] ?? 0;
-        final isTolakan = isTolakanCargo(effectiveCargo);
         final effectiveNominal = matchedNominal > 0
             ? (isTolakan ? matchedNominal / 2 : matchedNominal)
             : (preservedBaseNominal > 0

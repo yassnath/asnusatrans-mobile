@@ -34,6 +34,7 @@ class _FixedInvoiceBatch {
     this.kopLocation,
     this.status = 'Unpaid',
     this.paidAt,
+    this.manualPaidAmount = 0,
     this.createdAt,
     this.updatedAt,
     this.paymentDetails = const <_FixedInvoicePaymentEntry>[],
@@ -47,6 +48,7 @@ class _FixedInvoiceBatch {
   final String? kopLocation;
   final String status;
   final String? paidAt;
+  final double manualPaidAmount;
   final String? createdAt;
   final String? updatedAt;
   final List<_FixedInvoicePaymentEntry> paymentDetails;
@@ -60,6 +62,8 @@ class _FixedInvoiceBatch {
     String? kopLocation,
     String? status,
     String? paidAt,
+    bool clearPaidAt = false,
+    double? manualPaidAmount,
     String? createdAt,
     String? updatedAt,
     List<_FixedInvoicePaymentEntry>? paymentDetails,
@@ -72,7 +76,8 @@ class _FixedInvoiceBatch {
       kopDate: kopDate ?? this.kopDate,
       kopLocation: kopLocation ?? this.kopLocation,
       status: status ?? this.status,
-      paidAt: paidAt ?? this.paidAt,
+      paidAt: clearPaidAt ? null : (paidAt ?? this.paidAt),
+      manualPaidAmount: manualPaidAmount ?? this.manualPaidAmount,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       paymentDetails: paymentDetails ?? this.paymentDetails,
@@ -95,6 +100,7 @@ class _FixedInvoiceBatch {
         'kop_location': kopLocation,
         'status': status,
         'paid_at': paidAt,
+        'manual_paid_amount': manualPaidAmount,
         'created_at': createdAt,
         'updated_at': updatedAt,
         'payment_details':
@@ -109,6 +115,9 @@ class _FixedInvoiceBatch {
     final rawInvoiceNumber = '${map['invoice_number'] ?? ''}'.trim();
     final status = '${map['status'] ?? 'Unpaid'}'.trim();
     final paidAt = '${map['paid_at'] ?? ''}'.trim();
+    final manualPaidAmount = _fixedInvoicePaymentNum(
+      map['manual_paid_amount'],
+    );
     final updatedAt = '${map['updated_at'] ?? ''}'.trim();
     final paymentDetails = _toFixedInvoicePaymentEntryList(
       map['payment_details'],
@@ -137,6 +146,7 @@ class _FixedInvoiceBatch {
       kopLocation: '${map['kop_location'] ?? ''}'.trim(),
       status: status.isEmpty ? 'Unpaid' : status,
       paidAt: paidAt.isEmpty ? null : paidAt,
+      manualPaidAmount: manualPaidAmount,
       createdAt: createdAt,
       updatedAt: updatedAt.isEmpty ? null : updatedAt,
       paymentDetails: paymentDetails,
@@ -177,6 +187,7 @@ class _FixedInvoicePaymentEntry {
     double? total,
     bool? paid,
     String? paidAt,
+    bool clearPaidAt = false,
   }) {
     return _FixedInvoicePaymentEntry(
       detailKey: detailKey ?? this.detailKey,
@@ -187,7 +198,7 @@ class _FixedInvoicePaymentEntry {
       plate: plate ?? this.plate,
       total: total ?? this.total,
       paid: paid ?? this.paid,
-      paidAt: paidAt ?? this.paidAt,
+      paidAt: clearPaidAt ? null : (paidAt ?? this.paidAt),
     );
   }
 
@@ -228,6 +239,8 @@ class _FixedInvoicePaymentSummary {
     required this.totalAmount,
     required this.paidAmount,
     required this.remainingAmount,
+    required this.manualPaidAmount,
+    required this.detailPaidAmount,
     required this.status,
     required this.allPaid,
     required this.anyPaid,
@@ -238,6 +251,8 @@ class _FixedInvoicePaymentSummary {
   final double totalAmount;
   final double paidAmount;
   final double remainingAmount;
+  final double manualPaidAmount;
+  final double detailPaidAmount;
   final String status;
   final bool allPaid;
   final bool anyPaid;
@@ -354,8 +369,7 @@ List<_FixedInvoicePaymentEntry> _buildFixedInvoicePaymentEntries({
   };
   final fallbackPaidAt = (batch?.paidAt ?? '').trim();
   final statusLower = (batch?.status ?? '').trim().toLowerCase();
-  final markAllPaidByBatch =
-      fallbackPaidAt.isNotEmpty || (statusLower == 'paid');
+  final markAllPaidByBatch = statusLower == 'paid';
   final entries = <_FixedInvoicePaymentEntry>[];
 
   for (final invoice in sourceInvoices) {
@@ -447,25 +461,43 @@ _FixedInvoicePaymentSummary _summarizeFixedInvoicePayments({
     batch: batch,
     sourceInvoices: sourceInvoices,
   );
-  final totalAmount =
+  final detailTotalAmount =
       entries.fold<double>(0, (sum, entry) => sum + entry.total);
-  final paidAmount = entries
+  final sourceTotalAmount = sourceInvoices.fold<double>(
+    0,
+    (sum, invoice) =>
+        sum +
+        _fixedInvoicePaymentNum(
+            invoice['total_bayar'] ?? invoice['total_biaya']),
+  );
+  final totalAmount =
+      sourceTotalAmount > 0 ? sourceTotalAmount : detailTotalAmount;
+  final rawDetailPaidAmount = entries
       .where((entry) => entry.paid)
       .fold<double>(0, (sum, entry) => sum + entry.total);
+  final detailPaidAmount = detailTotalAmount > 0 && sourceTotalAmount > 0
+      ? min(totalAmount,
+          rawDetailPaidAmount * sourceTotalAmount / detailTotalAmount)
+      : rawDetailPaidAmount;
+  final manualPaidAmount = max(0.0, batch?.manualPaidAmount ?? 0.0);
+  final paidAmount = manualPaidAmount > 0
+      ? min(totalAmount, manualPaidAmount)
+      : detailPaidAmount;
   final remainingAmount = max(0.0, totalAmount - paidAmount);
-  final anyPaid = entries.any((entry) => entry.paid);
-  final allPaid = entries.isNotEmpty && entries.every((entry) => entry.paid);
+  final anyPaid = manualPaidAmount > 0 || entries.any((entry) => entry.paid);
+  final allPaid = totalAmount > 0 &&
+      (manualPaidAmount >= totalAmount - 0.01 ||
+          (entries.isNotEmpty && entries.every((entry) => entry.paid)));
   final explicitStatus = (batch?.status ?? '').trim().toLowerCase();
-  final paidAtCandidates = entries
-      .map((entry) => _fixedInvoicePaymentDateOnly(entry.paidAt))
-      .where((value) => value.isNotEmpty)
-      .toList(growable: false)
+  final paidAtCandidates = <String>[
+    _fixedInvoicePaymentDateOnly(batch?.paidAt),
+    ...entries
+        .map((entry) => _fixedInvoicePaymentDateOnly(entry.paidAt))
+        .where((value) => value.isNotEmpty),
+  ].where((value) => value.isNotEmpty).toList(growable: false)
     ..sort();
-  final paidAt = allPaid
-      ? (paidAtCandidates.isNotEmpty
-          ? paidAtCandidates.last
-          : ((batch?.paidAt ?? '').trim().isEmpty ? null : batch!.paidAt))
-      : null;
+  final paidAt =
+      anyPaid && paidAtCandidates.isNotEmpty ? paidAtCandidates.last : null;
   final status = allPaid
       ? 'Paid'
       : anyPaid
@@ -480,6 +512,8 @@ _FixedInvoicePaymentSummary _summarizeFixedInvoicePayments({
     totalAmount: totalAmount,
     paidAmount: paidAmount,
     remainingAmount: remainingAmount,
+    manualPaidAmount: manualPaidAmount,
+    detailPaidAmount: detailPaidAmount,
     status: status,
     allPaid: allPaid,
     anyPaid: anyPaid,
@@ -607,6 +641,9 @@ _FixedInvoiceBatch _mergeFixedInvoiceBatchDuplicate(
     paidAt: (primary.paidAt ?? '').trim().isNotEmpty
         ? primary.paidAt
         : fallback.paidAt,
+    manualPaidAmount: primary.manualPaidAmount > 0
+        ? primary.manualPaidAmount
+        : fallback.manualPaidAmount,
     paymentDetails: primary.paymentDetails.isNotEmpty
         ? primary.paymentDetails
         : fallback.paymentDetails,
@@ -748,6 +785,9 @@ String _normalizeIncomeRuleTextShared(String value) {
 
 bool _incomeLocationKeyMatchesShared(String inputKey, String ruleKey) {
   if (inputKey.isEmpty || ruleKey.isEmpty) return false;
+  if (incomePricingIsNonBetoyoPickupRuleKey(ruleKey)) {
+    return !incomePricingIsBetoyoLocationKey(inputKey);
+  }
   if (inputKey == ruleKey) return true;
 
   final inputCompact = inputKey.replaceAll(' ', '');
@@ -825,82 +865,127 @@ Map<String, dynamic>? _resolveHargaRuleShared({
   required String customerName,
   required String lokasiMuat,
   required String lokasiBongkar,
+  String muatan = '',
 }) {
+  Map<String, dynamic>? findBestRule({
+    required String searchPickup,
+    required String searchDestination,
+  }) {
+    final bongkarKey = _normalizeIncomeRuleTextShared(searchDestination);
+    if (bongkarKey.isEmpty) return null;
+    final muatKey = _normalizeIncomeRuleTextShared(searchPickup);
+    final customerKey = _normalizeIncomeRuleTextShared(customerName);
+
+    int specificityScore(String value) {
+      if (value.isEmpty) return 0;
+      final tokenCount =
+          value.split(' ').where((part) => part.isNotEmpty).length;
+      return (tokenCount * 100) + value.length;
+    }
+
+    int customerScore(String ruleCustomerKey) {
+      if (ruleCustomerKey.isEmpty) return 100;
+      if (!_incomeCustomerKeyMatchesShared(customerKey, ruleCustomerKey)) {
+        return -1;
+      }
+      if (customerKey == ruleCustomerKey) {
+        return 5000 + specificityScore(ruleCustomerKey);
+      }
+      return 4200 + specificityScore(ruleCustomerKey);
+    }
+
+    int lokasiScore(String inputKey, String ruleKey) {
+      if (ruleKey.isEmpty) return 120;
+      if (inputKey.isEmpty) return 0;
+      if (!_incomeLocationKeyMatchesShared(inputKey, ruleKey)) return 0;
+      final inputCompact = inputKey.replaceAll(' ', '');
+      final ruleCompact = ruleKey.replaceAll(' ', '');
+      if (inputKey == ruleKey || inputCompact == ruleCompact) {
+        return 1500 + specificityScore(ruleKey);
+      }
+      return 900 + specificityScore(ruleKey);
+    }
+
+    Map<String, dynamic>? bestRule;
+    var bestScore = -1;
+    for (final rule in rules) {
+      final ruleBongkarKey =
+          _normalizeIncomeRuleTextShared('${rule['lokasi_bongkar'] ?? ''}');
+      if (!_incomeLocationKeyMatchesShared(bongkarKey, ruleBongkarKey)) {
+        continue;
+      }
+
+      final ruleCustomerKey =
+          _normalizeIncomeRuleTextShared('${rule['customer_name'] ?? ''}');
+      final currentCustomerScore = customerScore(ruleCustomerKey);
+      if (currentCustomerScore < 0) continue;
+
+      final ruleMuatKey =
+          _normalizeIncomeRuleTextShared('${rule['lokasi_muat'] ?? ''}');
+      if (ruleMuatKey.isEmpty && incomePricingIsBetoyoLocationKey(muatKey)) {
+        continue;
+      }
+      if (muatKey.isNotEmpty &&
+          ruleMuatKey.isNotEmpty &&
+          !_incomeLocationKeyMatchesShared(muatKey, ruleMuatKey)) {
+        continue;
+      }
+
+      final priority = int.tryParse('${rule['priority'] ?? ''}') ??
+          _toNum(rule['priority']).toInt();
+      final totalScore = currentCustomerScore +
+          lokasiScore(muatKey, ruleMuatKey) +
+          lokasiScore(bongkarKey, ruleBongkarKey) +
+          priority;
+
+      if (totalScore > bestScore) {
+        bestScore = totalScore;
+        bestRule = rule;
+      }
+    }
+    return bestRule;
+  }
+
   final bongkarKey = _normalizeIncomeRuleTextShared(lokasiBongkar);
   if (bongkarKey.isEmpty) return null;
-  final muatKey = _normalizeIncomeRuleTextShared(lokasiMuat);
-  final customerKey = _normalizeIncomeRuleTextShared(customerName);
-  final builtInRule = resolveBuiltInIncomePricingRule(
+  final builtInRule = resolveBuiltInIncomePricingRuleForCargo(
     customerName: customerName,
     pickup: lokasiMuat,
     destination: lokasiBongkar,
+    cargo: muatan,
   );
   if (rules.isEmpty) return builtInRule;
 
-  int specificityScore(String value) {
-    if (value.isEmpty) return 0;
-    final tokenCount = value.split(' ').where((part) => part.isNotEmpty).length;
-    return (tokenCount * 100) + value.length;
+  Map<String, dynamic>? preferBuiltInCustomerRule(
+    Map<String, dynamic>? databaseRule,
+  ) {
+    if (builtInRule == null) return databaseRule;
+    if (databaseRule == null) return builtInRule;
+    final builtInCustomer =
+        _normalizeIncomeRuleTextShared('${builtInRule['customer_name'] ?? ''}');
+    final databaseCustomer = _normalizeIncomeRuleTextShared(
+      '${databaseRule['customer_name'] ?? ''}',
+    );
+    if (builtInCustomer.isNotEmpty && databaseCustomer.isEmpty) {
+      return builtInRule;
+    }
+    return databaseRule;
   }
 
-  int customerScore(String ruleCustomerKey) {
-    if (ruleCustomerKey.isEmpty) return 100;
-    if (!_incomeCustomerKeyMatchesShared(customerKey, ruleCustomerKey)) {
-      return -1;
-    }
-    if (customerKey == ruleCustomerKey) {
-      return 5000 + specificityScore(ruleCustomerKey);
-    }
-    return 4200 + specificityScore(ruleCustomerKey);
+  if (isTolakanCargo(muatan)) {
+    final reverseRule = findBestRule(
+      searchPickup: lokasiBongkar,
+      searchDestination: lokasiMuat,
+    );
+    final preferredReverseRule = preferBuiltInCustomerRule(reverseRule);
+    if (preferredReverseRule != null) return preferredReverseRule;
   }
-
-  int lokasiScore(String inputKey, String ruleKey) {
-    if (ruleKey.isEmpty) return 120;
-    if (inputKey.isEmpty) return 0;
-    if (!_incomeLocationKeyMatchesShared(inputKey, ruleKey)) return 0;
-    final inputCompact = inputKey.replaceAll(' ', '');
-    final ruleCompact = ruleKey.replaceAll(' ', '');
-    if (inputKey == ruleKey || inputCompact == ruleCompact) {
-      return 1500 + specificityScore(ruleKey);
-    }
-    return 900 + specificityScore(ruleKey);
-  }
-
-  Map<String, dynamic>? bestRule;
-  var bestScore = -1;
-  for (final rule in rules) {
-    final ruleBongkarKey =
-        _normalizeIncomeRuleTextShared('${rule['lokasi_bongkar'] ?? ''}');
-    if (!_incomeLocationKeyMatchesShared(bongkarKey, ruleBongkarKey)) {
-      continue;
-    }
-
-    final ruleCustomerKey =
-        _normalizeIncomeRuleTextShared('${rule['customer_name'] ?? ''}');
-    final currentCustomerScore = customerScore(ruleCustomerKey);
-    if (currentCustomerScore < 0) continue;
-
-    final ruleMuatKey =
-        _normalizeIncomeRuleTextShared('${rule['lokasi_muat'] ?? ''}');
-    if (muatKey.isNotEmpty &&
-        ruleMuatKey.isNotEmpty &&
-        !_incomeLocationKeyMatchesShared(muatKey, ruleMuatKey)) {
-      continue;
-    }
-
-    final priority = int.tryParse('${rule['priority'] ?? ''}') ??
-        _toNum(rule['priority']).toInt();
-    final totalScore = currentCustomerScore +
-        lokasiScore(muatKey, ruleMuatKey) +
-        lokasiScore(bongkarKey, ruleBongkarKey) +
-        priority;
-
-    if (totalScore > bestScore) {
-      bestScore = totalScore;
-      bestRule = rule;
-    }
-  }
-  return bestRule ?? builtInRule;
+  return preferBuiltInCustomerRule(
+    findBestRule(
+      searchPickup: lokasiMuat,
+      searchDestination: lokasiBongkar,
+    ),
+  );
 }
 
 double? _resolveHargaPerTonValueShared(
