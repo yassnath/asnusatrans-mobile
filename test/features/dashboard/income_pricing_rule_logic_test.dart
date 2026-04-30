@@ -152,6 +152,34 @@ void main() {
       expect(rule?['flat_total'], isNull);
     });
 
+    test('returns built-in T. Langon to Surya Warna Sukoharjo rule', () {
+      final rule = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'T. Langon',
+        destination: 'sUkOhArJo',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule?['lokasi_muat'], 'T. Langon');
+      expect(rule?['lokasi_bongkar'], 'Surya Warna / Sukoharjo');
+      expect(rule?['harga_per_ton'], 165.0);
+      expect(rule?['flat_total'], isNull);
+    });
+
+    test('returns built-in Betoyo to Surya Warna Sukoharjo rule', () {
+      final rule = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'BETOYO',
+        destination: 'Surya Warna',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule?['lokasi_muat'], 'Betoyo');
+      expect(rule?['lokasi_bongkar'], 'Surya Warna / Sukoharjo');
+      expect(rule?['harga_per_ton'], 170.0);
+      expect(rule?['flat_total'], isNull);
+    });
+
     test('returns reverse base rule for Tolakan cargo before halving', () {
       final rule = resolveBuiltInIncomePricingRuleForCargo(
         customerName: 'Siapa Saja',

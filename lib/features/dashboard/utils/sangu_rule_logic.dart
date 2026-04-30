@@ -53,6 +53,10 @@ String normalizeSanguPlace(String value) {
   if (normalized.contains('royal')) return 'royal';
   if (normalized.contains('temanggung')) return 'temanggung';
   if (normalized.contains('danliris')) return 'danliris';
+  if (normalized.contains('sukoharjo') ||
+      (normalized.contains('surya') && normalized.contains('warna'))) {
+    return 'surya warna sukoharjo';
+  }
   if (normalized.contains('tongas')) return 'tongas';
   if (normalized.contains('tanggulangin')) return 'tanggulangin';
   if (normalized.contains('tim')) return 'tim';
@@ -124,6 +128,32 @@ Map<String, dynamic>? resolvePrioritizedSanguRouteRule({
       'nominal': 3100000,
       '__muat_norm': 'betoyo',
       '__bongkar_norm': 'muncar',
+    };
+  }
+
+  final langonToSuryaWarna =
+      pickupNorm == 'langon' && destinationNorm == 'surya warna sukoharjo';
+  if (langonToSuryaWarna) {
+    return <String, dynamic>{
+      'tempat': 'T. LANGON - SURYA WARNA / SUKOHARJO',
+      'lokasi_muat': 'T. LANGON',
+      'lokasi_bongkar': 'SURYA WARNA / SUKOHARJO',
+      'nominal': 2435000,
+      '__muat_norm': 'langon',
+      '__bongkar_norm': 'surya warna sukoharjo',
+    };
+  }
+
+  final betoyoToSuryaWarna =
+      pickupNorm == 'betoyo' && destinationNorm == 'surya warna sukoharjo';
+  if (betoyoToSuryaWarna) {
+    return <String, dynamic>{
+      'tempat': 'BETOYO - SURYA WARNA / SUKOHARJO',
+      'lokasi_muat': 'BETOYO',
+      'lokasi_bongkar': 'SURYA WARNA / SUKOHARJO',
+      'nominal': 2550000,
+      '__muat_norm': 'betoyo',
+      '__bongkar_norm': 'surya warna sukoharjo',
     };
   }
 

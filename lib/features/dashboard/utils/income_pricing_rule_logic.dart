@@ -166,6 +166,22 @@ Map<String, dynamic>? resolveBuiltInIncomePricingRule({
     };
   }
 
+  if (incomePricingLocationKeyMatches(pickupKey, 't langon') &&
+      incomePricingLocationKeyMatches(
+        destinationKey,
+        'surya warna sukoharjo',
+      )) {
+    return <String, dynamic>{
+      'customer_name': null,
+      'lokasi_muat': 'T. Langon',
+      'lokasi_bongkar': 'Surya Warna / Sukoharjo',
+      'harga_per_ton': 165.0,
+      'flat_total': null,
+      'priority': 125,
+      'is_active': true,
+    };
+  }
+
   if (incomePricingLocationKeyMatches(pickupKey, 'betoyo') &&
       incomePricingLocationKeyMatches(destinationKey, 'muncar')) {
     return <String, dynamic>{
@@ -175,6 +191,22 @@ Map<String, dynamic>? resolveBuiltInIncomePricingRule({
       'harga_per_ton': 195.0,
       'flat_total': null,
       'priority': 110,
+      'is_active': true,
+    };
+  }
+
+  if (incomePricingLocationKeyMatches(pickupKey, 'betoyo') &&
+      incomePricingLocationKeyMatches(
+        destinationKey,
+        'surya warna sukoharjo',
+      )) {
+    return <String, dynamic>{
+      'customer_name': null,
+      'lokasi_muat': 'Betoyo',
+      'lokasi_bongkar': 'Surya Warna / Sukoharjo',
+      'harga_per_ton': 170.0,
+      'flat_total': null,
+      'priority': 130,
       'is_active': true,
     };
   }

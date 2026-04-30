@@ -13,6 +13,11 @@ void main() {
       expect(normalizeSanguPlace('Royal Mix'), 'royal');
       expect(normalizeSanguPlace('TEMANGGUNG'), 'temanggung');
       expect(normalizeSanguPlace('bumindo'), 'bumindo');
+      expect(
+        normalizeSanguPlace('Surya Warna / Sukoharjo'),
+        'surya warna sukoharjo',
+      );
+      expect(normalizeSanguPlace('sukoharjo'), 'surya warna sukoharjo');
     });
 
     test('prioritizes batang to langon route with fixed nominal', () {
@@ -85,6 +90,30 @@ void main() {
       expect(rule!['nominal'], 3100000);
       expect(rule['lokasi_muat'], 'BETOYO');
       expect(rule['lokasi_bongkar'], 'MUNCAR');
+    });
+
+    test('prioritizes T. Langon to Surya Warna Sukoharjo route', () {
+      final rule = resolvePrioritizedSanguRouteRule(
+        pickup: 'T. Langon',
+        destination: 'sukoharjo',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule!['nominal'], 2435000);
+      expect(rule['lokasi_muat'], 'T. LANGON');
+      expect(rule['lokasi_bongkar'], 'SURYA WARNA / SUKOHARJO');
+    });
+
+    test('prioritizes Betoyo to Surya Warna Sukoharjo route', () {
+      final rule = resolvePrioritizedSanguRouteRule(
+        pickup: 'BETOYO',
+        destination: 'Surya Warna',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule!['nominal'], 2550000);
+      expect(rule['lokasi_muat'], 'BETOYO');
+      expect(rule['lokasi_bongkar'], 'SURYA WARNA / SUKOHARJO');
     });
 
     test('prioritizes nganjuk to driyo route with fixed nominal', () {

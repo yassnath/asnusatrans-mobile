@@ -67,3 +67,4 @@ backup/
 !supabase/patch_clear_langon_pickup_harga_rules_20260428.sql
 !supabase/patch_bumindo_income_sangu_20260429.sql
 !supabase/patch_batang_bornava_pricing_20260429.sql
+!supabase/patch_surya_warna_sukoharjo_income_sangu_20260430.sql

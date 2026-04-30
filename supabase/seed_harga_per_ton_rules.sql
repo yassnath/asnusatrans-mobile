@@ -73,6 +73,7 @@ with incoming(
     (null, null, 'Bumindo', 55.00, null, 120, true),
     (null, null, 'Temanggung', 165.00, null, 120, true),
     (null, null, 'Danliris', 155.00, null, 120, true),
+    (null, 'T. Langon', 'Surya Warna / Sukoharjo', 165.00, null, 125, true),
     (null, null, 'Sragen', 145.00, null, 100, true),
     (null, null, 'KIG', 43.00, null, 100, true),
     (null, null, 'TIM', 187.50, null, 100, true),
@@ -82,6 +83,7 @@ with incoming(
     (null, 'Betoyo', 'Tongas', 88.00, null, 100, true),
     (null, 'Betoyo', 'Mojoagung', 87.00, null, 100, true),
     (null, 'Betoyo', 'Muncar', 195.00, null, 110, true),
+    (null, 'Betoyo', 'Surya Warna / Sukoharjo', 170.00, null, 130, true),
     (null, 'Betoyo', 'T. Langon', 90.00, null, 100, true),
     (null, 'Betoyo', 'Blitar', 125.00, null, 100, true)
 ), normalized as (
@@ -147,6 +149,7 @@ with incoming(
     (null, null, 'Bumindo', 55.00, null, 120, true),
     (null, null, 'Temanggung', 165.00, null, 120, true),
     (null, null, 'Danliris', 155.00, null, 120, true),
+    (null, 'T. Langon', 'Surya Warna / Sukoharjo', 165.00, null, 125, true),
     (null, null, 'Sragen', 145.00, null, 100, true),
     (null, null, 'KIG', 43.00, null, 100, true),
     (null, null, 'TIM', 187.50, null, 100, true),
@@ -156,6 +159,7 @@ with incoming(
     (null, 'Betoyo', 'Tongas', 88.00, null, 100, true),
     (null, 'Betoyo', 'Mojoagung', 87.00, null, 100, true),
     (null, 'Betoyo', 'Muncar', 195.00, null, 110, true),
+    (null, 'Betoyo', 'Surya Warna / Sukoharjo', 170.00, null, 130, true),
     (null, 'Betoyo', 'T. Langon', 90.00, null, 100, true),
     (null, 'Betoyo', 'Blitar', 125.00, null, 100, true)
 ), normalized as (
