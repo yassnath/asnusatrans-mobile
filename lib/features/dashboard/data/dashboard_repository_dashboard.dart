@@ -1,25 +1,46 @@
 part of 'dashboard_repository.dart';
 
 extension DashboardRepositoryDashboardExtension on DashboardRepository {
-  Future<MonthlyFinanceReminderSummary> loadMonthlyFinanceReminderSummary({
+  Future<FinanceReminderSummary> loadMonthlyFinanceReminderSummary({
     DateTime? targetMonth,
   }) async {
     final focus = targetMonth ?? DateTime.now();
     final monthStart = DateTime(focus.year, focus.month, 1);
     final monthEnd = DateTime(focus.year, focus.month + 1, 1);
+    return loadFinanceReminderSummary(
+      periodStart: monthStart,
+      periodEndExclusive: monthEnd,
+    );
+  }
+
+  Future<FinanceReminderSummary> loadFinanceReminderSummary({
+    required DateTime periodStart,
+    required DateTime periodEndExclusive,
+  }) async {
+    final start = DateTime(
+      periodStart.year,
+      periodStart.month,
+      periodStart.day,
+    );
+    final end = DateTime(
+      periodEndExclusive.year,
+      periodEndExclusive.month,
+      periodEndExclusive.day,
+    );
 
     try {
       const invoiceColumns =
-          'id,tanggal,tanggal_kop,total_bayar,total_biaya,pph,created_at,'
-          'armada_start_date,rincian,submission_role,approval_status';
+          'id,no_invoice,invoice_entity,tanggal,tanggal_kop,nama_pelanggan,'
+          'total_bayar,total_biaya,pph,created_at,armada_start_date,rincian,'
+          'submission_role,approval_status';
       final response = await Future.wait<dynamic>([
         _runInvoiceSelectWithFallback(
           invoiceColumns,
           (columns) => _supabase.from('invoices').select(columns),
         ),
-        _supabase
-            .from('expenses')
-            .select('id,tanggal,total_pengeluaran,rincian,created_at'),
+        _supabase.from('expenses').select(
+              'id,tanggal,total_pengeluaran,keterangan,note,rincian,created_at',
+            ),
       ]);
 
       final currentRole = await _loadCurrentRole();
@@ -34,34 +55,123 @@ extension DashboardRepositoryDashboardExtension on DashboardRepository {
           .where((row) => _expenseTotal(row) > 0)
           .toList();
 
-      final totalIncome = invoices.fold<double>(0, (sum, invoice) {
+      bool isWithinPeriod(DateTime? date) {
+        if (date == null) return false;
+        return !date.isBefore(start) && date.isBefore(end);
+      }
+
+      String normalizeMarker(String value) {
+        return value
+            .toUpperCase()
+            .replaceAll(RegExp(r'[^A-Z0-9.]+'), '')
+            .trim();
+      }
+
+      String invoiceEntityOf(Map<String, dynamic> invoice) {
+        return Formatters.normalizeInvoiceEntity(
+          '${invoice['invoice_entity'] ?? ''}',
+          invoiceNumber: invoice['no_invoice'],
+          customerName: invoice['nama_pelanggan'],
+        );
+      }
+
+      bool isCvInvoice(Map<String, dynamic> invoice) {
+        return invoiceEntityOf(invoice) == Formatters.invoiceEntityCvAnt;
+      }
+
+      bool isPersonalInvoice(Map<String, dynamic> invoice) {
+        return invoiceEntityOf(invoice) == Formatters.invoiceEntityPersonal;
+      }
+
+      final invoiceByMarker = <String, Map<String, dynamic>>{};
+      for (final invoice in invoices) {
+        final id = '${invoice['id'] ?? ''}'.trim();
+        final rawNumber = '${invoice['no_invoice'] ?? ''}'.trim();
+        final normalizedNumber = Formatters.invoiceNumber(
+          rawNumber,
+          invoice['tanggal_kop'] ?? invoice['tanggal'],
+          customerName: invoice['nama_pelanggan'],
+          invoiceEntity: '${invoice['invoice_entity'] ?? ''}',
+        );
+        for (final marker in <String>[id, rawNumber, normalizedNumber]) {
+          final key = normalizeMarker(marker);
+          if (key.isNotEmpty) {
+            invoiceByMarker[key] = invoice;
+          }
+        }
+      }
+
+      bool isAutoSanguExpense(Map<String, dynamic> expense) {
+        final note = '${expense['note'] ?? ''}'.trim().toUpperCase();
+        if (note.startsWith('AUTO_SANGU:')) return true;
+        final description =
+            '${expense['keterangan'] ?? ''}'.trim().toLowerCase();
+        return description.startsWith('auto sangu sopir -');
+      }
+
+      String autoSanguMarker(Map<String, dynamic> expense) {
+        final note = '${expense['note'] ?? ''}'.trim();
+        if (note.toUpperCase().startsWith('AUTO_SANGU:')) {
+          return note.substring('AUTO_SANGU:'.length).trim();
+        }
+        final description = '${expense['keterangan'] ?? ''}'.trim();
+        final match = RegExp(
+          r'auto\s+sangu\s+sopir\s*-\s*(.+)$',
+          caseSensitive: false,
+        ).firstMatch(description);
+        return match?.group(1)?.trim() ?? '';
+      }
+
+      final cvIncome = invoices.fold<double>(0, (sum, invoice) {
         final date = _invoiceReferenceDate(invoice);
-        if (date == null ||
-            date.isBefore(monthStart) ||
-            !date.isBefore(monthEnd)) {
+        if (!isWithinPeriod(date) || !isCvInvoice(invoice)) {
           return sum;
         }
         return sum + _invoiceTotal(invoice);
       });
-      final totalExpense = expenses.fold<double>(0, (sum, expense) {
-        final date =
-            Formatters.parseDate(expense['tanggal'] ?? expense['created_at']);
-        if (date == null ||
-            date.isBefore(monthStart) ||
-            !date.isBefore(monthEnd)) {
+      final personalIncome = invoices.fold<double>(0, (sum, invoice) {
+        final date = _invoiceReferenceDate(invoice);
+        if (!isWithinPeriod(date) || !isPersonalInvoice(invoice)) {
           return sum;
         }
-        return sum + _expenseTotal(expense);
+        return sum + _invoiceTotal(invoice);
       });
 
-      return MonthlyFinanceReminderSummary(
-        month: monthStart,
-        totalIncome: totalIncome,
-        totalExpense: totalExpense,
+      var cvAutoSanguExpense = 0.0;
+      var personalAutoSanguExpense = 0.0;
+      for (final expense in expenses) {
+        if (!isAutoSanguExpense(expense)) continue;
+        final date =
+            Formatters.parseDate(expense['tanggal'] ?? expense['created_at']);
+        if (!isWithinPeriod(date)) continue;
+
+        final linkedInvoice =
+            invoiceByMarker[normalizeMarker(autoSanguMarker(expense))];
+        if (linkedInvoice == null) continue;
+
+        final expenseTotal = _expenseTotal(expense);
+        if (isCvInvoice(linkedInvoice)) {
+          cvAutoSanguExpense += expenseTotal;
+        } else if (isPersonalInvoice(linkedInvoice)) {
+          personalAutoSanguExpense += expenseTotal;
+        }
+      }
+
+      return FinanceReminderSummary(
+        periodStart: start,
+        periodEndExclusive: end,
+        cv: FinanceReminderEntitySummary(
+          income: cvIncome,
+          autoSanguExpense: cvAutoSanguExpense,
+        ),
+        personal: FinanceReminderEntitySummary(
+          income: personalIncome,
+          autoSanguExpense: personalAutoSanguExpense,
+        ),
       );
     } on PostgrestException catch (e) {
       throw Exception(
-        'Gagal memuat ringkasan keuangan bulanan: ${e.message}',
+        'Gagal memuat ringkasan keuangan reminder: ${e.message}',
       );
     }
   }

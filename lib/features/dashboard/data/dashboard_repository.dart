@@ -69,17 +69,34 @@ class IncomePricingBackfillReport {
   bool get hasChanges => updatedInvoices > 0;
 }
 
-class MonthlyFinanceReminderSummary {
-  const MonthlyFinanceReminderSummary({
-    required this.month,
-    required this.totalIncome,
-    required this.totalExpense,
+class FinanceReminderEntitySummary {
+  const FinanceReminderEntitySummary({
+    required this.income,
+    required this.autoSanguExpense,
   });
 
-  final DateTime month;
-  final double totalIncome;
-  final double totalExpense;
+  final double income;
+  final double autoSanguExpense;
 
+  double get netProfit => income - autoSanguExpense;
+}
+
+class FinanceReminderSummary {
+  const FinanceReminderSummary({
+    required this.periodStart,
+    required this.periodEndExclusive,
+    required this.cv,
+    required this.personal,
+  });
+
+  final DateTime periodStart;
+  final DateTime periodEndExclusive;
+  final FinanceReminderEntitySummary cv;
+  final FinanceReminderEntitySummary personal;
+
+  DateTime get month => DateTime(periodStart.year, periodStart.month, 1);
+  double get totalIncome => cv.income + personal.income;
+  double get totalExpense => cv.autoSanguExpense + personal.autoSanguExpense;
   double get netProfit => totalIncome - totalExpense;
 }
 

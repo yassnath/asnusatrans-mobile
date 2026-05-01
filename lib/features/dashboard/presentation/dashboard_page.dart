@@ -766,7 +766,7 @@ class _DashboardPageState extends State<DashboardPage> {
       _reload();
       return;
     }
-    if (widget.session.isPengurus &&
+    if ((widget.session.isAdminOrOwner || widget.session.isPengurus) &&
         intent.target == PushNavigationTarget.invoiceList) {
       setState(() {
         _adminIndex = 1;

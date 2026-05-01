@@ -73,6 +73,7 @@ class PushNotificationService {
 
   static final PushNotificationService instance = PushNotificationService._();
   static const _monthlyFinanceReminderNotificationId = 930517;
+  static const _weeklyFinanceReminderNotificationId = 930518;
   static const _windowsNotificationGuid =
       '2f0ee9e1-9fcc-49cc-97a5-7a1f4a8cf3b9';
 
@@ -133,8 +134,8 @@ class PushNotificationService {
         if (_pushRuntimeReady) {
           unawaited(_syncBoundToken());
         }
-        if (activeSession.isBackofficeUser) {
-          unawaited(refreshMonthlyFinanceReminder());
+        if (activeSession.isAdminOrOwner) {
+          unawaited(refreshFinanceReminderNotifications());
         }
       },
     );
@@ -193,10 +194,10 @@ class PushNotificationService {
     final previousRole = _boundSession?.normalizedRole;
     _boundSession = session;
     await _initializeLocalNotifications();
-    if (session.isBackofficeUser) {
-      unawaited(refreshMonthlyFinanceReminder());
+    if (session.isAdminOrOwner) {
+      unawaited(refreshFinanceReminderNotifications());
     } else {
-      await _cancelMonthlyFinanceReminder();
+      await _cancelFinanceReminderNotifications();
     }
     if (!_pushRuntimeReady) return;
     await _syncRoleTopicSubscription(
@@ -212,7 +213,7 @@ class PushNotificationService {
     final previousRole = _boundSession?.normalizedRole;
     _boundSession = null;
     _cancelTokenRetry();
-    await _cancelMonthlyFinanceReminder();
+    await _cancelFinanceReminderNotifications();
     if (_pushRuntimeReady) {
       await _syncRoleTopicSubscription(
         previousRole: previousRole,
@@ -326,50 +327,106 @@ class PushNotificationService {
     }
   }
 
-  Future<void> refreshMonthlyFinanceReminder() async {
+  Future<void> refreshMonthlyFinanceReminder() {
+    return refreshFinanceReminderNotifications();
+  }
+
+  Future<void> refreshFinanceReminderNotifications() async {
     final session = _boundSession;
     await _initializeLocalNotifications();
-    await _cancelMonthlyFinanceReminder();
-    if (session == null || !session.isBackofficeUser) return;
+    await _cancelFinanceReminderNotifications();
+    if (session == null || !session.isAdminOrOwner) return;
+    if (!_localNotificationsReady) return;
 
     try {
       _ensureJakartaTimezone();
-      final scheduledDate = _resolveMonthlyFinanceReminderSchedule();
       final repository = DashboardRepository(Supabase.instance.client);
-      final summary = await repository.loadMonthlyFinanceReminderSummary(
-        targetMonth: scheduledDate,
-      );
-      final reminderBody = _buildMonthlyFinanceReminderBody(summary);
-
-      await _localNotifications.zonedSchedule(
-        id: _monthlyFinanceReminderNotificationId,
-        title: _buildMonthlyFinanceReminderTitle(summary.month),
-        body: reminderBody,
-        scheduledDate: scheduledDate,
-        notificationDetails: _buildMonthlyFinanceReminderDetails(reminderBody),
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-        payload: _encodePayload(<String, dynamic>{
-          'target': 'invoice_list',
-          'notification_type': 'monthly_finance_summary',
-          'month':
-              '${summary.month.year.toString().padLeft(4, '0')}-${summary.month.month.toString().padLeft(2, '0')}',
-        }),
-      );
+      await Future.wait<void>([
+        _scheduleWeeklyFinanceReminder(repository),
+        _scheduleMonthlyFinanceReminder(repository),
+      ]);
     } catch (error, stackTrace) {
       AppSecurity.debugLog(
-        'Failed to refresh monthly finance reminder',
+        'Failed to refresh finance reminder notifications',
         error: error,
         stackTrace: stackTrace,
       );
     }
   }
 
-  Future<void> _cancelMonthlyFinanceReminder() async {
+  Future<void> _scheduleWeeklyFinanceReminder(
+    DashboardRepository repository,
+  ) async {
+    final scheduledDate = _resolveWeeklyFinanceReminderSchedule();
+    final period = _resolveWeeklyReminderPeriod(scheduledDate);
+    final summary = await repository.loadFinanceReminderSummary(
+      periodStart: period.start,
+      periodEndExclusive: period.endExclusive,
+    );
+    final reminderBody = _buildFinanceReminderBody(
+      summary,
+      periodLabel: 'Dalam minggu ini',
+    );
+
+    await _localNotifications.zonedSchedule(
+      id: _weeklyFinanceReminderNotificationId,
+      title: 'Ringkasan Keuangan Mingguan',
+      body: reminderBody,
+      scheduledDate: scheduledDate,
+      notificationDetails: _buildFinanceReminderDetails(
+        reminderBody,
+        subtitle: 'Reminder mingguan Senin-Minggu',
+      ),
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      payload: _encodePayload(<String, dynamic>{
+        'target': 'invoice_list',
+        'notification_type': 'weekly_finance_summary',
+        'period_start': _dateOnlyIso(summary.periodStart),
+        'period_end': _dateOnlyIso(
+          summary.periodEndExclusive.subtract(const Duration(days: 1)),
+        ),
+      }),
+    );
+  }
+
+  Future<void> _scheduleMonthlyFinanceReminder(
+    DashboardRepository repository,
+  ) async {
+    final scheduledDate = _resolveMonthlyFinanceReminderSchedule();
+    final summary = await repository.loadMonthlyFinanceReminderSummary(
+      targetMonth: scheduledDate,
+    );
+    final reminderBody = _buildFinanceReminderBody(
+      summary,
+      periodLabel: 'Dalam bulan ini',
+    );
+
+    await _localNotifications.zonedSchedule(
+      id: _monthlyFinanceReminderNotificationId,
+      title: _buildMonthlyFinanceReminderTitle(summary.month),
+      body: reminderBody,
+      scheduledDate: scheduledDate,
+      notificationDetails: _buildFinanceReminderDetails(
+        reminderBody,
+        subtitle: 'Reminder akhir bulan pukul 17.00 WIB',
+      ),
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      payload: _encodePayload(<String, dynamic>{
+        'target': 'invoice_list',
+        'notification_type': 'monthly_finance_summary',
+        'month':
+            '${summary.month.year.toString().padLeft(4, '0')}-${summary.month.month.toString().padLeft(2, '0')}',
+      }),
+    );
+  }
+
+  Future<void> _cancelFinanceReminderNotifications() async {
     if (!_localNotificationsReady) return;
     try {
-      await _localNotifications.cancel(
-        id: _monthlyFinanceReminderNotificationId,
-      );
+      await Future.wait<void>([
+        _localNotifications.cancel(id: _monthlyFinanceReminderNotificationId),
+        _localNotifications.cancel(id: _weeklyFinanceReminderNotificationId),
+      ]);
     } catch (_) {}
   }
 
@@ -395,6 +452,50 @@ class PushNotificationService {
     return buildLastDayAtFive(nextMonth);
   }
 
+  tz.TZDateTime _resolveWeeklyFinanceReminderSchedule({DateTime? now}) {
+    final reference = tz.TZDateTime.from(now ?? DateTime.now(), tz.local);
+    final daysUntilSunday = DateTime.sunday - reference.weekday;
+    final candidateDay = reference.add(Duration(days: daysUntilSunday));
+    var schedule = tz.TZDateTime(
+      tz.local,
+      candidateDay.year,
+      candidateDay.month,
+      candidateDay.day,
+      17,
+    );
+    if (!schedule.isAfter(reference)) {
+      final nextSunday = candidateDay.add(const Duration(days: 7));
+      schedule = tz.TZDateTime(
+        tz.local,
+        nextSunday.year,
+        nextSunday.month,
+        nextSunday.day,
+        17,
+      );
+    }
+    return schedule;
+  }
+
+  ({DateTime start, DateTime endExclusive}) _resolveWeeklyReminderPeriod(
+    tz.TZDateTime scheduledDate,
+  ) {
+    final scheduledDay = DateTime(
+      scheduledDate.year,
+      scheduledDate.month,
+      scheduledDate.day,
+    );
+    final start = scheduledDay.subtract(
+      Duration(days: scheduledDay.weekday - DateTime.monday),
+    );
+    return (start: start, endExclusive: start.add(const Duration(days: 7)));
+  }
+
+  String _dateOnlyIso(DateTime date) {
+    return '${date.year.toString().padLeft(4, '0')}-'
+        '${date.month.toString().padLeft(2, '0')}-'
+        '${date.day.toString().padLeft(2, '0')}';
+  }
+
   String _buildMonthlyFinanceReminderTitle(DateTime month) {
     const monthNames = <String>[
       'Januari',
@@ -413,13 +514,13 @@ class PushNotificationService {
     return 'Ringkasan Keuangan ${monthNames[month.month - 1]} ${month.year}';
   }
 
-  String _buildMonthlyFinanceReminderBody(
-    MonthlyFinanceReminderSummary summary,
-  ) {
+  String _buildFinanceReminderBody(
+    FinanceReminderSummary summary, {
+    required String periodLabel,
+  }) {
     return [
-      'Total pemasukkan: ${_formatSignedRupiah(summary.totalIncome)}',
-      'Total pengeluaran: ${_formatSignedRupiah(summary.totalExpense)}',
-      'Laba pendapatan: ${_formatSignedRupiah(summary.netProfit)}',
+      '$periodLabel, pemasukkan CV sebesar: ${_formatSignedRupiah(summary.cv.income)} dengan pengeluaran sebesar: ${_formatSignedRupiah(summary.cv.autoSanguExpense)}.',
+      'Pemasukkan pribadi sebesar: ${_formatSignedRupiah(summary.personal.income)} dengan pengeluaran sebesar: ${_formatSignedRupiah(summary.personal.autoSanguExpense)}.',
     ].join('\n');
   }
 
@@ -431,7 +532,10 @@ class PushNotificationService {
     return Formatters.rupiah(amount);
   }
 
-  NotificationDetails _buildMonthlyFinanceReminderDetails(String body) {
+  NotificationDetails _buildFinanceReminderDetails(
+    String body, {
+    required String subtitle,
+  }) {
     return NotificationDetails(
       android: AndroidNotificationDetails(
         _defaultChannel.id,
@@ -454,7 +558,7 @@ class PushNotificationService {
         presentSound: true,
       ),
       windows: WindowsNotificationDetails(
-        subtitle: 'Reminder akhir bulan pukul 17.00 WIB',
+        subtitle: subtitle,
         duration: WindowsNotificationDuration.long,
         timestamp: DateTime.now(),
       ),
