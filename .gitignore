@@ -54,17 +54,3 @@ backup/
 **/*.bak
 **/*.dump
 **/*.sql
-!supabase/seed_harga_per_ton_rules.sql
-!supabase/patch_income_harga_rules_20260417.sql
-!supabase/patch_sangu_batang_langon_20260418.sql
-!supabase/patch_fixed_invoice_device_sync_20260424.sql
-!supabase/patch_fixed_invoice_payment_columns_20260424.sql
-!supabase/patch_unergi_royal_income_sangu_20260424.sql
-!supabase/patch_muncar_tolakan_pricing_sangu_20260427.sql
-!supabase/patch_fixed_invoice_manual_payment_20260427.sql
-!supabase/patch_non_betoyo_harga_rules_20260427.sql
-!supabase/patch_temanggung_danliris_income_sangu_20260428.sql
-!supabase/patch_clear_langon_pickup_harga_rules_20260428.sql
-!supabase/patch_bumindo_income_sangu_20260429.sql
-!supabase/patch_batang_bornava_pricing_20260429.sql
-!supabase/patch_surya_warna_sukoharjo_income_sangu_20260430.sql

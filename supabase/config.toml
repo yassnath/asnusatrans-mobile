@@ -2,3 +2,6 @@ project_id = "msziutqvkrbwwohcdoou"
 
 [functions.send-push]
 verify_jwt = false
+
+[functions.finance-reminder-push]
+verify_jwt = false

@@ -83,6 +83,12 @@ extension DashboardRepositoryDashboardExtension on DashboardRepository {
         return invoiceEntityOf(invoice) == Formatters.invoiceEntityPersonal;
       }
 
+      double cvReminderIncome(Map<String, dynamic> invoice) {
+        final grossTotal = _num(invoice['total_biaya']);
+        if (grossTotal <= 0) return _invoiceTotal(invoice);
+        return max(0, grossTotal - _num(invoice['pph']));
+      }
+
       final invoiceByMarker = <String, Map<String, dynamic>>{};
       for (final invoice in invoices) {
         final id = '${invoice['id'] ?? ''}'.trim();
@@ -127,7 +133,7 @@ extension DashboardRepositoryDashboardExtension on DashboardRepository {
         if (!isWithinPeriod(date) || !isCvInvoice(invoice)) {
           return sum;
         }
-        return sum + _invoiceTotal(invoice);
+        return sum + cvReminderIncome(invoice);
       });
       final personalIncome = invoices.fold<double>(0, (sum, invoice) {
         final date = _invoiceReferenceDate(invoice);
