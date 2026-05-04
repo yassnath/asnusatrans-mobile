@@ -739,10 +739,16 @@ class DashboardRepository {
   }) {
     final ids = <String>{};
     final primary = primaryArmadaId?.trim() ?? '';
-    if (primary.isNotEmpty && _isLikelyUuid(primary)) {
+    final allDetailsUseManualArmada = details != null &&
+        details.isNotEmpty &&
+        details.every(_detailUsesManualArmada);
+    if (!allDetailsUseManualArmada &&
+        primary.isNotEmpty &&
+        _isLikelyUuid(primary)) {
       ids.add(primary);
     }
     for (final detail in details ?? const <Map<String, dynamic>>[]) {
+      if (_detailUsesManualArmada(detail)) continue;
       final value = detail['armada_id'];
       final id = value == null ? '' : value.toString().trim();
       if (id.isNotEmpty && _isLikelyUuid(id)) {
@@ -756,6 +762,11 @@ class DashboardRepository {
     String? explicitName,
     List<Map<String, dynamic>>? details,
   }) {
+    final hasOnlyManualDetails = details != null &&
+        details.isNotEmpty &&
+        details.every(_detailUsesManualArmada);
+    if (hasOnlyManualDetails) return null;
+
     final direct = explicitName?.trim();
     if (direct != null && direct.isNotEmpty) {
       final lowered = direct.toLowerCase();
@@ -770,6 +781,7 @@ class DashboardRepository {
     if (details == null || details.isEmpty) return null;
     final names = <String>{};
     for (final detail in details) {
+      if (_detailUsesManualArmada(detail)) continue;
       final candidateValues = <String>[];
       final primaryRaw =
           '${detail['nama_supir'] ?? detail['namaSupir'] ?? detail['supir'] ?? detail['driver_name'] ?? detail['driver'] ?? detail['nama supir'] ?? ''}'
@@ -807,6 +819,7 @@ class DashboardRepository {
 
   String? _extractSingleDriverName(Map<String, dynamic>? detail) {
     if (detail == null || detail.isEmpty) return null;
+    if (_detailUsesManualArmada(detail)) return null;
     final candidateValues = <String>[];
     final primaryRaw =
         '${detail['nama_supir'] ?? detail['namaSupir'] ?? detail['supir'] ?? detail['driver_name'] ?? detail['driver'] ?? detail['nama supir'] ?? ''}'
@@ -854,6 +867,7 @@ class DashboardRepository {
     if (details != null && details.isNotEmpty) {
       return details.map((row) {
         final next = Map<String, dynamic>.from(row);
+        final isManualArmada = _detailUsesManualArmada(next);
 
         void fillText(String key, String? fallback) {
           final current = '${next[key] ?? ''}'.trim();
@@ -871,11 +885,31 @@ class DashboardRepository {
 
         fillText('lokasi_muat', pickup);
         fillText('lokasi_bongkar', destination);
-        fillText('armada_id', armadaId);
+        if (isManualArmada) {
+          next['armada_id'] = null;
+          next['nama_supir'] = null;
+          next['supir'] = null;
+          next['driver'] = null;
+          next['driver_name'] = null;
+          next['armada_is_manual'] = true;
+          final manual = _firstNonEmptyText([
+            next['armada_manual'],
+            next['armada_label'],
+            next['armada'],
+            _isManualArmadaText(next['plat_nomor']) ? next['plat_nomor'] : null,
+            _isManualArmadaText(next['no_polisi']) ? next['no_polisi'] : null,
+          ]);
+          if (manual.isNotEmpty) {
+            next['armada_manual'] = manual;
+            next['armada_label'] = manual;
+          }
+        } else {
+          fillText('armada_id', armadaId);
+          fillText('nama_supir', namaSupir);
+        }
         fillDate('armada_start_date', armadaStartDate);
         fillDate('armada_end_date', armadaEndDate);
         fillText('muatan', muatan);
-        fillText('nama_supir', namaSupir);
         return next;
       }).toList();
     }
@@ -948,11 +982,27 @@ class DashboardRepository {
   }
 
   bool _detailUsesManualArmada(Map<String, dynamic> detail) {
-    final manual = '${detail['armada_manual'] ?? ''}'.trim();
-    if (manual.isNotEmpty) return true;
     final isManual = detail['armada_is_manual'];
     if (isManual is bool && isManual) return true;
-    return false;
+    final isManualText = '${isManual ?? ''}'.trim().toLowerCase();
+    if (isManualText == 'true' || isManualText == '1') return true;
+    final manual = '${detail['armada_manual'] ?? ''}'.trim();
+    if (manual.isNotEmpty) return true;
+    return _isManualArmadaText(detail['armada_label']) ||
+        _isManualArmadaText(detail['armada']) ||
+        _isManualArmadaText(detail['plat_nomor']) ||
+        _isManualArmadaText(detail['no_polisi']);
+  }
+
+  bool _isManualArmadaText(dynamic value) {
+    final raw = '${value ?? ''}'.trim();
+    if (raw.isEmpty) return false;
+    final normalized =
+        raw.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
+    return normalized == 'gabungan' ||
+        normalized.contains('gabungan') ||
+        normalized == 'manual' ||
+        normalized.contains('input manual');
   }
 
   bool _shouldSkipAutoSanguForManualArmada(
@@ -1683,6 +1733,21 @@ class DashboardRepository {
     required Map<String, String> plateById,
     String? fallbackArmadaId,
   }) {
+    if (_detailUsesManualArmada(detail)) {
+      final manual = _firstNonEmptyText([
+        detail['armada_manual'],
+        detail['armada_label'],
+        detail['armada'],
+        detail['plat_nomor'],
+        detail['no_polisi'],
+      ]);
+      if (manual.isEmpty || manual == '-') return '';
+      final match = RegExp(
+        r'\b[A-Z]{1,2}\s?\d{1,4}\s?[A-Z]{1,3}\b',
+      ).firstMatch(manual.toUpperCase());
+      return (match?.group(0) ?? manual).trim().toUpperCase();
+    }
+
     final detailArmadaId = _firstNonEmptyText([
       detail['armada_id'],
       fallbackArmadaId,

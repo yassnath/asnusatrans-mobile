@@ -421,6 +421,26 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
     return '-';
   }
 
+  bool _isManualPreviewArmadaRow(Map<String, dynamic> row) {
+    if (row['armada_is_manual'] == true) return true;
+    if ('${row['armada_manual'] ?? ''}'.trim().isNotEmpty) return true;
+    bool hasManualMarker(dynamic value) {
+      final normalized = '${value ?? ''}'
+          .toLowerCase()
+          .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+          .trim();
+      return normalized == 'gabungan' ||
+          normalized.contains('gabungan') ||
+          normalized == 'manual' ||
+          normalized.contains('input manual');
+    }
+
+    return hasManualMarker(row['armada_label']) ||
+        hasManualMarker(row['armada']) ||
+        hasManualMarker(row['plat_nomor']) ||
+        hasManualMarker(row['no_polisi']);
+  }
+
   Map<String, dynamic> _fallbackPreviewDetailRow(
     Map<String, dynamic> item,
   ) {
@@ -1166,8 +1186,9 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                                   endLabel.isEmpty || endLabel == startLabel
                                       ? startLabel
                                       : '$startLabel - $endLabel';
-                              final driver =
-                                  '${detail['nama_supir'] ?? detail['supir'] ?? '-'}'
+                              final driver = _isManualPreviewArmadaRow(detail)
+                                  ? ''
+                                  : '${detail['nama_supir'] ?? detail['supir'] ?? ''}'
                                       .trim();
                               final muatan =
                                   '${detail['muatan'] ?? '-'}'.trim();
@@ -1222,7 +1243,9 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                                     ),
                                     const SizedBox(height: 3),
                                     Text(
-                                      '${driver.isEmpty ? '-' : driver}: $muat-$bongkar',
+                                      driver.isEmpty
+                                          ? '$muat-$bongkar'
+                                          : '$driver: $muat-$bongkar',
                                       style: TextStyle(
                                         color: AppColors.textMutedFor(context),
                                       ),

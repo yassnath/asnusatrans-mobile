@@ -232,6 +232,23 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     Map<String, String>? armadaPlateByName,
     String? fallbackArmadaId,
   }) {
+    if (_isManualArmadaRow(row)) {
+      for (final candidate in <String>[
+        '${row['armada_manual'] ?? ''}'.trim(),
+        '${row['armada_label'] ?? ''}'.trim(),
+        '${row['armada'] ?? ''}'.trim(),
+        '${row['plat_nomor'] ?? ''}'.trim(),
+        '${row['no_polisi'] ?? ''}'.trim(),
+      ]) {
+        if (candidate.isEmpty || candidate == '-') continue;
+        final parsed = _extractPlateFromText(candidate);
+        return parsed == null || parsed.isEmpty || parsed == '-'
+            ? candidate.toUpperCase()
+            : parsed;
+      }
+      return '-';
+    }
+
     final rowArmadaId = '${row['armada_id'] ?? ''}'.trim();
     if (rowArmadaId.isNotEmpty && armadaPlateById != null) {
       final byArmada = armadaPlateById[rowArmadaId];
@@ -299,6 +316,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     if (direct.isNotEmpty) return direct;
     final manual = armadaManual.trim();
     if (manual.isEmpty) return '';
+    if (_isManualArmadaText(manual)) return '';
     final extracted = _extractPlateFromText(manual);
     final normalized = _normalizePlateText(manual);
     return armadaIdByPlate[extracted ?? normalized] ?? '';
@@ -319,6 +337,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     Map<String, dynamic> row, {
     required List<Map<String, dynamic>> armadas,
   }) {
+    if (_isManualArmadaRow(row)) return null;
     var plate = '';
     final armadaId = '${row['armada_id'] ?? ''}'.trim();
     if (armadaId.isNotEmpty) {
@@ -364,22 +383,49 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
   }
 
   bool _isManualArmadaRow(Map<String, dynamic> row) {
-    return row['armada_is_manual'] == true ||
-        ('${row['armada_id'] ?? ''}'.trim().isEmpty &&
-            '${row['armada_manual'] ?? ''}'.trim().isNotEmpty);
+    if (row['armada_is_manual'] == true) return true;
+    if ('${row['armada_manual'] ?? ''}'.trim().isNotEmpty) return true;
+    return _isManualArmadaText(row['armada_label']) ||
+        _isManualArmadaText(row['armada']) ||
+        _isManualArmadaText(row['plat_nomor']) ||
+        _isManualArmadaText(row['no_polisi']);
+  }
+
+  bool _isManualArmadaText(dynamic value) {
+    final raw = '${value ?? ''}'.trim();
+    if (raw.isEmpty) return false;
+    final normalized =
+        raw.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
+    return normalized == 'gabungan' ||
+        normalized.contains('gabungan') ||
+        normalized == 'manual' ||
+        normalized.contains('input manual');
   }
 
   void _clearDriverForManualArmadaIfNeeded(Map<String, dynamic> row) {
     if (!_isManualArmadaRow(row)) return;
-    final currentDriver = '${row['nama_supir'] ?? ''}'.trim();
-    if (currentDriver.isEmpty ||
-        row['nama_supir_auto'] == true ||
-        _isKnownDriverOption(currentDriver)) {
-      row['nama_supir'] = '';
-      row['nama_supir_manual'] = '';
-      row['nama_supir_is_manual'] = false;
-      row['nama_supir_auto'] = false;
+    final manual = '${row['armada_manual'] ?? ''}'.trim();
+    if (manual.isEmpty) {
+      for (final key in const [
+        'armada_label',
+        'armada',
+        'plat_nomor',
+        'no_polisi',
+      ]) {
+        final value = '${row[key] ?? ''}'.trim();
+        if (_isManualArmadaText(value)) {
+          row['armada_manual'] = value;
+          row['armada_label'] = value;
+          break;
+        }
+      }
     }
+    row['armada_id'] = '';
+    row['armada_is_manual'] = true;
+    row['nama_supir'] = '';
+    row['nama_supir_manual'] = '';
+    row['nama_supir_is_manual'] = false;
+    row['nama_supir_auto'] = false;
   }
 
   void _syncDriverWithArmadaSelection(

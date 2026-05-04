@@ -146,7 +146,7 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
       final rawManual =
           '${row['armada_manual'] ?? row['armada_label'] ?? row['armada'] ?? row['plat_nomor'] ?? row['no_polisi'] ?? ''}'
               .trim();
-      final useManual = rawArmadaId.isEmpty && rawManual.isNotEmpty;
+      final useManual = _isManualArmadaRow(row);
       final resolvedArmadaId = useManual
           ? ''
           : _resolveArmadaIdFromInput(
@@ -1106,10 +1106,29 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                               normalizeNullable(
                                                     row['armada_manual'],
                                                   ) ??
+                                                  normalizeNullable(
+                                                    row['armada_label'],
+                                                  ) ??
+                                                  normalizeNullable(
+                                                    row['armada'],
+                                                  ) ??
+                                                  (_isManualArmadaText(
+                                                    row['plat_nomor'],
+                                                  )
+                                                      ? normalizeNullable(
+                                                          row['plat_nomor'],
+                                                        )
+                                                      : null) ??
+                                                  (_isManualArmadaText(
+                                                    row['no_polisi'],
+                                                  )
+                                                      ? normalizeNullable(
+                                                          row['no_polisi'],
+                                                        )
+                                                      : null) ??
                                                   '';
                                           final useManual =
-                                              _isManualArmadaRow(row) &&
-                                                  armadaManualRaw.isNotEmpty;
+                                              _isManualArmadaRow(row);
                                           final resolvedArmadaId = useManual
                                               ? ''
                                               : _resolveArmadaIdFromInput(

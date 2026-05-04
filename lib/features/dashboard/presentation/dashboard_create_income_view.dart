@@ -249,7 +249,9 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
       };
       final defaultDriver =
           _resolveDefaultDriverForRow(row, armadas: armadas)?.trim() ?? '';
-      if (!isDriverManual && defaultDriver.isNotEmpty) {
+      if (_isManualArmadaRow(row)) {
+        _clearDriverForManualArmadaIfNeeded(row);
+      } else if (!isDriverManual && defaultDriver.isNotEmpty) {
         if (driverText.isEmpty ||
             _normalizeText(driverText) == _normalizeText(defaultDriver)) {
           row['nama_supir'] = defaultDriver;
@@ -374,7 +376,8 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
     final selectedArmadaIds = _details
         .map(
           (row) => _resolveArmadaIdFromInput(
-            armadaId: '${row['armada_id']}'.trim(),
+            armadaId:
+                _isManualArmadaRow(row) ? '' : '${row['armada_id']}'.trim(),
             armadaManual: _isManualArmadaRow(row)
                 ? ''
                 : '${row['armada_manual'] ?? ''}'.trim(),
@@ -413,8 +416,17 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
 
     final detailsPayload = _details.map((row) {
       final armadaId = '${row['armada_id']}'.trim();
-      final armadaManualRaw = _nullableInputText(row['armada_manual']) ?? '';
-      final useManual = _isManualArmadaRow(row) && armadaManualRaw.isNotEmpty;
+      final armadaManualRaw = _nullableInputText(row['armada_manual']) ??
+          _nullableInputText(row['armada_label']) ??
+          _nullableInputText(row['armada']) ??
+          (_isManualArmadaText(row['plat_nomor'])
+              ? _nullableInputText(row['plat_nomor'])
+              : null) ??
+          (_isManualArmadaText(row['no_polisi'])
+              ? _nullableInputText(row['no_polisi'])
+              : null) ??
+          '';
+      final useManual = _isManualArmadaRow(row);
       final resolvedArmadaId = useManual
           ? ''
           : _resolveArmadaIdFromInput(

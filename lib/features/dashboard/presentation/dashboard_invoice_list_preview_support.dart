@@ -72,7 +72,9 @@ extension _AdminInvoiceListViewStatePreviewSupport
                       final harga = _toNum(row['harga']);
                       final subtotalDetail =
                           _resolveInvoiceDetailSubtotalShared(row);
-                      final driver = '${row['nama_supir'] ?? ''}'.trim();
+                      final driver = _isManualArmadaRow(row)
+                          ? ''
+                          : '${row['nama_supir'] ?? ''}'.trim();
                       final muatan = '${row['muatan'] ?? ''}'.trim();
                       final plate = _resolveDetailPlateText(
                         row,

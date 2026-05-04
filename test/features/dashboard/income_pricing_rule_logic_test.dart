@@ -261,6 +261,31 @@ void main() {
       expect(rule?['harga_per_ton'], 235.0);
     });
 
+    test('returns generic Batang rule even from Betoyo pickup', () {
+      final rule = resolveBuiltInIncomePricingRule(
+        customerName: 'CV Tritunggal Makmur Abadi',
+        pickup: 'Betoyo',
+        destination: 'batang',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule?['lokasi_bongkar'], 'Batang');
+      expect(rule?['harga_per_ton'], 235.0);
+    });
+
+    test('keeps Bornava Batang rule even from Betoyo pickup', () {
+      final rule = resolveBuiltInIncomePricingRule(
+        customerName: 'PT Bornava Indobara Mandiri',
+        pickup: 'Betoyo',
+        destination: 'batang',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule?['customer_name'], 'Bornava');
+      expect(rule?['lokasi_bongkar'], 'Batang');
+      expect(rule?['harga_per_ton'], 225.0);
+    });
+
     test('returns null for unrelated route', () {
       final rule = resolveBuiltInIncomePricingRule(
         customerName: 'Giono',

@@ -139,8 +139,7 @@ Map<String, dynamic>? resolveBuiltInIncomePricingRule({
     };
   }
 
-  if (!pickupIsBetoyo &&
-      incomePricingLocationKeyMatches(destinationKey, 'batang')) {
+  if (incomePricingLocationKeyMatches(destinationKey, 'batang')) {
     final isBornava = incomePricingCustomerNameMatches(customerKey, 'bornava');
     return <String, dynamic>{
       'customer_name': isBornava ? 'Bornava' : null,

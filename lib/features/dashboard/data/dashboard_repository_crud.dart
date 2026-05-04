@@ -120,13 +120,15 @@ extension DashboardRepositoryCrudExtension on DashboardRepository {
 
       for (var i = 0; i < sanitizedDetails.length; i++) {
         final detail = Map<String, dynamic>.from(sanitizedDetails[i]);
+        final detailUsesManualArmada = _detailUsesManualArmada(detail);
         final detailPickup = '${detail['lokasi_muat'] ?? pickup ?? ''}'.trim();
         final detailDestination =
             '${detail['lokasi_bongkar'] ?? destination ?? ''}'.trim();
-        final detailArmadaId =
-            '${detail['armada_id'] ?? armadaId ?? ''}'.trim().isEmpty
+        final detailArmadaId = detailUsesManualArmada
+            ? null
+            : ('${detail['armada_id'] ?? armadaId ?? ''}'.trim().isEmpty
                 ? null
-                : '${detail['armada_id'] ?? armadaId}'.trim();
+                : '${detail['armada_id'] ?? armadaId}'.trim());
         final detailArmadaStartDate =
             Formatters.parseDate(detail['armada_start_date']) ??
                 armadaStartDate;
@@ -136,10 +138,12 @@ extension DashboardRepositoryCrudExtension on DashboardRepository {
             '${detail['muatan'] ?? muatan ?? ''}'.trim().isEmpty
                 ? null
                 : '${detail['muatan'] ?? muatan}'.trim();
-        final detailDriver = _resolveDriverNames(
-          explicitName: '${detail['nama_supir'] ?? namaSupir ?? ''}',
-          details: [detail],
-        );
+        final detailDriver = detailUsesManualArmada
+            ? null
+            : _resolveDriverNames(
+                explicitName: '${detail['nama_supir'] ?? namaSupir ?? ''}',
+                details: [detail],
+              );
         final detailTonase = _num(detail['tonase']);
         final detailHarga = _num(detail['harga']);
         final detailTotal = _resolveIncomeDetailTotal(detail);
@@ -311,6 +315,9 @@ extension DashboardRepositoryCrudExtension on DashboardRepository {
       explicitName: namaSupir,
       details: details,
     );
+    final detailsUseOnlyManualArmada = details != null &&
+        details.isNotEmpty &&
+        details.every(_detailUsesManualArmada);
     final pphValue = includePph ? max(0, (total * 0.02).floorToDouble()) : 0.0;
     final totalBayarValue = max(0, total - pphValue);
     final normalizedInvoiceEntity = _resolveInvoiceEntity(
@@ -377,7 +384,9 @@ extension DashboardRepositoryCrudExtension on DashboardRepository {
     if (orderId != null && orderId.trim().isNotEmpty) {
       basePayload['order_id'] = orderId.trim();
     }
-    if (armadaId != null && armadaId.trim().isNotEmpty) {
+    if (!detailsUseOnlyManualArmada &&
+        armadaId != null &&
+        armadaId.trim().isNotEmpty) {
       basePayload['armada_id'] = armadaId.trim();
     }
     if (details != null && details.isNotEmpty) {
@@ -755,6 +764,8 @@ extension DashboardRepositoryCrudExtension on DashboardRepository {
       explicitName: namaSupir,
       details: details,
     );
+    final detailsUseOnlyManualArmada = effectiveDetails.isNotEmpty &&
+        effectiveDetails.every(_detailUsesManualArmada);
     var effectiveInvoiceNumber = noInvoice?.trim() ?? '';
     try {
       final normalizedKopLocation =
@@ -822,7 +833,9 @@ extension DashboardRepositoryCrudExtension on DashboardRepository {
         effectiveInvoiceNumber = '${payload['no_invoice'] ?? ''}'.trim();
       }
 
-      if (armadaId != null && armadaId.trim().isNotEmpty) {
+      if (!detailsUseOnlyManualArmada &&
+          armadaId != null &&
+          armadaId.trim().isNotEmpty) {
         payload['armada_id'] = armadaId.trim();
       } else {
         payload['armada_id'] = null;
