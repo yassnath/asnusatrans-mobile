@@ -954,6 +954,9 @@ Map<String, dynamic>? _resolveHargaRuleShared({
     destination: lokasiBongkar,
     cargo: muatan,
   );
+  if (isForcedBatangIncomePricingRule(builtInRule)) {
+    return builtInRule;
+  }
   if (rules.isEmpty) return builtInRule;
 
   Map<String, dynamic>? preferBuiltInCustomerRule(

@@ -152,6 +152,20 @@ void main() {
       expect(rule?['flat_total'], isNull);
     });
 
+    test('returns built-in Betoyo to Pare fallback rule', () {
+      final rule = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'BETOYO',
+        destination: 'pArE',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule?['lokasi_muat'], 'Betoyo');
+      expect(rule?['lokasi_bongkar'], 'Pare');
+      expect(rule?['harga_per_ton'], 87.0);
+      expect(rule?['flat_total'], isNull);
+    });
+
     test('returns built-in T. Langon to Surya Warna Sukoharjo rule', () {
       final rule = resolveBuiltInIncomePricingRule(
         customerName: 'Siapa Saja',
@@ -234,6 +248,16 @@ void main() {
       expect(rule?['customer_name'], 'Bornava');
       expect(rule?['lokasi_bongkar'], 'Batang');
       expect(rule?['harga_per_ton'], 225.0);
+    });
+
+    test('marks Batang built-in pricing as forced', () {
+      final rule = resolveBuiltInIncomePricingRule(
+        customerName: 'CV Siapa Saja',
+        pickup: 'Manual',
+        destination: 'Ba-TaNg',
+      );
+
+      expect(isForcedBatangIncomePricingRule(rule), isTrue);
     });
 
     test('returns generic Batang rule outside Bornava', () {

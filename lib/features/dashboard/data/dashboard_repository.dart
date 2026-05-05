@@ -69,6 +69,23 @@ class IncomePricingBackfillReport {
   bool get hasChanges => updatedInvoices > 0;
 }
 
+class InvoiceDetailDateSyncReport {
+  const InvoiceDetailDateSyncReport({
+    required this.processedInvoices,
+    required this.updatedInvoices,
+    required this.skippedInvoices,
+    required this.failedInvoices,
+  });
+
+  final int processedInvoices;
+  final int updatedInvoices;
+  final int skippedInvoices;
+  final int failedInvoices;
+
+  bool get hasFailures => failedInvoices > 0;
+  bool get hasChanges => updatedInvoices > 0;
+}
+
 class FinanceReminderEntitySummary {
   const FinanceReminderEntitySummary({
     required this.income,
@@ -1415,6 +1432,89 @@ class DashboardRepository {
     );
   }
 
+  Future<InvoiceDetailDateSyncReport>
+      syncSingleDetailInvoiceDepartureDates() async {
+    var processedInvoices = 0;
+    var updatedInvoices = 0;
+    var skippedInvoices = 0;
+    var failedInvoices = 0;
+
+    try {
+      final invoices = _toMapList(
+        await _runInvoiceSelectWithFallback(
+          'id,tanggal,armada_start_date,rincian,submission_role,approval_status',
+          (columns) => _supabase.from('invoices').select(columns),
+        ),
+      );
+
+      for (final invoice in invoices) {
+        final invoiceId = '${invoice['id'] ?? ''}'.trim();
+        if (invoiceId.isEmpty) continue;
+        processedInvoices++;
+
+        try {
+          final details = _toMapList(invoice['rincian']);
+          if (details.length != 1) {
+            skippedInvoices++;
+            continue;
+          }
+
+          final detail = Map<String, dynamic>.from(details.first);
+          final canonicalDate =
+              _resolveCanonicalSingleDetailInvoiceDate(invoice, detail);
+          if (canonicalDate == null) {
+            skippedInvoices++;
+            continue;
+          }
+
+          final canonicalText = _dateOnly(canonicalDate);
+          final detailStartDate =
+              Formatters.parseDate(detail['armada_start_date']);
+          final detailStartText =
+              detailStartDate == null ? '' : _dateOnly(detailStartDate);
+          final invoiceStartDate =
+              Formatters.parseDate(invoice['armada_start_date']);
+          final invoiceStartText =
+              invoiceStartDate == null ? '' : _dateOnly(invoiceStartDate);
+          final invoiceDate = Formatters.parseDate(invoice['tanggal']);
+          final invoiceDateText =
+              invoiceDate == null ? '' : _dateOnly(invoiceDate);
+
+          if (detailStartText == canonicalText &&
+              invoiceStartText == canonicalText &&
+              invoiceDateText == canonicalText) {
+            skippedInvoices++;
+            continue;
+          }
+
+          detail['armada_start_date'] = canonicalText;
+          if (detail.containsKey('tanggal')) {
+            detail['tanggal'] = canonicalText;
+          }
+
+          await _updateInvoiceWithFallback(invoiceId, <String, dynamic>{
+            'tanggal': canonicalText,
+            'armada_start_date': canonicalText,
+            'rincian': <Map<String, dynamic>>[detail],
+            'updated_at': DateTime.now().toIso8601String(),
+          });
+          updatedInvoices++;
+        } catch (_) {
+          failedInvoices++;
+        }
+      }
+    } catch (_) {
+      failedInvoices++;
+    }
+
+    return InvoiceDetailDateSyncReport(
+      processedInvoices: processedInvoices,
+      updatedInvoices: updatedInvoices,
+      skippedInvoices: skippedInvoices,
+      failedInvoices: failedInvoices,
+    );
+  }
+
   Future<IncomePricingBackfillReport>
       backfillSpecialIncomePricingForExistingInvoices() async {
     var processedInvoices = 0;
@@ -1423,14 +1523,6 @@ class DashboardRepository {
     var failedInvoices = 0;
     try {
       final rules = await fetchHargaPerTonRules();
-      if (rules.isEmpty) {
-        return const IncomePricingBackfillReport(
-          processedInvoices: 0,
-          updatedInvoices: 0,
-          skippedInvoices: 0,
-          failedInvoices: 0,
-        );
-      }
 
       final invoices = _toMapList(
         await _runInvoiceSelectWithFallback(

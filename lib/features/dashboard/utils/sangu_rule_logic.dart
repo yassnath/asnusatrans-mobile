@@ -131,6 +131,18 @@ Map<String, dynamic>? resolvePrioritizedSanguRouteRule({
     };
   }
 
+  final betoyoToPare = pickupNorm == 'betoyo' && destinationNorm == 'pare';
+  if (betoyoToPare) {
+    return <String, dynamic>{
+      'tempat': 'BETOYO - PARE',
+      'lokasi_muat': 'BETOYO',
+      'lokasi_bongkar': 'PARE',
+      'nominal': 1165000,
+      '__muat_norm': 'betoyo',
+      '__bongkar_norm': 'pare',
+    };
+  }
+
   final langonToSuryaWarna =
       pickupNorm == 'langon' && destinationNorm == 'surya warna sukoharjo';
   if (langonToSuryaWarna) {

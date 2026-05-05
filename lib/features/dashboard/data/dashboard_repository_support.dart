@@ -662,6 +662,66 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
     return [];
   }
 
+  List<Map<String, dynamic>> _normalizeInvoiceRowsForApp(dynamic value) {
+    return _toMapList(value).map(_normalizeInvoiceRowForApp).toList();
+  }
+
+  Map<String, dynamic> _normalizeInvoiceRowForApp(
+    Map<String, dynamic> row,
+  ) {
+    final details = _toMapList(row['rincian']);
+    if (details.length != 1) return row;
+
+    final detail = Map<String, dynamic>.from(details.first);
+    final canonicalStartDate =
+        _resolveCanonicalSingleDetailInvoiceDate(row, detail);
+    if (canonicalStartDate == null) return row;
+
+    final canonicalDateText = _dateOnly(canonicalStartDate);
+    final detailStartDate = Formatters.parseDate(detail['armada_start_date']);
+    final rowStartDate = Formatters.parseDate(row['armada_start_date']);
+    final rowIssueDate = Formatters.parseDate(row['tanggal']);
+    if (detailStartDate != null &&
+        _dateOnly(detailStartDate) == canonicalDateText &&
+        rowStartDate != null &&
+        _dateOnly(rowStartDate) == canonicalDateText &&
+        rowIssueDate != null &&
+        _dateOnly(rowIssueDate) == canonicalDateText) {
+      return row;
+    }
+
+    detail['armada_start_date'] = canonicalDateText;
+    if (detail.containsKey('tanggal')) {
+      detail['tanggal'] = canonicalDateText;
+    }
+
+    return Map<String, dynamic>.from(row)
+      ..['tanggal'] = canonicalDateText
+      ..['armada_start_date'] = canonicalDateText
+      ..['rincian'] = <Map<String, dynamic>>[detail];
+  }
+
+  DateTime? _resolveCanonicalSingleDetailInvoiceDate(
+    Map<String, dynamic> row,
+    Map<String, dynamic> detail,
+  ) {
+    final detailDate = Formatters.parseDate(detail['armada_start_date']);
+    final invoiceStartDate = Formatters.parseDate(row['armada_start_date']);
+    final invoiceDate = Formatters.parseDate(row['tanggal']);
+    if (detailDate == null) {
+      return invoiceStartDate ?? invoiceDate;
+    }
+
+    final detailText = _dateOnly(detailDate);
+    if (invoiceStartDate != null && _dateOnly(invoiceStartDate) != detailText) {
+      return invoiceStartDate;
+    }
+    if (invoiceDate != null && _dateOnly(invoiceDate) != detailText) {
+      return invoiceDate;
+    }
+    return invoiceStartDate ?? invoiceDate ?? detailDate;
+  }
+
   Map<String, dynamic> _normalizeFixedInvoiceBatchRow(
     Map<String, dynamic> row,
   ) {
@@ -1485,6 +1545,9 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
       destination: destination,
       cargo: cargo,
     );
+    if (isForcedBatangIncomePricingRule(builtInRule)) {
+      return builtInRule;
+    }
 
     Map<String, dynamic>? preferBuiltInCustomerRule(
       Map<String, dynamic>? databaseRule,

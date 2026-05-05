@@ -109,6 +109,12 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
             table: 'fixed_invoice_batches',
             callback: (_) => _scheduleFixedInvoiceRefresh(),
           )
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'invoices',
+            callback: (_) => _scheduleFixedInvoiceRefresh(),
+          )
           .subscribe();
       _fixedInvoiceRealtimeChannel = channel;
     } catch (_) {

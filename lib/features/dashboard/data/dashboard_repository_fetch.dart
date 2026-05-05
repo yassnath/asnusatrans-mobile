@@ -18,7 +18,7 @@ extension DashboardRepositoryFetchExtension on DashboardRepository {
             .select(columns)
             .order('tanggal', ascending: false),
       );
-      return _toMapList(res);
+      return _normalizeInvoiceRowsForApp(res);
     } on PostgrestException catch (e) {
       throw Exception('Gagal memuat invoice: ${e.message}');
     }
@@ -44,7 +44,7 @@ extension DashboardRepositoryFetchExtension on DashboardRepository {
             'get_fixed_invoice_batch_invoices',
             params: <String, dynamic>{'p_ids': cleanedIds},
           );
-          return _toMapList(rpcRows);
+          return _normalizeInvoiceRowsForApp(rpcRows);
         } on PostgrestException catch (error) {
           if (!_isMissingRpcFunctionError(
                 error,
@@ -79,7 +79,7 @@ extension DashboardRepositoryFetchExtension on DashboardRepository {
               .inFilter('id', chunk)
               .order('tanggal', ascending: false),
         );
-        rows.addAll(_toMapList(res));
+        rows.addAll(_normalizeInvoiceRowsForApp(res));
       }
       return rows;
     } on PostgrestException catch (e) {
@@ -101,7 +101,7 @@ extension DashboardRepositoryFetchExtension on DashboardRepository {
         since,
         columns: invoiceColumns,
       );
-      return _toMapList(res);
+      return _normalizeInvoiceRowsForApp(res);
     } on PostgrestException catch (e) {
       throw Exception('Gagal memuat invoice: ${e.message}');
     }
@@ -112,12 +112,12 @@ extension DashboardRepositoryFetchExtension on DashboardRepository {
     required String columns,
     String? createdBy,
     int? limit,
-  }) {
+  }) async {
     final mm = since.month.toString().padLeft(2, '0');
     final dd = since.day.toString().padLeft(2, '0');
     final iso = '${since.year}-$mm-$dd';
     final cleanedCreatedBy = createdBy?.trim();
-    return _runInvoiceSelectWithFallback(
+    final res = await _runInvoiceSelectWithFallback(
       columns,
       (resolvedColumns) {
         dynamic query = _supabase.from('invoices').select(resolvedColumns).or(
@@ -133,6 +133,7 @@ extension DashboardRepositoryFetchExtension on DashboardRepository {
         return query;
       },
     );
+    return _normalizeInvoiceRowsForApp(res);
   }
 
   Future<List<Map<String, dynamic>>> fetchExpenses() async {

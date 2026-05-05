@@ -92,6 +92,18 @@ void main() {
       expect(rule['lokasi_bongkar'], 'MUNCAR');
     });
 
+    test('prioritizes Betoyo to Pare route with fixed nominal', () {
+      final rule = resolvePrioritizedSanguRouteRule(
+        pickup: 'bEtOyO',
+        destination: 'PaRe',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule!['nominal'], 1165000);
+      expect(rule['lokasi_muat'], 'BETOYO');
+      expect(rule['lokasi_bongkar'], 'PARE');
+    });
+
     test('prioritizes T. Langon to Surya Warna Sukoharjo route', () {
       final rule = resolvePrioritizedSanguRouteRule(
         pickup: 'T. Langon',
@@ -163,8 +175,8 @@ void main() {
 
     test('returns null for unrelated route', () {
       final rule = resolvePrioritizedSanguRouteRule(
-        pickup: 'Betoyo',
-        destination: 'Pare',
+        pickup: 'Tidak Ada',
+        destination: 'Tidak Ada',
       );
 
       expect(rule, isNull);

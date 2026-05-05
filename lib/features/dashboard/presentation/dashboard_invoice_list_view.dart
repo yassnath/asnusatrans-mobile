@@ -79,9 +79,11 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
   bool _backgroundFixedInvoiceSyncRunning = false;
   bool _backgroundAutoSanguCleanupRunning = false;
   bool _backgroundIncomePricingBackfillRunning = false;
+  bool _backgroundInvoiceDateSyncRunning = false;
   bool _backgroundInvoiceNumberNormalizationRunning = false;
   bool _manualArmadaAutoSanguCleanupDone = false;
   bool _incomePricingBackfillDone = false;
+  bool _invoiceDetailDateSyncDone = false;
 
   bool get _isEn => LanguageController.language.value == AppLanguage.en;
   bool get _isPengurus => widget.session.isPengurus;
@@ -564,12 +566,32 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     hasVisibleChanges =
         await _syncFixedInvoiceCacheInBackground() || hasVisibleChanges;
     hasVisibleChanges =
+        await _syncInvoiceDetailDatesInBackground() || hasVisibleChanges;
+    hasVisibleChanges =
         await _backfillIncomePricingInBackground() || hasVisibleChanges;
     hasVisibleChanges =
         await _cleanupManualArmadaAutoSanguInBackground() || hasVisibleChanges;
     hasVisibleChanges =
         await _normalizeInvoiceNumbersInBackground() || hasVisibleChanges;
     return hasVisibleChanges;
+  }
+
+  Future<bool> _syncInvoiceDetailDatesInBackground() async {
+    if (_invoiceDetailDateSyncDone || _backgroundInvoiceDateSyncRunning) {
+      return false;
+    }
+    _backgroundInvoiceDateSyncRunning = true;
+    try {
+      final report =
+          await widget.repository.syncSingleDetailInvoiceDepartureDates();
+      _invoiceDetailDateSyncDone = true;
+      return report.hasChanges;
+    } catch (_) {
+      // Best effort: sinkron tanggal detail tidak boleh menghambat list.
+      return false;
+    } finally {
+      _backgroundInvoiceDateSyncRunning = false;
+    }
   }
 
   Future<bool> _backfillIncomePricingInBackground() async {
@@ -675,20 +697,26 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     if (_isAdminOrOwner && runBackfill && !_backfillRunning) {
       _backfillRunning = true;
       try {
+        final dateSyncReport =
+            await widget.repository.syncSingleDetailInvoiceDepartureDates();
         final pricingReport = await widget.repository
             .backfillSpecialIncomePricingForExistingInvoices();
         final report = await widget.repository
             .backfillAutoSanguExpensesForExistingInvoices();
-        if (mounted && (pricingReport.hasFailures || report.hasFailures)) {
+        if (mounted &&
+            (dateSyncReport.hasFailures ||
+                pricingReport.hasFailures ||
+                report.hasFailures)) {
           _snack(
             _t(
-              'Sebagian update pricing invoice lama atau auto expense sangu sopir belum berhasil disinkronkan. Coba refresh sekali lagi.',
-              'Some legacy invoice pricing updates or driver allowance auto expenses could not be synced yet. Please refresh once more.',
+              'Sebagian sinkron tanggal invoice, pricing invoice lama, atau auto expense sangu sopir belum berhasil. Coba refresh sekali lagi.',
+              'Some invoice date syncs, legacy pricing updates, or driver allowance auto expenses could not be synced yet. Please refresh once more.',
             ),
             error: true,
           );
         }
         _incomePricingBackfillDone = true;
+        _invoiceDetailDateSyncDone = true;
       } catch (_) {
         // Best effort: tetap lanjut reload data list.
       } finally {
@@ -2368,7 +2396,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         max(paymentSummary.totalAmount, summaryBaseTotal),
         storedBaseTotal,
       );
-      final paidBaseAmount = max(paymentSummary.paidAmount, storedPaidBase);
+      final summaryPaidAmount = max(0.0, paymentSummary.paidAmount);
       final manualPaidAmount = max(
         batch.manualPaidAmount,
         paymentSummary.manualPaidAmount,
@@ -2408,8 +2436,13 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         );
       }
 
-      final ratio = paymentBaseTotal > 0 ? total / paymentBaseTotal : 1.0;
-      final paidAmount = min(total, max(0.0, paidBaseAmount * ratio));
+      final paidAmount = summaryPaidAmount > 0
+          ? min(total, summaryPaidAmount)
+          : (() {
+              final ratio =
+                  paymentBaseTotal > 0 ? total / paymentBaseTotal : 1.0;
+              return min(total, max(0.0, storedPaidBase * ratio));
+            })();
       final remainingAmount = max(0.0, total - paidAmount);
       final hasPartialPayment = paidAmount > 0 || paymentSummary.anyPaid;
       final status = hasPartialPayment || statusLower.contains('partial')

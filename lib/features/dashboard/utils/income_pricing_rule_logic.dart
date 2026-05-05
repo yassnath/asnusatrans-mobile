@@ -26,6 +26,14 @@ bool isOngkosKuliCargo(String value) {
   return normalizeIncomePricingRuleKey(value) == 'ongkos kuli';
 }
 
+bool isForcedBatangIncomePricingRule(Map<String, dynamic>? rule) {
+  if (rule == null) return false;
+  return incomePricingLocationKeyMatches(
+    normalizeIncomePricingRuleKey('${rule['lokasi_bongkar'] ?? ''}'),
+    normalizeIncomePricingRuleKey('batang'),
+  );
+}
+
 bool incomePricingLocationKeyMatches(String inputKey, String ruleKey) {
   if (inputKey.isEmpty || ruleKey.isEmpty) return false;
   if (incomePricingIsNonBetoyoPickupRuleKey(ruleKey)) {
@@ -190,6 +198,19 @@ Map<String, dynamic>? resolveBuiltInIncomePricingRule({
       'harga_per_ton': 195.0,
       'flat_total': null,
       'priority': 110,
+      'is_active': true,
+    };
+  }
+
+  if (incomePricingLocationKeyMatches(pickupKey, 'betoyo') &&
+      incomePricingLocationKeyMatches(destinationKey, 'pare')) {
+    return <String, dynamic>{
+      'customer_name': null,
+      'lokasi_muat': 'Betoyo',
+      'lokasi_bongkar': 'Pare',
+      'harga_per_ton': 87.0,
+      'flat_total': null,
+      'priority': 125,
       'is_active': true,
     };
   }
