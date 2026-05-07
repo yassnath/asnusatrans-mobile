@@ -496,9 +496,11 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
   double _previewDetailSubtotal(Map<String, dynamic> row) {
     for (final key in const ['subtotal', 'total', 'total_biaya', 'jumlah']) {
       final value = fixedInvoiceNum(row[key]);
-      if (value > 0) return value;
+      if (value > 0) return _roundInvoiceRupiah(value);
     }
-    return fixedInvoiceNum(row['tonase']) * fixedInvoiceNum(row['harga']);
+    return _roundInvoiceRupiah(
+      fixedInvoiceNum(row['tonase']) * fixedInvoiceNum(row['harga']),
+    );
   }
 
   String _resolveDisplayNumber(Map<String, dynamic> item) {
@@ -1042,7 +1044,7 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
     };
     final invoiceNumber = _resolveDisplayNumber(item);
     final customerName = '${item['nama_pelanggan'] ?? '-'}';
-    final total = fixedInvoiceNum(item['total_bayar'] ?? item['total_biaya']);
+    final total = _fixedInvoiceBatchExcelTotal(effectiveSourceItems);
     final invoiceEntityLabel = _resolveInvoiceEntityLabelShared(
       invoiceNumber: item['no_invoice'],
       customerName: item['nama_pelanggan'],
@@ -1153,10 +1155,7 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                             const SizedBox(height: 4),
                             Text(
                               Formatters.rupiah(
-                                fixedInvoiceNum(
-                                  source['total_bayar'] ??
-                                      source['total_biaya'],
-                                ),
+                                _fixedInvoiceExcelTotal(source),
                               ),
                               style:
                                   const TextStyle(fontWeight: FontWeight.w700),
@@ -1423,11 +1422,7 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
           .map((row) => Map<String, dynamic>.from(row))
           .toList();
       if (batchItems.isEmpty) continue;
-      final total = batchItems.fold<double>(
-        0,
-        (sum, row) =>
-            sum + fixedInvoiceNum(row['total_bayar'] ?? row['total_biaya']),
-      );
+      final total = _fixedInvoiceBatchExcelTotal(batchItems);
       final paymentSummary = _summarizeFixedInvoicePayments(
         batch: batch,
         sourceInvoices: batchItems,
@@ -1751,9 +1746,12 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                         }
                         final item = rows[index];
                         final number = _resolveDisplayNumber(item);
-                        final total = fixedInvoiceNum(
-                          item['total_bayar'] ?? item['total_biaya'],
-                        );
+                        final sourceItems = _resolveBatchSourceItems(item);
+                        final total = sourceItems.isEmpty
+                            ? fixedInvoiceNum(
+                                item['total_bayar'] ?? item['total_biaya'],
+                              )
+                            : _fixedInvoiceBatchExcelTotal(sourceItems);
                         final customerTypeLabel =
                             _resolveInvoiceEntityLabelShared(
                           invoiceNumber: item['no_invoice'],

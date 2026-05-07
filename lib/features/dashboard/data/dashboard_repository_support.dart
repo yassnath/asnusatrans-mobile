@@ -1271,9 +1271,20 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
   }
 
   double _invoiceTotal(Map<String, dynamic> invoice) {
+    final totalBiaya = _num(invoice['total_biaya']);
+    if (totalBiaya <= 0) return 0;
+    final isCompanyInvoice = Formatters.isCompanyInvoiceEntity(
+      Formatters.normalizeInvoiceEntity(
+        '${invoice['invoice_entity'] ?? ''}',
+        invoiceNumber: invoice['no_invoice'],
+        customerName: invoice['nama_pelanggan'],
+      ),
+    );
+    if (isCompanyInvoice) {
+      return calculateInvoiceTotalAfterPph(totalBiaya);
+    }
     final totalBayar = _num(invoice['total_bayar']);
     if (totalBayar > 0) return totalBayar;
-    final totalBiaya = _num(invoice['total_biaya']);
     final pph = _num(invoice['pph']);
     final fallback = totalBiaya - pph;
     return fallback > 0 ? fallback : 0;
@@ -1462,6 +1473,7 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
     Map<String, dynamic>? findBestRule({
       required String searchPickup,
       required String searchDestination,
+      bool allowGenericForBetoyo = false,
     }) {
       if (rules.isEmpty) return null;
       final destinationKey = _normalizeIncomePricingText(searchDestination);
@@ -1515,7 +1527,8 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
 
         final ruleMuatKey =
             _normalizeIncomePricingText('${rule['lokasi_muat'] ?? ''}');
-        if (ruleMuatKey.isEmpty &&
+        if (!allowGenericForBetoyo &&
+            ruleMuatKey.isEmpty &&
             incomePricingIsBetoyoLocationKey(pickupKey)) {
           continue;
         }
@@ -1537,6 +1550,28 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
         }
       }
       return bestRule;
+    }
+
+    Map<String, dynamic>? deriveBetoyoRuleFromBase(
+      Map<String, dynamic>? baseRule,
+    ) {
+      final pickupKey = _normalizeIncomePricingText(pickup);
+      final destinationKey = _normalizeIncomePricingText(destination);
+      if (!incomePricingIsBetoyoLocationKey(pickupKey)) return null;
+      if (_incomePricingLocationMatches(destinationKey, 'muncar')) return null;
+      if (baseRule == null) return null;
+
+      final baseHarga = _num(baseRule['harga_per_ton'] ?? baseRule['harga']);
+      if (baseHarga <= 0) return null;
+
+      final priority = int.tryParse('${baseRule['priority'] ?? ''}') ??
+          _num(baseRule['priority']).toInt();
+      return <String, dynamic>{
+        ...baseRule,
+        'lokasi_muat': 'Betoyo',
+        'harga_per_ton': baseHarga + 7,
+        'priority': priority + 7,
+      };
     }
 
     final builtInRule = resolveBuiltInIncomePricingRuleForCargo(
@@ -1572,10 +1607,18 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
       final preferredReverseRule = preferBuiltInCustomerRule(reverseRule);
       if (preferredReverseRule != null) return preferredReverseRule;
     }
-    return preferBuiltInCustomerRule(
+    final directRule = findBestRule(
+      searchPickup: pickup,
+      searchDestination: destination,
+    );
+    final preferredDirectRule = preferBuiltInCustomerRule(directRule);
+    if (preferredDirectRule != null) return preferredDirectRule;
+
+    return deriveBetoyoRuleFromBase(
       findBestRule(
         searchPickup: pickup,
         searchDestination: destination,
+        allowGenericForBetoyo: true,
       ),
     );
   }

@@ -6,6 +6,7 @@ import '../../../core/security/app_security.dart';
 import '../../../core/utils/formatters.dart';
 import '../models/dashboard_models.dart';
 import '../utils/income_pricing_rule_logic.dart';
+import '../utils/invoice_pph_logic.dart';
 import '../utils/sangu_rule_logic.dart';
 import '../utils/tolakan_logic.dart';
 
@@ -989,13 +990,18 @@ class DashboardRepository {
   }
 
   double _resolveIncomeDetailTotal(Map<String, dynamic> detail) {
+    final tonase = _num(detail['tonase']);
+    final harga = _num(detail['harga']);
+    final computedTotal = max(0, tonase * harga).toDouble();
+    if (detail['subtotal_auto'] == true && computedTotal > 0) {
+      return roundInvoiceRupiah(computedTotal);
+    }
+
     final explicitSubtotal = _num(
       detail['subtotal'] ?? detail['total'] ?? detail['jumlah'],
     );
-    if (explicitSubtotal > 0) return explicitSubtotal;
-    final tonase = _num(detail['tonase']);
-    final harga = _num(detail['harga']);
-    return max(0, tonase * harga);
+    if (explicitSubtotal > 0) return roundInvoiceRupiah(explicitSubtotal);
+    return roundInvoiceRupiah(computedTotal);
   }
 
   bool _detailUsesManualArmada(Map<String, dynamic> detail) {
@@ -1602,8 +1608,10 @@ class DashboardRepository {
           final includePph =
               Formatters.isCompanyInvoiceEntity(normalizedEntity);
           final pphValue =
-              includePph ? max(0, (totalBiaya * 0.02).floorToDouble()) : 0.0;
-          final totalBayarValue = max(0, totalBiaya - pphValue);
+              includePph ? calculateInvoicePph2Percent(totalBiaya) : 0.0;
+          final totalBayarValue = includePph
+              ? calculateInvoiceTotalAfterPph(totalBiaya)
+              : max(0, totalBiaya);
           final resolvedDriverNames = _resolveDriverNames(details: nextDetails);
 
           String? nullableText(dynamic value) {

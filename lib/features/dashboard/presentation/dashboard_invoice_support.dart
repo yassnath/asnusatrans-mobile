@@ -358,6 +358,66 @@ double _fixedInvoicePaymentDetailSubtotal(
   return fallback / detailCount;
 }
 
+double _roundInvoiceRupiah(num value) {
+  return roundInvoiceRupiah(value);
+}
+
+double _fixedInvoiceExcelSubtotal(Map<String, dynamic> invoice) {
+  final detailRows = _fixedInvoiceMapList(invoice['rincian']);
+  if (detailRows.isNotEmpty) {
+    return detailRows.fold<double>(
+      0,
+      (sum, row) =>
+          sum +
+          _roundInvoiceRupiah(
+            _fixedInvoicePaymentDetailSubtotal(row, invoice, detailRows.length),
+          ),
+    );
+  }
+  final subtotal = _fixedInvoicePaymentNum(invoice['total_biaya']);
+  if (subtotal > 0) return _roundInvoiceRupiah(subtotal);
+  return _roundInvoiceRupiah(
+    _fixedInvoicePaymentNum(invoice['total_bayar']),
+  );
+}
+
+bool _fixedInvoiceIsCompany(Map<String, dynamic> invoice) {
+  return Formatters.isCompanyInvoiceEntity(
+    Formatters.normalizeInvoiceEntity(
+      '${invoice['invoice_entity'] ?? ''}',
+      invoiceNumber: invoice['no_invoice'],
+      customerName: invoice['nama_pelanggan'],
+    ),
+  );
+}
+
+double _fixedInvoiceExcelTotal(Map<String, dynamic> invoice) {
+  final subtotal = _fixedInvoiceExcelSubtotal(invoice);
+  if (subtotal <= 0) return 0;
+  return _fixedInvoiceIsCompany(invoice)
+      ? calculateInvoiceTotalAfterPph(subtotal)
+      : subtotal;
+}
+
+double _fixedInvoiceBatchExcelSubtotal(
+  Iterable<Map<String, dynamic>> sourceInvoices,
+) {
+  return sourceInvoices.fold<double>(
+    0,
+    (sum, invoice) => sum + _fixedInvoiceExcelSubtotal(invoice),
+  );
+}
+
+double _fixedInvoiceBatchExcelTotal(
+  Iterable<Map<String, dynamic>> sourceInvoices,
+) {
+  final invoices = sourceInvoices.toList(growable: false);
+  final subtotal = _fixedInvoiceBatchExcelSubtotal(invoices);
+  if (subtotal <= 0) return 0;
+  final company = invoices.any(_fixedInvoiceIsCompany);
+  return company ? calculateInvoiceTotalAfterPph(subtotal) : subtotal;
+}
+
 List<_FixedInvoicePaymentEntry> _buildFixedInvoicePaymentEntries({
   _FixedInvoiceBatch? batch,
   required List<Map<String, dynamic>> sourceInvoices,
@@ -463,13 +523,7 @@ _FixedInvoicePaymentSummary _summarizeFixedInvoicePayments({
   );
   final detailTotalAmount =
       entries.fold<double>(0, (sum, entry) => sum + entry.total);
-  final sourceTotalAmount = sourceInvoices.fold<double>(
-    0,
-    (sum, invoice) =>
-        sum +
-        _fixedInvoicePaymentNum(
-            invoice['total_bayar'] ?? invoice['total_biaya']),
-  );
+  final sourceTotalAmount = _fixedInvoiceBatchExcelTotal(sourceInvoices);
   final totalAmount =
       sourceTotalAmount > 0 ? sourceTotalAmount : detailTotalAmount;
   final rawDetailPaidAmount = entries
@@ -483,10 +537,16 @@ _FixedInvoicePaymentSummary _summarizeFixedInvoicePayments({
   final paidAmount = manualPaidAmount > 0
       ? min(totalAmount, manualPaidAmount)
       : detailPaidAmount;
-  final remainingAmount = max(0.0, totalAmount - paidAmount);
+  final remainingAmount = fixedInvoiceRoundedRemaining(
+    total: totalAmount,
+    paid: paidAmount,
+  );
   final anyPaid = manualPaidAmount > 0 || entries.any((entry) => entry.paid);
   final allPaid = totalAmount > 0 &&
-      (manualPaidAmount >= totalAmount - 0.01 ||
+      (fixedInvoicePaymentCoversTotal(
+            total: totalAmount,
+            paid: manualPaidAmount,
+          ) ||
           (entries.isNotEmpty && entries.every((entry) => entry.paid)));
   final explicitStatus = (batch?.status ?? '').trim().toLowerCase();
   final paidAtCandidates = <String>[
@@ -855,9 +915,28 @@ String _formatEditableNumberShared(dynamic value) {
 }
 
 double _resolveInvoiceDetailSubtotalShared(Map<String, dynamic> row) {
+  final computed = _toNum(row['tonase']) * _toNum(row['harga']);
+  if (row['subtotal_auto'] == true && computed > 0) return computed;
+
   final explicit = _toNum(row['subtotal'] ?? row['total'] ?? row['jumlah']);
   if (explicit > 0) return explicit;
-  return _toNum(row['tonase']) * _toNum(row['harga']);
+  return computed;
+}
+
+double _resolveInvoiceDetailExcelSubtotalShared(Map<String, dynamic> row) {
+  return _roundInvoiceRupiah(_resolveInvoiceDetailSubtotalShared(row));
+}
+
+double _resolveInvoiceDetailsExcelSubtotalShared(
+  Iterable<Map<String, dynamic>> rows, {
+  num fallbackSubtotal = 0,
+}) {
+  final rowTotal = rows.fold<double>(
+    0,
+    (sum, row) => sum + _resolveInvoiceDetailExcelSubtotalShared(row),
+  );
+  if (rowTotal > 0) return rowTotal;
+  return _roundInvoiceRupiah(fallbackSubtotal);
 }
 
 Map<String, dynamic>? _resolveHargaRuleShared({
@@ -867,9 +946,13 @@ Map<String, dynamic>? _resolveHargaRuleShared({
   required String lokasiBongkar,
   String muatan = '',
 }) {
+  final bongkarKey = _normalizeIncomeRuleTextShared(lokasiBongkar);
+  if (bongkarKey.isEmpty) return null;
+
   Map<String, dynamic>? findBestRule({
     required String searchPickup,
     required String searchDestination,
+    bool allowGenericForBetoyo = false,
   }) {
     final bongkarKey = _normalizeIncomeRuleTextShared(searchDestination);
     if (bongkarKey.isEmpty) return null;
@@ -922,7 +1005,9 @@ Map<String, dynamic>? _resolveHargaRuleShared({
 
       final ruleMuatKey =
           _normalizeIncomeRuleTextShared('${rule['lokasi_muat'] ?? ''}');
-      if (ruleMuatKey.isEmpty && incomePricingIsBetoyoLocationKey(muatKey)) {
+      if (!allowGenericForBetoyo &&
+          ruleMuatKey.isEmpty &&
+          incomePricingIsBetoyoLocationKey(muatKey)) {
         continue;
       }
       if (muatKey.isNotEmpty &&
@@ -946,8 +1031,27 @@ Map<String, dynamic>? _resolveHargaRuleShared({
     return bestRule;
   }
 
-  final bongkarKey = _normalizeIncomeRuleTextShared(lokasiBongkar);
-  if (bongkarKey.isEmpty) return null;
+  Map<String, dynamic>? deriveBetoyoRuleFromBase(
+    Map<String, dynamic>? baseRule,
+  ) {
+    final muatKey = _normalizeIncomeRuleTextShared(lokasiMuat);
+    if (!incomePricingIsBetoyoLocationKey(muatKey)) return null;
+    if (incomePricingLocationKeyMatches(bongkarKey, 'muncar')) return null;
+    if (baseRule == null) return null;
+
+    final baseHarga = _toNum(baseRule['harga_per_ton'] ?? baseRule['harga']);
+    if (baseHarga <= 0) return null;
+
+    final priority = int.tryParse('${baseRule['priority'] ?? ''}') ??
+        _toNum(baseRule['priority']).toInt();
+    return <String, dynamic>{
+      ...baseRule,
+      'lokasi_muat': 'Betoyo',
+      'harga_per_ton': baseHarga + 7,
+      'priority': priority + 7,
+    };
+  }
+
   final builtInRule = resolveBuiltInIncomePricingRuleForCargo(
     customerName: customerName,
     pickup: lokasiMuat,
@@ -983,10 +1087,18 @@ Map<String, dynamic>? _resolveHargaRuleShared({
     final preferredReverseRule = preferBuiltInCustomerRule(reverseRule);
     if (preferredReverseRule != null) return preferredReverseRule;
   }
-  return preferBuiltInCustomerRule(
+  final directRule = findBestRule(
+    searchPickup: lokasiMuat,
+    searchDestination: lokasiBongkar,
+  );
+  final preferredDirectRule = preferBuiltInCustomerRule(directRule);
+  if (preferredDirectRule != null) return preferredDirectRule;
+
+  return deriveBetoyoRuleFromBase(
     findBestRule(
       searchPickup: lokasiMuat,
       searchDestination: lokasiBongkar,
+      allowGenericForBetoyo: true,
     ),
   );
 }

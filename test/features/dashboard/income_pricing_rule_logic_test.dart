@@ -101,14 +101,17 @@ void main() {
       expect(rule?['harga_per_ton'], 165.0);
     });
 
-    test('does not apply generic fallback rule to Betoyo pickup', () {
+    test('derives Betoyo fallback rule from generic destination rule', () {
       final rule = resolveBuiltInIncomePricingRule(
         customerName: 'Siapa Saja',
         pickup: 'Betoyo',
         destination: 'temanggung',
       );
 
-      expect(rule, isNull);
+      expect(rule, isNotNull);
+      expect(rule?['lokasi_muat'], 'Betoyo');
+      expect(rule?['lokasi_bongkar'], 'Temanggung');
+      expect(rule?['harga_per_ton'], 172.0);
     });
 
     test('returns built-in Danliris fallback rule', () {
@@ -136,6 +139,31 @@ void main() {
       expect(rule?['lokasi_bongkar'], 'Sarana');
       expect(rule?['harga_per_ton'], 110.0);
       expect(rule?['flat_total'], isNull);
+    });
+
+    test('returns built-in T. Langon to Rex borongan rule', () {
+      final rule = resolveBuiltInIncomePricingRule(
+        customerName: 'CV Swadaya Alam Makmur',
+        pickup: 'T. LANGON',
+        destination: 'rEx',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule?['customer_name'], 'Swadaya');
+      expect(rule?['lokasi_muat'], 'T. Langon');
+      expect(rule?['lokasi_bongkar'], 'Rex');
+      expect(rule?['harga_per_ton'], 55.0);
+      expect(rule?['flat_total'], 700000.0);
+    });
+
+    test('does not apply Rex borongan rule outside Swadaya customer', () {
+      final rule = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'T. Langon',
+        destination: 'Rex',
+      );
+
+      expect(rule, isNull);
     });
 
     test('returns built-in Betoyo to Muncar fallback rule', () {
@@ -166,6 +194,42 @@ void main() {
       expect(rule?['flat_total'], isNull);
     });
 
+    test('returns built-in Betoyo derivative rules for new destinations', () {
+      final sudali = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'BETOYO',
+        destination: 'sUdAli',
+      );
+      final mkp = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'betoyo',
+        destination: 'MKP',
+      );
+      final bricon = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'Betoyo',
+        destination: 'Bricon Mojo',
+      );
+
+      expect(sudali?['harga_per_ton'], 65.0);
+      expect(mkp?['harga_per_ton'], 57.0);
+      expect(bricon?['harga_per_ton'], 62.0);
+    });
+
+    test('returns built-in Maspion to T. Langon fallback rule', () {
+      final rule = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'mAsPiOn',
+        destination: 't. LANGON',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule?['lokasi_muat'], 'Maspion');
+      expect(rule?['lokasi_bongkar'], 'T. Langon');
+      expect(rule?['harga_per_ton'], 26.0);
+      expect(rule?['flat_total'], isNull);
+    });
+
     test('returns built-in T. Langon to Surya Warna Sukoharjo rule', () {
       final rule = resolveBuiltInIncomePricingRule(
         customerName: 'Siapa Saja',
@@ -190,7 +254,7 @@ void main() {
       expect(rule, isNotNull);
       expect(rule?['lokasi_muat'], 'Betoyo');
       expect(rule?['lokasi_bongkar'], 'Surya Warna / Sukoharjo');
-      expect(rule?['harga_per_ton'], 170.0);
+      expect(rule?['harga_per_ton'], 172.0);
       expect(rule?['flat_total'], isNull);
     });
 
@@ -294,7 +358,7 @@ void main() {
 
       expect(rule, isNotNull);
       expect(rule?['lokasi_bongkar'], 'Batang');
-      expect(rule?['harga_per_ton'], 235.0);
+      expect(rule?['harga_per_ton'], 242.0);
     });
 
     test('keeps Bornava Batang rule even from Betoyo pickup', () {
@@ -307,7 +371,7 @@ void main() {
       expect(rule, isNotNull);
       expect(rule?['customer_name'], 'Bornava');
       expect(rule?['lokasi_bongkar'], 'Batang');
-      expect(rule?['harga_per_ton'], 225.0);
+      expect(rule?['harga_per_ton'], 232.0);
     });
 
     test('returns null for unrelated route', () {

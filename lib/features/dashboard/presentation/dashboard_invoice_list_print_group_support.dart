@@ -105,24 +105,16 @@ extension _AdminInvoiceListViewStatePrintGroupSupport
       invoiceNumber: baseItem['no_invoice'],
       customerName: customerName,
     );
-    double detailSubtotal(Map<String, dynamic> row) {
-      return _resolveInvoiceDetailSubtotalShared(row);
-    }
-
-    final subtotal = mergedDetails.fold<double>(
-      0,
-      (sum, row) => sum + detailSubtotal(row),
+    final subtotal = _resolveInvoiceDetailsExcelSubtotalShared(
+      mergedDetails,
+      fallbackSubtotal: group.items.fold<double>(
+        0,
+        (sum, item) => sum + _toNum(item['total_biaya']),
+      ),
     );
-    final pph = isCompanyInvoice
-        ? group.items.fold<double>(0, (sum, item) => sum + _toNum(item['pph']))
-        : 0.0;
-    final total = isCompanyInvoice
-        ? group.items.fold<double>(
-            0,
-            (sum, item) =>
-                sum + _toNum(item['total_bayar'] ?? item['total_biaya']),
-          )
-        : subtotal;
+    final pph = isCompanyInvoice ? calculateInvoicePph2Percent(subtotal) : 0.0;
+    final total =
+        isCompanyInvoice ? calculateInvoiceTotalAfterPph(subtotal) : subtotal;
     final firstDate = mergedDetails
         .map((row) =>
             Formatters.parseDate(row['armada_start_date'] ?? row['tanggal']))

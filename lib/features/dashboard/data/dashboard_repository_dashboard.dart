@@ -86,7 +86,7 @@ extension DashboardRepositoryDashboardExtension on DashboardRepository {
       double cvReminderIncome(Map<String, dynamic> invoice) {
         final grossTotal = _num(invoice['total_biaya']);
         if (grossTotal <= 0) return _invoiceTotal(invoice);
-        return max(0, grossTotal - _num(invoice['pph']));
+        return calculateInvoiceTotalAfterPph(grossTotal);
       }
 
       final invoiceByMarker = <String, Map<String, dynamic>>{};

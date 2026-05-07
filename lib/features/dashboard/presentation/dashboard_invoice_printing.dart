@@ -159,24 +159,16 @@ List<Map<String, dynamic>> _expandInvoicePrintDetailsForPdf(
     customerName: customerName,
   );
 
-  double detailSubtotal(Map<String, dynamic> row) {
-    return _resolveInvoiceDetailSubtotalShared(row);
-  }
-
-  final subtotal = mergedDetails.fold<double>(
-    0,
-    (sum, row) => sum + detailSubtotal(row),
+  final subtotal = _resolveInvoiceDetailsExcelSubtotalShared(
+    mergedDetails,
+    fallbackSubtotal: sourceItems.fold<double>(
+      0,
+      (sum, item) => sum + _toNum(item['total_biaya']),
+    ),
   );
-  final pph = isCompanyInvoice
-      ? sourceItems.fold<double>(0, (sum, item) => sum + _toNum(item['pph']))
-      : 0.0;
-  final total = isCompanyInvoice
-      ? sourceItems.fold<double>(
-          0,
-          (sum, item) =>
-              sum + _toNum(item['total_bayar'] ?? item['total_biaya']),
-        )
-      : subtotal;
+  final pph = isCompanyInvoice ? calculateInvoicePph2Percent(subtotal) : 0.0;
+  final total =
+      isCompanyInvoice ? calculateInvoiceTotalAfterPph(subtotal) : subtotal;
   final firstDate = mergedDetails
       .map((row) =>
           Formatters.parseDate(row['armada_start_date'] ?? row['tanggal']))
@@ -295,7 +287,7 @@ Map<int, pw.TableColumnWidth> _buildDashboardIncomeTableColumnWidths(
     maxPlate = max(maxPlate, plate.length);
     final hargaText = Formatters.rupiah(_toNum(row['harga']));
     final totalText =
-        Formatters.rupiah(_resolveInvoiceDetailSubtotalShared(row));
+        Formatters.rupiah(_resolveInvoiceDetailExcelSubtotalShared(row));
     maxHarga = max(maxHarga, hargaText.length);
     maxTotal = max(maxTotal, totalText.length);
   }
@@ -408,11 +400,13 @@ Future<bool> _printDashboardInvoicePdf(
       invoiceNumber: invoiceRawNumber,
       customerName: customerName,
     );
-    final subtotal = _toNum(item['total_biaya']);
-    final pph = isCompanyInvoice ? _toNum(item['pph']) : 0.0;
-    final total = isCompanyInvoice
-        ? _toNum(item['total_bayar'] ?? item['total_biaya'])
-        : subtotal;
+    final subtotal = _resolveInvoiceDetailsExcelSubtotalShared(
+      invoiceDetailList,
+      fallbackSubtotal: _toNum(item['total_biaya']),
+    );
+    final pph = isCompanyInvoice ? calculateInvoicePph2Percent(subtotal) : 0.0;
+    final total =
+        isCompanyInvoice ? calculateInvoiceTotalAfterPph(subtotal) : subtotal;
     final effectiveKopDateRaw = (kopDateOverride ?? '').trim().isNotEmpty
         ? kopDateOverride!.trim()
         : '${item['tanggal_kop'] ?? item['tanggal'] ?? ''}'.trim();
@@ -579,7 +573,7 @@ Future<bool> _printDashboardInvoicePdf(
         final tonase = hasData ? _toNum(row['tonase']) : 0;
         final harga = hasData ? _toNum(row['harga']) : 0;
         final rowSubtotal =
-            hasData ? _resolveInvoiceDetailSubtotalShared(row) : 0;
+            hasData ? _resolveInvoiceDetailExcelSubtotalShared(row) : 0;
         final armadaStartSource = row['armada_start_date'] ??
             item['armada_start_date'] ??
             row['tanggal'] ??
@@ -722,6 +716,7 @@ Future<bool> _printDashboardInvoicePdf(
           : '$kopLocationTitle, $tanggalLong';
       final logoHeight = compact ? 39.0 : 52.0;
       final companyKopHeight = compact ? 50.0 : 61.0;
+      final companyKopTopMargin = compact ? -1.5 : -3.0;
       final recipientBaseLineWidth = compact
           ? (isCompanyInvoice ? 168.0 : 122.0)
           : (isCompanyInvoice ? 242.0 : 158.0);
@@ -1194,7 +1189,7 @@ Future<bool> _printDashboardInvoicePdf(
               final tonase = hasData ? _toNum(row['tonase']) : 0;
               final harga = hasData ? _toNum(row['harga']) : 0;
               final rowSubtotal =
-                  hasData ? _resolveInvoiceDetailSubtotalShared(row) : 0;
+                  hasData ? _resolveInvoiceDetailExcelSubtotalShared(row) : 0;
               final armadaStartSource = row['armada_start_date'] ??
                   item['armada_start_date'] ??
                   row['tanggal'] ??
@@ -1380,10 +1375,10 @@ Future<bool> _printDashboardInvoicePdf(
           if (isCompanyInvoice) ...[
             if (companyKopImage != null)
               pw.Container(
-                margin: const pw.EdgeInsets.only(
+                margin: pw.EdgeInsets.only(
                   left: -5.8,
                   right: -6.8,
-                  top: -3.0,
+                  top: companyKopTopMargin,
                 ),
                 width: double.infinity,
                 height: companyKopHeight,

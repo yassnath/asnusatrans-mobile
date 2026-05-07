@@ -106,6 +106,32 @@ Map<String, dynamic>? resolveBuiltInIncomePricingRule({
   final destinationKey = normalizeIncomePricingRuleKey(destination);
   final pickupIsBetoyo = incomePricingIsBetoyoLocationKey(pickupKey);
 
+  Map<String, dynamic>? betoyoDerivedRule({
+    required String lokasiBongkar,
+    required double baseHarga,
+    String? ruleCustomerName,
+    double? flatTotal,
+    int priority = 130,
+  }) {
+    if (!pickupIsBetoyo) return null;
+    if (incomePricingLocationKeyMatches(destinationKey, 'muncar')) return null;
+    if (!incomePricingLocationKeyMatches(
+      destinationKey,
+      normalizeIncomePricingRuleKey(lokasiBongkar),
+    )) {
+      return null;
+    }
+    return <String, dynamic>{
+      'customer_name': ruleCustomerName,
+      'lokasi_muat': 'Betoyo',
+      'lokasi_bongkar': lokasiBongkar,
+      'harga_per_ton': baseHarga + 7,
+      'flat_total': flatTotal,
+      'priority': priority,
+      'is_active': true,
+    };
+  }
+
   if (incomePricingCustomerNameMatches(customerKey, 'giono') &&
       incomePricingLocationKeyMatches(pickupKey, 'nganjuk') &&
       incomePricingLocationKeyMatches(destinationKey, 'driyo')) {
@@ -132,6 +158,63 @@ Map<String, dynamic>? resolveBuiltInIncomePricingRule({
       'priority': 260,
       'is_active': true,
     };
+  }
+
+  final betoyoRoyalRule = incomePricingCustomerNameMatches(
+    customerKey,
+    'unergi',
+  )
+      ? betoyoDerivedRule(
+          lokasiBongkar: 'Royal',
+          baseHarga: 43.0,
+          ruleCustomerName: 'Unergi',
+          priority: 215,
+        )
+      : null;
+  if (betoyoRoyalRule != null) return betoyoRoyalRule;
+
+  final betoyoBatangRule = betoyoDerivedRule(
+    lokasiBongkar: 'Batang',
+    baseHarga: incomePricingCustomerNameMatches(customerKey, 'bornava')
+        ? 225.0
+        : 235.0,
+    ruleCustomerName: incomePricingCustomerNameMatches(customerKey, 'bornava')
+        ? 'Bornava'
+        : null,
+    priority:
+        incomePricingCustomerNameMatches(customerKey, 'bornava') ? 225 : 125,
+  );
+  if (betoyoBatangRule != null) return betoyoBatangRule;
+
+  final betoyoRexRule = incomePricingCustomerNameMatches(customerKey, 'swadaya')
+      ? betoyoDerivedRule(
+          lokasiBongkar: 'Rex',
+          baseHarga: 55.0,
+          ruleCustomerName: 'Swadaya',
+          flatTotal: 700000.0,
+          priority: 140,
+        )
+      : null;
+  if (betoyoRexRule != null) return betoyoRexRule;
+
+  final betoyoGenericRules = <({String lokasiBongkar, double baseHarga})>[
+    (lokasiBongkar: 'Pare', baseHarga: 80.0),
+    (lokasiBongkar: 'Sudali', baseHarga: 58.0),
+    (lokasiBongkar: 'MKP', baseHarga: 50.0),
+    (lokasiBongkar: 'Bricon Mojo', baseHarga: 55.0),
+    (lokasiBongkar: 'Sarana', baseHarga: 110.0),
+    (lokasiBongkar: 'Surya Warna / Sukoharjo', baseHarga: 165.0),
+    (lokasiBongkar: 'Gempol', baseHarga: 55.0),
+    (lokasiBongkar: 'Bumindo', baseHarga: 55.0),
+    (lokasiBongkar: 'Temanggung', baseHarga: 165.0),
+    (lokasiBongkar: 'Danliris', baseHarga: 155.0),
+  ];
+  for (final rule in betoyoGenericRules) {
+    final betoyoRule = betoyoDerivedRule(
+      lokasiBongkar: rule.lokasiBongkar,
+      baseHarga: rule.baseHarga,
+    );
+    if (betoyoRule != null) return betoyoRule;
   }
 
   if (incomePricingCustomerNameMatches(customerKey, 'unergi') &&
@@ -173,6 +256,20 @@ Map<String, dynamic>? resolveBuiltInIncomePricingRule({
     };
   }
 
+  if (incomePricingCustomerNameMatches(customerKey, 'swadaya') &&
+      incomePricingLocationKeyMatches(pickupKey, 't langon') &&
+      incomePricingLocationKeyMatches(destinationKey, 'rex')) {
+    return <String, dynamic>{
+      'customer_name': 'Swadaya',
+      'lokasi_muat': 'T. Langon',
+      'lokasi_bongkar': 'Rex',
+      'harga_per_ton': 55.0,
+      'flat_total': 700000.0,
+      'priority': 135,
+      'is_active': true,
+    };
+  }
+
   if (incomePricingLocationKeyMatches(pickupKey, 't langon') &&
       incomePricingLocationKeyMatches(
         destinationKey,
@@ -202,31 +299,15 @@ Map<String, dynamic>? resolveBuiltInIncomePricingRule({
     };
   }
 
-  if (incomePricingLocationKeyMatches(pickupKey, 'betoyo') &&
-      incomePricingLocationKeyMatches(destinationKey, 'pare')) {
+  if (incomePricingLocationKeyMatches(pickupKey, 'maspion') &&
+      incomePricingLocationKeyMatches(destinationKey, 't langon')) {
     return <String, dynamic>{
       'customer_name': null,
-      'lokasi_muat': 'Betoyo',
-      'lokasi_bongkar': 'Pare',
-      'harga_per_ton': 87.0,
+      'lokasi_muat': 'Maspion',
+      'lokasi_bongkar': 'T. Langon',
+      'harga_per_ton': 26.0,
       'flat_total': null,
       'priority': 125,
-      'is_active': true,
-    };
-  }
-
-  if (incomePricingLocationKeyMatches(pickupKey, 'betoyo') &&
-      incomePricingLocationKeyMatches(
-        destinationKey,
-        'surya warna sukoharjo',
-      )) {
-    return <String, dynamic>{
-      'customer_name': null,
-      'lokasi_muat': 'Betoyo',
-      'lokasi_bongkar': 'Surya Warna / Sukoharjo',
-      'harga_per_ton': 170.0,
-      'flat_total': null,
-      'priority': 130,
       'is_active': true,
     };
   }

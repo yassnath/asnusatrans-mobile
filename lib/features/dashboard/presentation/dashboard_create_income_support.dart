@@ -462,7 +462,7 @@ extension _AdminCreateIncomeViewStateSupport on _AdminCreateIncomeViewState {
   }
 
   double _detailSubtotal(Map<String, dynamic> row) {
-    return _resolveInvoiceDetailSubtotalShared(row);
+    return _resolveInvoiceDetailExcelSubtotalShared(row);
   }
 
   String? _nullableInputText(dynamic value) {
@@ -560,8 +560,11 @@ extension _AdminCreateIncomeViewStateSupport on _AdminCreateIncomeViewState {
     );
   }
 
-  double get _pph => _isCompanyInvoice ? (_subtotal * 0.02).floorToDouble() : 0;
-  double get _totalBayar => max(0, _subtotal - _pph);
+  double get _pph =>
+      _isCompanyInvoice ? calculateInvoicePph2Percent(_subtotal) : 0;
+  double get _totalBayar => _isCompanyInvoice
+      ? calculateInvoiceTotalAfterPph(_subtotal)
+      : max(0, _subtotal);
 
   void _addDetail() {
     _refreshState(() => _details.add(_newDetail()));

@@ -80,6 +80,18 @@ void main() {
       expect(rule['lokasi_bongkar'], 'MUNCAR');
     });
 
+    test('prioritizes T. Langon to Rex route with fixed nominal', () {
+      final rule = resolvePrioritizedSanguRouteRule(
+        pickup: 't. langon',
+        destination: 'rEx',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule!['nominal'], 690000);
+      expect(rule['lokasi_muat'], 'T. LANGON');
+      expect(rule['lokasi_bongkar'], 'REX');
+    });
+
     test('prioritizes Betoyo to Muncar route with fixed nominal', () {
       final rule = resolvePrioritizedSanguRouteRule(
         pickup: 'Betoyo',
@@ -102,6 +114,37 @@ void main() {
       expect(rule!['nominal'], 1165000);
       expect(rule['lokasi_muat'], 'BETOYO');
       expect(rule['lokasi_bongkar'], 'PARE');
+    });
+
+    test('prioritizes Betoyo derivative sangu routes', () {
+      final sudali = resolvePrioritizedSanguRouteRule(
+        pickup: 'Betoyo',
+        destination: 'sUdAli',
+      );
+      final mkp = resolvePrioritizedSanguRouteRule(
+        pickup: 'BETOYO',
+        destination: 'mkp',
+      );
+      final bricon = resolvePrioritizedSanguRouteRule(
+        pickup: 'betoyo',
+        destination: 'Bricon Mojo',
+      );
+
+      expect(sudali?['nominal'], 920000);
+      expect(mkp?['nominal'], 805000);
+      expect(bricon?['nominal'], 865000);
+    });
+
+    test('prioritizes Maspion to T. Langon route with fixed nominal', () {
+      final rule = resolvePrioritizedSanguRouteRule(
+        pickup: 'mAsPiOn',
+        destination: 't. LANGON',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule!['nominal'], 400000);
+      expect(rule['lokasi_muat'], 'MASPION');
+      expect(rule['lokasi_bongkar'], 'T. LANGON');
     });
 
     test('prioritizes T. Langon to Surya Warna Sukoharjo route', () {

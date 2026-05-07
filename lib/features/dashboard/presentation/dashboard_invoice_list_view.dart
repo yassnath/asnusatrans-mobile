@@ -493,7 +493,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     if (_isPengurus && _currentUserId.isEmpty) {
       return const [<Map<String, dynamic>>[], <Map<String, dynamic>>[]];
     }
-    final since = DateTime.now().subtract(const Duration(days: 30));
+    final now = DateTime.now();
+    final since = DateTime(now.year, now.month - 1, 1);
     final scopedUserId = _isPengurus ? _currentUserId : null;
     final fetchLimit = _invoiceListFetchLimit;
     final response = await Future.wait<dynamic>([
@@ -2238,6 +2239,31 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       if (_isAdminOrOwner) return _isPengurusIncomeApproved(item);
       return true;
     }).toList();
+    final invoiceListIncomeInvoices =
+        (await widget.repository.fetchInvoices()).where((item) {
+      final id = '${item['id'] ?? ''}'.trim();
+      if (id.isNotEmpty && _locallyRemovedRowIds.contains(id)) {
+        return false;
+      }
+      if (_isPengurus) return _isOwnedByCurrentUser(item);
+      if (_isAdminOrOwner) return _isPengurusIncomeApproved(item);
+      return true;
+    }).toList();
+    final reportExpenseSources = (await () async {
+      try {
+        return await widget.repository.fetchExpenses();
+      } catch (_) {
+        return expenses;
+      }
+    }())
+        .where((item) {
+      final id = '${item['id'] ?? ''}'.trim();
+      if (id.isNotEmpty && _locallyRemovedRowIds.contains(id)) {
+        return false;
+      }
+      if (_isPengurus) return _isOwnedByCurrentUser(item);
+      return true;
+    }).toList();
 
     _FixedInvoiceBatch? resolveFixedBatch(Map<String, dynamic> invoice) {
       final invoiceId = '${invoice['id'] ?? ''}'.trim();
@@ -2321,13 +2347,18 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         customerName: resolveIncomeReportCustomerName(invoice),
       );
       if (!isCompany) return 0;
-      return _toNum(invoice['pph']);
+      return calculateInvoicePph2Percent(resolveSingleInvoiceJumlah(invoice));
     }
 
     double resolveSingleInvoiceTotal(Map<String, dynamic> invoice) {
+      final jumlah = resolveSingleInvoiceJumlah(invoice);
+      final isCompany = _resolveIsCompanyInvoice(
+        invoiceNumber: resolveIncomeReportInvoiceNumber(invoice),
+        customerName: resolveIncomeReportCustomerName(invoice),
+      );
+      if (isCompany) return calculateInvoiceTotalAfterPph(jumlah);
       final totalBayar = _toNum(invoice['total_bayar']);
       if (totalBayar > 0) return totalBayar;
-      final jumlah = resolveSingleInvoiceJumlah(invoice);
       final pph = resolveSingleInvoicePph(invoice);
       final fallback = jumlah - pph;
       return fallback > 0 ? fallback : jumlah;
@@ -2412,13 +2443,16 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
 
       if (manualPaidAmount > 0) {
         final paidAmount = min(total, manualPaidAmount);
-        final remainingAmount = max(0.0, total - paidAmount);
+        final remainingAmount = fixedInvoiceRoundedRemaining(
+          total: total,
+          paid: paidAmount,
+        );
         return (
           paidAmount: paidAmount,
           remainingAmount: remainingAmount,
           paidAt: latestPaidAt,
-          status: remainingAmount <= 0.01 ? 'Paid' : 'Partial',
-          paidLocked: remainingAmount <= 0.01,
+          status: remainingAmount <= 0 ? 'Paid' : 'Partial',
+          paidLocked: remainingAmount <= 0,
         );
       }
 
@@ -2443,18 +2477,24 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                   paymentBaseTotal > 0 ? total / paymentBaseTotal : 1.0;
               return min(total, max(0.0, storedPaidBase * ratio));
             })();
-      final remainingAmount = max(0.0, total - paidAmount);
+      final remainingAmount = fixedInvoiceRoundedRemaining(
+        total: total,
+        paid: paidAmount,
+      );
+      final paidByRounding = paidAmount > 0 && remainingAmount <= 0;
       final hasPartialPayment = paidAmount > 0 || paymentSummary.anyPaid;
-      final status = hasPartialPayment || statusLower.contains('partial')
-          ? 'Partial'
-          : (batchStatus.isEmpty ? 'Unpaid' : batchStatus);
+      final status = paidByRounding
+          ? 'Paid'
+          : hasPartialPayment || statusLower.contains('partial')
+              ? 'Partial'
+              : (batchStatus.isEmpty ? 'Unpaid' : batchStatus);
 
       return (
         paidAmount: paidAmount,
         remainingAmount: remainingAmount,
         paidAt: hasPartialPayment ? latestPaidAt : '',
         status: status,
-        paidLocked: false,
+        paidLocked: paidByRounding,
       );
     }
 
@@ -2474,6 +2514,193 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         }
       }
       return tujuan.isEmpty ? '-' : tujuan.join(' | ');
+    }
+
+    String normalizeReportClassifierText(dynamic value) {
+      return '${value ?? ''}'
+          .toLowerCase()
+          .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim();
+    }
+
+    String reportExpenseClassifierText(Map<String, dynamic> expense) {
+      final detailText = _toDetailList(expense['rincian']).map((detail) {
+        return [
+          detail['nama'],
+          detail['name'],
+          detail['kategori'],
+          detail['keterangan'],
+          detail['note'],
+        ].map((value) => '${value ?? ''}').join(' ');
+      }).join(' ');
+      return normalizeReportClassifierText([
+        expense['kategori'],
+        expense['keterangan'],
+        expense['note'],
+        detailText,
+      ].map((value) => '${value ?? ''}').join(' '));
+    }
+
+    bool isReportAutoSanguExpense(Map<String, dynamic> expense) {
+      final note = '${expense['note'] ?? ''}'.trim().toUpperCase();
+      if (note.startsWith('AUTO_SANGU:')) return true;
+      final text = reportExpenseClassifierText(expense);
+      return text.startsWith('auto sangu sopir') ||
+          text.contains('auto sangu sopir');
+    }
+
+    bool isReportGabunganExpense(Map<String, dynamic> expense) {
+      final text = reportExpenseClassifierText(expense);
+      return text.contains('gabungan') ||
+          text.contains('armada manual') ||
+          text.contains('manual armada') ||
+          text.contains('other gabungan');
+    }
+
+    bool isReportSanguExpense(Map<String, dynamic> expense) {
+      if (isReportAutoSanguExpense(expense)) return true;
+      final text = reportExpenseClassifierText(expense);
+      return text.contains('sangu') ||
+          text.contains('uang jalan') ||
+          text.contains('sopir') ||
+          text.contains('supir');
+    }
+
+    String reportLinkToken(dynamic value) {
+      return '${value ?? ''}'
+          .toUpperCase()
+          .replaceAll(RegExp(r'[^A-Z0-9]+'), '')
+          .trim();
+    }
+
+    String extractReportExpenseMarker(Map<String, dynamic> expense) {
+      final note = '${expense['note'] ?? ''}'.trim();
+      if (note.toUpperCase().startsWith('AUTO_SANGU:')) {
+        return note.substring('AUTO_SANGU:'.length).trim();
+      }
+      final ket = '${expense['keterangan'] ?? ''}'.trim();
+      final lowerKet = ket.toLowerCase();
+      const autoPrefix = 'auto sangu sopir -';
+      if (lowerKet.startsWith(autoPrefix)) {
+        return ket.substring(autoPrefix.length).trim();
+      }
+      return '';
+    }
+
+    bool incomeUsesReportGabunganArmada(Map<String, dynamic> income) {
+      final details = _toDetailList(income['rincian']);
+      if (details.isNotEmpty) {
+        return details.any(_isManualArmadaRow);
+      }
+      return _isManualArmadaRow(income);
+    }
+
+    List<String> reportIncomeSourceIds(Map<String, dynamic> income) {
+      final batchIds =
+          (income['__batch_invoice_ids'] as List<dynamic>? ?? const <dynamic>[])
+              .map((id) => '$id'.trim())
+              .where((id) => id.isNotEmpty)
+              .toList(growable: false);
+      if (batchIds.isNotEmpty) return batchIds;
+      final id = '${income['id'] ?? ''}'.trim();
+      return id.isEmpty ? const <String>[] : <String>[id];
+    }
+
+    double resolveReportGabunganIncomeAmount(
+      Map<String, dynamic> income, {
+      required double total,
+    }) {
+      final batchItems =
+          (income['__batch_items'] as List<dynamic>? ?? const <dynamic>[])
+              .whereType<Map>()
+              .map((item) => Map<String, dynamic>.from(item))
+              .toList(growable: false);
+      if (batchItems.isNotEmpty) {
+        return batchItems.fold<double>(
+          0,
+          (sum, item) => incomeUsesReportGabunganArmada(item)
+              ? sum + resolveSingleInvoiceTotal(item)
+              : sum,
+        );
+      }
+      return incomeUsesReportGabunganArmada(income) ? total : 0.0;
+    }
+
+    double resolveReportDetailSubtotal(
+      Map<String, dynamic> detail,
+      Map<String, dynamic> invoice,
+    ) {
+      for (final key in const ['subtotal', 'total', 'total_biaya', 'jumlah']) {
+        final explicit = _toNum(detail[key]);
+        if (explicit > 0) return explicit;
+      }
+      final tonase = _toNum(detail['tonase'] ?? invoice['tonase']);
+      final harga = _toNum(detail['harga'] ?? invoice['harga']);
+      final computed = tonase * harga;
+      if (computed > 0) return computed;
+      return resolveSingleInvoiceJumlah(invoice);
+    }
+
+    String resolveReportDetailText(
+      Map<String, dynamic> detail,
+      Map<String, dynamic> invoice,
+      String key,
+    ) {
+      final direct = '${detail[key] ?? ''}'.trim();
+      if (direct.isNotEmpty && direct != '-') return direct;
+      final fallback = '${invoice[key] ?? ''}'.trim();
+      return fallback.isEmpty ? '-' : fallback;
+    }
+
+    dynamic resolveReportDetailDate(
+      Map<String, dynamic> detail,
+      Map<String, dynamic> invoice,
+    ) {
+      for (final value in [
+        detail['armada_start_date'],
+        detail['tanggal'],
+        invoice['armada_start_date'],
+        invoice['tanggal'],
+        invoice['tanggal_kop'],
+        invoice['created_at'],
+      ]) {
+        if (Formatters.parseDate(value) != null) return value;
+      }
+      return invoice['tanggal_kop'] ??
+          invoice['tanggal'] ??
+          invoice['created_at'];
+    }
+
+    String reportDateGroupKey(dynamic value) {
+      final date = Formatters.parseDate(value);
+      if (date == null) return '${value ?? ''}'.trim();
+      final month = date.month.toString().padLeft(2, '0');
+      final day = date.day.toString().padLeft(2, '0');
+      return '${date.year}-$month-$day';
+    }
+
+    String? resolveLinkedReportIncomeId({
+      required Map<String, dynamic> expense,
+      required Map<String, String> incomeIdByToken,
+    }) {
+      final markerToken = reportLinkToken(extractReportExpenseMarker(expense));
+      if (markerToken.isNotEmpty && incomeIdByToken[markerToken] != null) {
+        return incomeIdByToken[markerToken];
+      }
+
+      final textToken = reportLinkToken([
+        expense['note'],
+        expense['keterangan'],
+        expense['kategori'],
+        expense['no_expense'],
+      ].map((value) => '${value ?? ''}').join(' '));
+      if (textToken.isEmpty) return null;
+      for (final entry in incomeIdByToken.entries) {
+        if (entry.key.length < 5) continue;
+        if (textToken.contains(entry.key)) return entry.value;
+      }
+      return null;
     }
 
     final reportIncomeSources = <Map<String, dynamic>>[];
@@ -2513,14 +2740,14 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         0,
         (sum, item) => sum + resolveSingleInvoiceJumlah(item),
       );
-      final pph = batchItems.fold<double>(
-        0,
-        (sum, item) => sum + resolveSingleInvoicePph(item),
+      final isCompanyBatch = _resolveIsCompanyInvoice(
+        invoiceEntity: batchItems.first['invoice_entity'],
+        invoiceNumber: invoiceNumber,
+        customerName: customerName,
       );
-      final total = batchItems.fold<double>(
-        0,
-        (sum, item) => sum + resolveSingleInvoiceTotal(item),
-      );
+      final pph = isCompanyBatch ? calculateInvoicePph2Percent(jumlah) : 0.0;
+      final total =
+          isCompanyBatch ? calculateInvoiceTotalAfterPph(jumlah) : jumlah;
       final reportPayment = resolveFixedBatchReportPayment(
         batch: batch,
         paymentSummary: paymentSummary,
@@ -2570,11 +2797,90 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       reportIncomeSources.add(Map<String, dynamic>.from(item));
     }
 
+    final fixedInvoiceSourceIds = <String>{
+      ...reportIncomeSources.expand((item) {
+        final ids =
+            (item['__batch_invoice_ids'] as List<dynamic>? ?? const <dynamic>[])
+                .map((id) => '$id'.trim())
+                .where((id) => id.isNotEmpty)
+                .toList(growable: false);
+        if (ids.isNotEmpty) return ids;
+        final directId = '${item['id'] ?? ''}'.trim();
+        return directId.isEmpty ? const <String>[] : <String>[directId];
+      }),
+    };
+    final detailIncomeReportSources = <Map<String, dynamic>>[
+      ...reportIncomeSources,
+      ...invoiceListIncomeInvoices.where((item) {
+        final id = '${item['id'] ?? ''}'.trim();
+        return id.isEmpty || !fixedInvoiceSourceIds.contains(id);
+      }),
+    ];
+
+    final invoiceListIncomeById = <String, Map<String, dynamic>>{};
+    final invoiceListIncomeIdByToken = <String, String>{};
+    for (final income in invoiceListIncomeInvoices) {
+      final id = '${income['id'] ?? ''}'.trim();
+      if (id.isEmpty) continue;
+      invoiceListIncomeById[id] = income;
+      void indexToken(dynamic value) {
+        final token = reportLinkToken(value);
+        if (token.isNotEmpty) {
+          invoiceListIncomeIdByToken.putIfAbsent(token, () => id);
+        }
+      }
+
+      indexToken(id);
+      indexToken(income['no_invoice']);
+      indexToken(
+        Formatters.invoiceNumber(
+          income['no_invoice'],
+          resolveIncomeReportInvoiceDate(income),
+          customerName: income['nama_pelanggan'],
+          invoiceEntity: income['invoice_entity'],
+        ),
+      );
+    }
+
+    final reportSanguByIncomeId = <String, double>{};
+    final reportSanguExpensesByIncomeId =
+        <String, List<Map<String, dynamic>>>{};
+    final mergedReportExpenseIds = <String>{};
+    for (final expense in reportExpenseSources) {
+      final amount = _toNum(expense['total_pengeluaran']);
+      if (amount <= 0) continue;
+      final linkedIncomeId = resolveLinkedReportIncomeId(
+        expense: expense,
+        incomeIdByToken: invoiceListIncomeIdByToken,
+      );
+      if (linkedIncomeId == null || linkedIncomeId.isEmpty) continue;
+      final linkedIncome = invoiceListIncomeById[linkedIncomeId];
+      final linkedUsesGabungan =
+          linkedIncome != null && incomeUsesReportGabunganArmada(linkedIncome);
+      final isGabungan = linkedUsesGabungan || isReportGabunganExpense(expense);
+      final isSangu = !isGabungan && isReportSanguExpense(expense);
+      if (!isGabungan && !isSangu) continue;
+
+      if (isSangu) {
+        reportSanguByIncomeId.update(
+          linkedIncomeId,
+          (value) => value + amount,
+          ifAbsent: () => amount,
+        );
+        reportSanguExpensesByIncomeId
+            .putIfAbsent(linkedIncomeId, () => <Map<String, dynamic>>[])
+            .add(expense);
+      }
+      final expenseId = '${expense['id'] ?? ''}'.trim();
+      if (expenseId.isNotEmpty) mergedReportExpenseIds.add(expenseId);
+    }
+
     List<Map<String, dynamic>> buildRows({
       required DateTime start,
       required DateTime end,
       required bool includeIncome,
       required bool includeExpense,
+      required bool useInvoiceListDetail,
       required String customerKind,
       required Set<String> allowedStatuses,
       required String keyword,
@@ -2600,8 +2906,12 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
 
       bool incomeKindAllowed(Map<String, dynamic> source) {
         if (customerKind == 'all') return true;
-        final customerName = resolveIncomeReportCustomerName(source);
-        final invoiceNumber = resolveIncomeReportInvoiceNumber(source);
+        final customerName = useInvoiceListDetail
+            ? '${source['nama_pelanggan'] ?? ''}'.trim()
+            : resolveIncomeReportCustomerName(source);
+        final invoiceNumber = useInvoiceListDetail
+            ? source['no_invoice']
+            : resolveIncomeReportInvoiceNumber(source);
         final entity = _resolveInvoiceEntity(
           invoiceNumber: invoiceNumber,
           customerName: customerName,
@@ -2619,21 +2929,272 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         }
       }
 
+      double detailExpenseAmount(Map<String, dynamic> detail) {
+        for (final key in const [
+          'jumlah',
+          'subtotal',
+          'total',
+          'total_pengeluaran',
+          'nominal',
+        ]) {
+          final amount = _toNum(detail[key]);
+          if (amount > 0) return amount;
+        }
+        return 0;
+      }
+
+      double resolveDetailSanguAmount({
+        required Map<String, dynamic> invoice,
+        required Map<String, dynamic> detail,
+        required int detailIndex,
+        required int detailCount,
+      }) {
+        final invoiceId = '${invoice['id'] ?? ''}'.trim();
+        if (invoiceId.isEmpty) return 0;
+        final linkedExpenses = reportSanguExpensesByIncomeId[invoiceId];
+        if (linkedExpenses == null || linkedExpenses.isEmpty) return 0;
+
+        final detailDate = reportDateGroupKey(
+          resolveReportDetailDate(detail, invoice),
+        );
+        final detailMuat = normalizeReportClassifierText(
+          resolveReportDetailText(detail, invoice, 'lokasi_muat'),
+        );
+        final detailBongkar = normalizeReportClassifierText(
+          resolveReportDetailText(detail, invoice, 'lokasi_bongkar'),
+        );
+
+        var total = 0.0;
+        for (final expense in linkedExpenses) {
+          final expenseDetails = _toDetailList(expense['rincian']);
+          if (expenseDetails.isEmpty) {
+            if (detailCount == 1) total += _toNum(expense['total_pengeluaran']);
+            continue;
+          }
+
+          if (detailIndex < expenseDetails.length) {
+            final indexedAmount =
+                detailExpenseAmount(expenseDetails[detailIndex]);
+            if (indexedAmount > 0) {
+              total += indexedAmount;
+              continue;
+            }
+          }
+
+          var matched = 0.0;
+          for (final expenseDetail in expenseDetails) {
+            final expenseDate = reportDateGroupKey(
+              expenseDetail['armada_start_date'] ??
+                  expenseDetail['tanggal'] ??
+                  expense['tanggal'] ??
+                  expense['created_at'],
+            );
+            final expenseMuat = normalizeReportClassifierText(
+              '${expenseDetail['lokasi_muat'] ?? ''}',
+            );
+            final expenseBongkar = normalizeReportClassifierText(
+              '${expenseDetail['lokasi_bongkar'] ?? ''}',
+            );
+            final routeMatches =
+                (expenseMuat.isEmpty || expenseMuat == detailMuat) &&
+                    (expenseBongkar.isEmpty || expenseBongkar == detailBongkar);
+            final dateMatches = expenseDate.isEmpty ||
+                detailDate.isEmpty ||
+                expenseDate == detailDate;
+            if (routeMatches && dateMatches) {
+              matched += detailExpenseAmount(expenseDetail);
+            }
+          }
+          if (matched > 0) {
+            total += matched;
+          } else if (detailCount == 1) {
+            total += _toNum(expense['total_pengeluaran']);
+          }
+        }
+        return total;
+      }
+
+      void addIncomeDetailRows({
+        required Map<String, dynamic> invoice,
+        required String status,
+        required String paidAt,
+        required String parentInvoiceNumber,
+        required String parentSortKey,
+        required String sourceKey,
+      }) {
+        if (!incomeKindAllowed(invoice)) return;
+        final details = _toDetailList(invoice['rincian']);
+        final detailRows = details.isEmpty
+            ? <Map<String, dynamic>>[Map<String, dynamic>.from(invoice)]
+            : details;
+        final customerName =
+            '${invoice['nama_pelanggan'] ?? '-'}'.trim().isEmpty
+                ? '-'
+                : '${invoice['nama_pelanggan'] ?? '-'}'.trim();
+        final invoiceNumber = Formatters.invoiceNumber(
+          invoice['no_invoice'] ?? parentInvoiceNumber,
+          resolveIncomeReportInvoiceDate(invoice),
+          customerName: customerName,
+          invoiceEntity: invoice['invoice_entity'],
+        );
+        final invoiceSubtotal = resolveSingleInvoiceJumlah(invoice);
+        final invoicePph = _resolveIsCompanyInvoice(
+          invoiceEntity: invoice['invoice_entity'],
+          invoiceNumber: invoiceNumber,
+          customerName: customerName,
+          fallback: false,
+        )
+            ? calculateInvoicePph2Percent(invoiceSubtotal)
+            : 0.0;
+        var remainingPph = invoicePph;
+
+        for (var detailIndex = 0;
+            detailIndex < detailRows.length;
+            detailIndex++) {
+          final detail = detailRows[detailIndex];
+          final reportDate = resolveReportDetailDate(detail, invoice);
+          if (!inRange(reportDate)) continue;
+
+          final detailSubtotal = resolveReportDetailSubtotal(detail, invoice);
+          final isLastDetail = detailIndex == detailRows.length - 1;
+          final detailPph = invoicePph <= 0
+              ? 0.0
+              : isLastDetail
+                  ? remainingPph.clamp(0.0, invoicePph).toDouble()
+                  : min(
+                      remainingPph,
+                      invoiceSubtotal > 0
+                          ? (detailSubtotal * invoicePph / invoiceSubtotal)
+                              .floorToDouble()
+                          : calculateInvoicePph2Percent(detailSubtotal),
+                    );
+          remainingPph = max(0.0, remainingPph - detailPph);
+          final detailTotal = max(0.0, detailSubtotal - detailPph);
+          final muat = resolveReportDetailText(detail, invoice, 'lokasi_muat');
+          final bongkar =
+              resolveReportDetailText(detail, invoice, 'lokasi_bongkar');
+          final rowSource = <String, dynamic>{
+            ...invoice,
+            ...detail,
+            'nama_pelanggan': customerName,
+            'no_invoice': invoiceNumber,
+            'status': status,
+            'tanggal_kop': reportDate,
+            'paid_at': paidAt,
+            'lokasi_muat': muat,
+            'lokasi_bongkar': bongkar,
+          };
+          if (!keywordAllowed(rowSource)) continue;
+
+          final sanguAmount = resolveDetailSanguAmount(
+            invoice: invoice,
+            detail: detail,
+            detailIndex: detailIndex,
+            detailCount: detailRows.length,
+          );
+          final gabunganAmount = _isManualArmadaRow(detail) ? detailTotal : 0.0;
+          final laba = detailTotal - sanguAmount - gabunganAmount;
+
+          rows.add({
+            '__key': 'income-detail:$sourceKey:$detailIndex',
+            '__type': 'Income',
+            '__number': parentInvoiceNumber.isNotEmpty
+                ? parentInvoiceNumber
+                : invoiceNumber,
+            '__invoice_sort': parentSortKey,
+            '__date': reportDate,
+            '__departure_date': reportDate,
+            '__paid_at': paidAt,
+            '__name': customerName,
+            '__customer': customerName,
+            '__status': status,
+            '__amount': detailTotal,
+            '__jumlah': detailSubtotal,
+            '__pph': detailPph,
+            '__total': detailTotal,
+            '__muat': muat,
+            '__bongkar': bongkar,
+            '__tujuan': bongkar,
+            '__paid_locked': false,
+            '__bayar_default': 0.0,
+            '__sisa_default': 0.0,
+            '__income': detailTotal,
+            '__expense': 0.0,
+            '__sangu_sopir': sanguAmount,
+            '__gabungan': gabunganAmount,
+            '__laba': laba,
+          });
+        }
+      }
+
       if (includeIncome) {
-        for (final item in reportIncomeSources) {
-          final status = resolveIncomeReportStatus(item);
+        final incomeSources = useInvoiceListDetail
+            ? detailIncomeReportSources
+            : reportIncomeSources;
+        for (final item in incomeSources) {
+          final status = useInvoiceListDetail
+              ? '${item['status'] ?? 'Unpaid'}'.trim()
+              : resolveIncomeReportStatus(item);
           if (!statusAllowed(status)) continue;
-          if (!incomeKindAllowed(item)) continue;
-          final customerName = resolveIncomeReportCustomerName(item);
-          final reportDate = resolveIncomeReportDate(item);
-          final paidAt = resolveIncomeReportPaidAt(item);
-          final invoiceNumber = resolveIncomeReportInvoiceNumber(item);
+          final customerName = useInvoiceListDetail
+              ? ('${item['nama_pelanggan'] ?? '-'}'.trim().isEmpty
+                  ? '-'
+                  : '${item['nama_pelanggan'] ?? '-'}'.trim())
+              : resolveIncomeReportCustomerName(item);
+          final reportDate = useInvoiceListDetail
+              ? resolveIncomeReportInvoiceDate(item)
+              : resolveIncomeReportDate(item);
+          final paidAt = useInvoiceListDetail
+              ? '${item['paid_at'] ?? ''}'.trim()
+              : resolveIncomeReportPaidAt(item);
+          final invoiceNumber = useInvoiceListDetail
+              ? Formatters.invoiceNumber(
+                  item['no_invoice'],
+                  reportDate,
+                  customerName: customerName,
+                  invoiceEntity: item['invoice_entity'],
+                )
+              : resolveIncomeReportInvoiceNumber(item);
           final invoiceSortKey = buildIncomeReportInvoiceSortKey(
             invoiceNumber: invoiceNumber,
             invoiceDate: reportDate,
             customerName: customerName,
             invoiceEntity: item['invoice_entity'],
           );
+
+          if (useInvoiceListDetail) {
+            final batchItems =
+                (item['__batch_items'] as List<dynamic>? ?? const <dynamic>[])
+                    .whereType<Map>()
+                    .map((entry) => Map<String, dynamic>.from(entry))
+                    .toList(growable: false);
+            if (batchItems.isNotEmpty) {
+              for (var i = 0; i < batchItems.length; i++) {
+                addIncomeDetailRows(
+                  invoice: batchItems[i],
+                  status: status,
+                  paidAt: paidAt,
+                  parentInvoiceNumber: invoiceNumber,
+                  parentSortKey: invoiceSortKey,
+                  sourceKey:
+                      '${item['__batch_id'] ?? item['id'] ?? invoiceNumber}:$i',
+                );
+              }
+            } else {
+              addIncomeDetailRows(
+                invoice: item,
+                status: status,
+                paidAt: paidAt,
+                parentInvoiceNumber: invoiceNumber,
+                parentSortKey: invoiceSortKey,
+                sourceKey:
+                    '${item['id'] ?? item['no_invoice'] ?? item['created_at'] ?? rows.length}',
+              );
+            }
+            continue;
+          }
+
+          if (!incomeKindAllowed(item)) continue;
           final rowSource = <String, dynamic>{
             ...item,
             'nama_pelanggan': customerName,
@@ -2645,18 +3206,42 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
           if (!inRange(reportDate)) continue;
           if (!keywordAllowed(rowSource)) continue;
           final subtotal = resolveSingleInvoiceJumlah(item);
-          final pph = resolveSingleInvoicePph(item);
-          final total = resolveSingleInvoiceTotal(item);
+          final pph = useInvoiceListDetail
+              ? (_resolveIsCompanyInvoice(
+                  invoiceEntity: item['invoice_entity'],
+                  invoiceNumber: invoiceNumber,
+                  customerName: customerName,
+                  fallback: false,
+                )
+                  ? calculateInvoicePph2Percent(subtotal)
+                  : 0.0)
+              : resolveSingleInvoicePph(item);
+          final total = useInvoiceListDetail
+              ? (() {
+                  final fallback = subtotal - pph;
+                  return fallback > 0 ? fallback : subtotal;
+                })()
+              : resolveSingleInvoiceTotal(item);
           final paidAmount = _toNum(item['__paid_amount']);
           final remainingAmount = _toNum(item['__remaining_amount']);
-          final paidLocked =
-              item['__report_paid_locked'] == true || isIncomeReportPaid(item);
-          final defaultBayar = paidLocked ? total : paidAmount;
+          final paidLocked = !useInvoiceListDetail &&
+              (item['__report_paid_locked'] == true ||
+                  isIncomeReportPaid(item));
+          final lockedPaidAmount = paidAmount > 0 ? paidAmount : total;
+          final defaultBayar = paidLocked ? lockedPaidAmount : paidAmount;
           final defaultSisa = paidLocked
               ? 0.0
               : (remainingAmount > 0
                   ? remainingAmount
                   : max(0.0, total - paidAmount));
+          final incomeIds = reportIncomeSourceIds(item);
+          final linkedSanguAmount = incomeIds.fold<double>(
+            0,
+            (sum, id) => sum + (reportSanguByIncomeId[id] ?? 0.0),
+          );
+          final reportGabunganAmount = useInvoiceListDetail
+              ? resolveReportGabunganIncomeAmount(item, total: total)
+              : 0.0;
 
           rows.add({
             '__key':
@@ -2675,23 +3260,41 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
             '__jumlah': subtotal,
             '__pph': pph,
             '__total': total,
-            '__tujuan': '${item['lokasi_bongkar'] ?? '-'}'.trim(),
+            '__muat': '${item['lokasi_muat'] ?? '-'}'.trim().isEmpty
+                ? '-'
+                : '${item['lokasi_muat'] ?? '-'}'.trim(),
+            '__bongkar': '${item['lokasi_bongkar'] ?? '-'}'.trim().isEmpty
+                ? '-'
+                : '${item['lokasi_bongkar'] ?? '-'}'.trim(),
+            '__tujuan': useInvoiceListDetail
+                ? summarizeInvoiceDestinations([item])
+                : '${item['lokasi_bongkar'] ?? '-'}'.trim(),
             '__paid_locked': paidLocked,
             '__bayar_default': defaultBayar,
             '__sisa_default': defaultSisa,
             '__income': total,
             '__expense': 0.0,
+            '__sangu_sopir': useInvoiceListDetail ? linkedSanguAmount : 0.0,
+            '__gabungan': useInvoiceListDetail ? reportGabunganAmount : 0.0,
+            '__laba': total - linkedSanguAmount - reportGabunganAmount,
           });
         }
       }
 
       if (includeExpense && customerKind == 'all') {
-        for (final item in expenses) {
+        for (final item in reportExpenseSources) {
+          final expenseId = '${item['id'] ?? ''}'.trim();
+          if (useInvoiceListDetail &&
+              expenseId.isNotEmpty &&
+              mergedReportExpenseIds.contains(expenseId)) {
+            continue;
+          }
           final status = '${item['status'] ?? 'Recorded'}';
           final amount = _toNum(item['total_pengeluaran']);
           if (!inRange(item['tanggal'] ?? item['created_at'])) continue;
           if (!statusAllowed(status)) continue;
           if (!keywordAllowed(item)) continue;
+          final sanguAmount = isReportSanguExpense(item) ? amount : 0.0;
           rows.add({
             '__key':
                 'expense:${item['id'] ?? item['no_expense'] ?? item['created_at'] ?? rows.length}',
@@ -2707,31 +3310,49 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
             '__jumlah': amount,
             '__pph': 0.0,
             '__total': amount,
+            '__muat': '-',
+            '__bongkar': '-',
             '__tujuan': '-',
             '__paid_locked': false,
             '__bayar_default': 0.0,
             '__sisa_default': 0.0,
             '__income': 0.0,
             '__expense': amount,
+            '__sangu_sopir': sanguAmount,
+            '__gabungan': 0.0,
+            '__laba': -amount,
+            '__is_auto_sangu': isReportAutoSanguExpense(item),
           });
         }
       }
 
+      final outputRows = rows;
+
       if (includeIncome && !includeExpense) {
         return sortIncomeReportRowsByInvoice(
-          rows.where((row) => '${row['__type']}' == 'Income').toList(),
+          outputRows.where((row) => '${row['__type']}' == 'Income').toList(),
         );
       }
 
-      rows.sort((a, b) {
+      outputRows.sort((a, b) {
         final aDate = Formatters.parseDate(a['__date']) ??
             DateTime.fromMillisecondsSinceEpoch(0);
         final bDate = Formatters.parseDate(b['__date']) ??
             DateTime.fromMillisecondsSinceEpoch(0);
-        return bDate.compareTo(aDate);
+        final dateCompare = aDate.compareTo(bDate);
+        if (dateCompare != 0) return dateCompare;
+        int typeRank(Map<String, dynamic> row) =>
+            '${row['__type']}' == 'Income' ? 0 : 1;
+        final typeCompare = typeRank(a).compareTo(typeRank(b));
+        if (typeCompare != 0) return typeCompare;
+        final aKey =
+            '${a['__invoice_sort'] ?? a['__number'] ?? a['__key'] ?? ''}';
+        final bKey =
+            '${b['__invoice_sort'] ?? b['__number'] ?? b['__key'] ?? ''}';
+        return aKey.compareTo(bKey);
       });
 
-      return rows;
+      return outputRows;
     }
 
     Future<bool> printReportPdf({
@@ -2742,6 +3363,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       required double totalExpense,
       required bool includeIncome,
       required bool includeExpense,
+      required bool includeDriverCostColumns,
       required String customerKind,
       required String orientation,
     }) async {
@@ -2873,11 +3495,17 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                   : _t('Income Fix Invoice', 'Fixed Invoice Income')
               : _t('Expense', 'Expense');
       final orientationLabel = _t('Portrait', 'Portrait');
+      final driverCostColumnInfo =
+          includeIncome && includeExpense && includeDriverCostColumns
+              ? ' • ${_t('Detail: Fix Invoice', 'Detail: Fixed Invoice')}'
+              : '';
       final previewInfo =
-          '$reportScopeLabel • ${_t('Periode', 'Period')}: $periodLabel • ${_t('Orientasi', 'Orientation')}: $orientationLabel • ${rows.length} ${_t(incomeInvoiceReport ? 'invoice' : 'data', incomeInvoiceReport ? 'invoices' : 'rows')}';
+          '$reportScopeLabel • ${_t('Periode', 'Period')}: $periodLabel • ${_t('Orientasi', 'Orientation')}: $orientationLabel$driverCostColumnInfo • ${rows.length} ${_t(incomeInvoiceReport ? 'invoice' : 'data', incomeInvoiceReport ? 'invoices' : 'rows')}';
 
       Future<Uint8List> buildReportPdfBytes(PdfPageFormat format) async {
         final useIncomeInvoiceTable = includeIncome && !includeExpense;
+        final useCombinedDriverCostColumns =
+            includeIncome && includeExpense && includeDriverCostColumns;
         final companyMode = customerKind == Formatters.invoiceEntityCvAnt ||
             customerKind == Formatters.invoiceEntityPtAnt ||
             rows.any((row) => _toNum(row['__pph']) > 0);
@@ -2889,6 +3517,19 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
             : companyMode;
         String formatReportDate(dynamic value) => Formatters.dMyShort(value);
         String formatReportAmount(num value) => _formatRupiahNoPrefix(value);
+        String formatOptionalReportAmount(num value) {
+          final number = value.toDouble();
+          if (!number.isFinite || number <= 0) return '';
+          return formatReportAmount(number);
+        }
+
+        bool isCombinedExpenseCategoryRow(Map<String, dynamic> row) {
+          return useCombinedDriverCostColumns &&
+              '${row['__type']}' == 'Expense' &&
+              (_toNum(row['__sangu_sopir']) > 0 ||
+                  _toNum(row['__gabungan']) > 0);
+        }
+
         String formatOptionalEditableAmount(
           Map<String, dynamic> row,
           String textKey,
@@ -2987,6 +3628,10 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
           headerFont -= 0.4;
           cellFont -= 0.4;
         }
+        if (useCombinedDriverCostColumns) {
+          headerFont -= 0.75;
+          cellFont -= 0.75;
+        }
         headerFont = headerFont.clamp(7.0, 8.5).toDouble();
         cellFont = cellFont.clamp(6.2, 7.5).toDouble();
 
@@ -3036,24 +3681,38 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                     'SISA',
                     'TGL BAYAR',
                   ]
-            : companyMode
+            : useCombinedDriverCostColumns
                 ? const [
                     'NO',
-                    'TANGGAL',
-                    'CUSTOMER',
+                    'TGL',
+                    'NAMA CUSTOMER',
+                    'MUAT',
+                    'BONGKAR',
                     'JUMLAH',
+                    'SOPIR',
+                    'GABUNGAN',
                     'PPH',
                     'TOTAL',
-                    'TUJUAN'
+                    'LABA',
                   ]
-                : const [
-                    'NO',
-                    'TANGGAL',
-                    'CUSTOMER',
-                    'JUMLAH',
-                    'TOTAL',
-                    'TUJUAN'
-                  ];
+                : companyMode
+                    ? const [
+                        'NO',
+                        'TANGGAL',
+                        'CUSTOMER',
+                        'JUMLAH',
+                        'PPH',
+                        'TOTAL',
+                        'TUJUAN'
+                      ]
+                    : const [
+                        'NO',
+                        'TANGGAL',
+                        'CUSTOMER',
+                        'JUMLAH',
+                        'TOTAL',
+                        'TUJUAN'
+                      ];
         final tableData = List<List<String>>.generate(rows.length, (index) {
           final row = rows[index];
           if (useIncomeInvoiceTable) {
@@ -3082,23 +3741,61 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
               paidAt.isEmpty ? '' : formatReportDate(paidAt),
             ];
           }
-          if (companyMode) {
+          if (useCombinedDriverCostColumns) {
+            final isExpense = '${row['__type']}' == 'Expense';
+            final jumlah = _toNum(row['__jumlah']);
+            final sangu = _toNum(row['__sangu_sopir']);
+            final gabungan = _toNum(row['__gabungan']);
+            final pph = _toNum(row['__pph']);
+            final total = _toNum(row['__total']);
+            final laba = _toNum(row['__laba']);
             return [
               '${index + 1}',
               formatReportDate(row['__date']),
               '${row['__customer'] ?? row['__name'] ?? '-'}'.trim(),
-              formatReportAmount(_toNum(row['__jumlah'])),
-              formatReportAmount(_toNum(row['__pph'])),
-              formatReportAmount(_toNum(row['__total'])),
+              '${row['__muat'] ?? '-'}'.trim().isEmpty
+                  ? '-'
+                  : '${row['__muat'] ?? '-'}'.trim(),
+              '${row['__bongkar'] ?? row['__tujuan'] ?? '-'}'.trim().isEmpty
+                  ? '-'
+                  : '${row['__bongkar'] ?? row['__tujuan'] ?? '-'}'.trim(),
+              isExpense ? '' : formatReportAmount(jumlah),
+              formatOptionalReportAmount(sangu),
+              formatOptionalReportAmount(gabungan),
+              isExpense ? '' : formatReportAmount(pph),
+              isExpense ? '' : formatReportAmount(total),
+              formatReportAmount(laba),
+            ];
+          }
+          if (companyMode) {
+            final categoryExpense = isCombinedExpenseCategoryRow(row);
+            return [
+              '${index + 1}',
+              formatReportDate(row['__date']),
+              '${row['__customer'] ?? row['__name'] ?? '-'}'.trim(),
+              categoryExpense
+                  ? ''
+                  : formatReportAmount(_toNum(row['__jumlah'])),
+              categoryExpense ? '' : formatReportAmount(_toNum(row['__pph'])),
+              categoryExpense ? '' : formatReportAmount(_toNum(row['__total'])),
+              if (useCombinedDriverCostColumns) ...[
+                formatOptionalReportAmount(_toNum(row['__sangu_sopir'])),
+                formatOptionalReportAmount(_toNum(row['__gabungan'])),
+              ],
               '${row['__tujuan'] ?? '-'}'.trim(),
             ];
           }
+          final categoryExpense = isCombinedExpenseCategoryRow(row);
           return [
             '${index + 1}',
             formatReportDate(row['__date']),
             '${row['__customer'] ?? row['__name'] ?? '-'}'.trim(),
-            formatReportAmount(_toNum(row['__jumlah'])),
-            formatReportAmount(_toNum(row['__total'])),
+            categoryExpense ? '' : formatReportAmount(_toNum(row['__jumlah'])),
+            categoryExpense ? '' : formatReportAmount(_toNum(row['__total'])),
+            if (useCombinedDriverCostColumns) ...[
+              formatOptionalReportAmount(_toNum(row['__sangu_sopir'])),
+              formatOptionalReportAmount(_toNum(row['__gabungan'])),
+            ],
             '${row['__tujuan'] ?? '-'}'.trim(),
           ];
         });
@@ -3138,21 +3835,103 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                     '',
                   ],
           );
+        } else {
+          if (useCombinedDriverCostColumns) {
+            final incomeRows =
+                rows.where((row) => '${row['__type']}' == 'Income');
+            final totalJumlah = incomeRows.fold<double>(
+              0,
+              (sum, row) => sum + _toNum(row['__jumlah']),
+            );
+            final totalPph = incomeRows.fold<double>(
+              0,
+              (sum, row) => sum + _toNum(row['__pph']),
+            );
+            final totalNilai = incomeRows.fold<double>(
+              0,
+              (sum, row) => sum + _toNum(row['__total']),
+            );
+            final totalSangu = rows.fold<double>(
+              0,
+              (sum, row) => sum + _toNum(row['__sangu_sopir']),
+            );
+            final totalGabungan = rows.fold<double>(
+              0,
+              (sum, row) => sum + _toNum(row['__gabungan']),
+            );
+            final totalLaba = rows.fold<double>(
+              0,
+              (sum, row) => sum + _toNum(row['__laba']),
+            );
+            reportTableData.add([
+              '',
+              '',
+              '',
+              '',
+              'TOTAL',
+              formatReportAmount(totalJumlah),
+              formatReportAmount(totalSangu),
+              formatReportAmount(totalGabungan),
+              formatReportAmount(totalPph),
+              formatReportAmount(totalNilai),
+              formatReportAmount(totalLaba),
+            ]);
+          } else {
+            final totalJumlah = rows.fold<double>(0, (sum, row) {
+              if (isCombinedExpenseCategoryRow(row)) return sum;
+              return sum + _toNum(row['__jumlah']);
+            });
+            final totalPph = companyMode
+                ? rows.fold<double>(0, (sum, row) {
+                    if (isCombinedExpenseCategoryRow(row)) return sum;
+                    return sum + _toNum(row['__pph']);
+                  })
+                : 0.0;
+            final totalNilai = rows.fold<double>(0, (sum, row) {
+              if (isCombinedExpenseCategoryRow(row)) return sum;
+              return sum + _toNum(row['__total']);
+            });
+            reportTableData.add(
+              companyMode
+                  ? [
+                      '',
+                      '',
+                      'TOTAL',
+                      formatReportAmount(totalJumlah),
+                      formatReportAmount(totalPph),
+                      formatReportAmount(totalNilai),
+                      '',
+                    ]
+                  : [
+                      '',
+                      '',
+                      'TOTAL',
+                      formatReportAmount(totalJumlah),
+                      formatReportAmount(totalNilai),
+                      '',
+                    ],
+            );
+          }
         }
         final numericColumns = useIncomeInvoiceTable
             ? showIncomePphColumn
                 ? <int>{3, 4, 5, 6, 7}
                 : <int>{3, 4, 5, 6}
-            : companyMode
-                ? <int>{3, 4, 5}
-                : <int>{3, 4};
+            : useCombinedDriverCostColumns
+                ? <int>{5, 6, 7, 8, 9, 10}
+                : companyMode
+                    ? <int>{3, 4, 5}
+                    : <int>{3, 4};
         final dateColumns = useIncomeInvoiceTable
             ? showIncomePphColumn
                 ? <int>{1, 8}
                 : <int>{1, 7}
             : <int>{1};
-        final priorityTextColumns =
-            useIncomeInvoiceTable ? <int>{2} : <int>{2, headers.length - 1};
+        final priorityTextColumns = useIncomeInvoiceTable
+            ? <int>{2}
+            : useCombinedDriverCostColumns
+                ? <int>{2, 3, 4}
+                : <int>{2, headers.length - 1};
         final columnWidths = buildDynamicColumnWidths(
           headers: headers,
           data: reportTableData,
@@ -3192,27 +3971,31 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
           }
         } else {
           final customerIndex = 2;
-          final currentCustomerFlex =
-              flexValue(columnWidths[customerIndex], 16.0);
-          columnWidths[customerIndex] = pw.FlexColumnWidth(
-            max(currentCustomerFlex, companyMode ? 26.0 : 24.0),
-          );
+          if (useCombinedDriverCostColumns) {
+            columnWidths
+              ..[0] = const pw.FlexColumnWidth(2.8)
+              ..[1] = const pw.FlexColumnWidth(7.2)
+              ..[customerIndex] = const pw.FlexColumnWidth(18.0)
+              ..[3] = const pw.FlexColumnWidth(9.0)
+              ..[4] = const pw.FlexColumnWidth(9.5)
+              ..[5] = const pw.FlexColumnWidth(8.0)
+              ..[6] = const pw.FlexColumnWidth(8.0)
+              ..[7] = const pw.FlexColumnWidth(8.0)
+              ..[8] = const pw.FlexColumnWidth(6.4)
+              ..[9] = const pw.FlexColumnWidth(8.0)
+              ..[10] = const pw.FlexColumnWidth(8.0);
+          } else {
+            final currentCustomerFlex =
+                flexValue(columnWidths[customerIndex], 16.0);
+            columnWidths[customerIndex] = pw.FlexColumnWidth(
+              max(currentCustomerFlex, companyMode ? 26.0 : 24.0),
+            );
+          }
         }
         final cellAlignments = <int, pw.Alignment>{
           for (int i = 0; i < headers.length; i++) i: pw.Alignment.center,
         };
         final totalRowNumber = reportTableData.length;
-        final paidIncomeRowNumbers = <int>{
-          if (useIncomeInvoiceTable)
-            for (var i = 0; i < rows.length; i++)
-              if ('${rows[i]['__type']}' == 'Income' &&
-                  _toNum(rows[i]['__total']) > 0 &&
-                  (_toNum(rows[i]['__sisa']) <= 0.01 ||
-                      rows[i]['__paid_locked'] == true ||
-                      '${rows[i]['__status'] ?? ''}'.toLowerCase() == 'paid'))
-                i + 1,
-        };
-
         double oneLineReportFontSize({
           required int index,
           required String text,
@@ -3458,27 +4241,19 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                 columnWidths: columnWidths,
                 headers: headerWidgets,
                 data: reportTableData,
-                cellDecoration: useIncomeInvoiceTable
-                    ? (index, data, rowNum) {
-                        if (rowNum == totalRowNumber) {
-                          return const pw.BoxDecoration(
-                            color: PdfColors.grey200,
-                          );
-                        }
-                        if (index == 0 &&
-                            paidIncomeRowNumbers.contains(rowNum)) {
-                          return const pw.BoxDecoration(
-                            color: PdfColor.fromInt(0xFFD9EAD3),
-                          );
-                        }
-                        return const pw.BoxDecoration();
-                      }
-                    : null,
+                cellDecoration: (index, data, rowNum) {
+                  if (rowNum == totalRowNumber) {
+                    return const pw.BoxDecoration(
+                      color: PdfColors.grey200,
+                    );
+                  }
+                  return const pw.BoxDecoration();
+                },
                 cellBuilder: (index, data, rowNum) => buildOneLineReportText(
                   '$data',
                   index: index,
                   header: false,
-                  totalRow: useIncomeInvoiceTable && rowNum == totalRowNumber,
+                  totalRow: rowNum == totalRowNumber,
                 ),
               ),
               if (showSummaryBox) ...[
@@ -3511,7 +4286,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
 
     final allStatuses = <String>{
       ...reportIncomeInvoices.map(resolveIncomeReportStatus),
-      ...expenses.map((item) => '${item['status'] ?? 'Recorded'}'),
+      ...reportIncomeSources.map((item) => '${item['status'] ?? ''}'),
+      ...invoiceListIncomeInvoices.map((item) => '${item['status'] ?? ''}'),
+      ...reportExpenseSources.map((item) => '${item['status'] ?? 'Recorded'}'),
     }.where((status) => status.trim().isNotEmpty).toList()
       ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
 
@@ -3519,6 +4296,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     String customerKind = 'all';
     bool includeIncome = true;
     bool includeExpense = true;
+    bool includeDriverCostColumns = true;
     final selectedStatuses = <String>{...allStatuses};
     final rowSelections = <String, bool>{};
     String keywordText = '';
@@ -3531,7 +4309,15 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
           .map((item) =>
               Formatters.parseDate(resolveIncomeReportDate(item))?.year)
           .whereType<int>(),
-      ...expenses
+      ...reportIncomeSources
+          .map((item) =>
+              Formatters.parseDate(resolveIncomeReportDate(item))?.year)
+          .whereType<int>(),
+      ...invoiceListIncomeInvoices
+          .map((item) =>
+              Formatters.parseDate(resolveIncomeReportInvoiceDate(item))?.year)
+          .whereType<int>(),
+      ...reportExpenseSources
           .map((item) =>
               Formatters.parseDate(item['tanggal'] ?? item['created_at'])?.year)
           .whereType<int>(),
@@ -3593,8 +4379,11 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         final key = '${row['__key']}';
         final paidLocked = row['__paid_locked'] == true;
         final total = _toNum(row['__total']);
+        final lockedPaidAmount = _toNum(row['__bayar_default']) > 0
+            ? _toNum(row['__bayar_default'])
+            : total;
         final defaultBayar = formatEditableReportAmount(
-          paidLocked ? total : _toNum(row['__bayar_default']),
+          paidLocked ? lockedPaidAmount : _toNum(row['__bayar_default']),
         );
         final defaultSisa = paidLocked
             ? ''
@@ -3647,6 +4436,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                 end: end,
                 includeIncome: includeIncome,
                 includeExpense: includeExpense,
+                useInvoiceListDetail:
+                    includeIncome && includeExpense && includeDriverCostColumns,
                 customerKind: customerKind,
                 allowedStatuses: selectedStatuses,
                 keyword: keywordText.trim(),
@@ -3888,6 +4679,26 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                               () => includeExpense = value ?? true),
                           title: Text(_t('Expense', 'Expense')),
                         ),
+                        if (includeIncome && includeExpense)
+                          CheckboxListTile(
+                            contentPadding: EdgeInsets.zero,
+                            dense: true,
+                            value: includeDriverCostColumns,
+                            onChanged: (value) => setDialogState(
+                                () => includeDriverCostColumns = value ?? true),
+                            title: Text(
+                              _t(
+                                'Tampilkan kolom Sangu Sopir & Gabungan',
+                                'Show Driver Allowance & Combined columns',
+                              ),
+                            ),
+                            subtitle: Text(
+                              _t(
+                                'Detail diambil dari Fix Invoice khusus laporan keseluruhan.',
+                                'Details are taken from Fixed Invoice for the combined report.',
+                              ),
+                            ),
+                          ),
                         const SizedBox(height: 8),
                         Text(
                           _t('Checklist Status', 'Status Checklist'),
@@ -4008,6 +4819,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                                 final checked = rowSelections[key] == true;
                                 final income = _toNum(row['__income']);
                                 final expense = _toNum(row['__expense']);
+                                final sanguSopir = _toNum(row['__sangu_sopir']);
+                                final gabungan = _toNum(row['__gabungan']);
                                 final showIncomePph = incomeInvoiceReport &&
                                     (customerKind ==
                                             Formatters.invoiceEntityCvAnt ||
@@ -4038,11 +4851,33 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                                     : income > 0
                                         ? [
                                             '${_t('Income', 'Income')}: ${Formatters.rupiah(income)}',
+                                            if (includeIncome &&
+                                                includeExpense &&
+                                                includeDriverCostColumns &&
+                                                sanguSopir > 0)
+                                              '${_t('Sangu Sopir', 'Driver Allowance')}: ${Formatters.rupiah(sanguSopir)}',
+                                            if (includeIncome &&
+                                                includeExpense &&
+                                                includeDriverCostColumns &&
+                                                gabungan > 0)
+                                              '${_t('Gabungan', 'Combined')}: ${Formatters.rupiah(gabungan)}',
                                             if (tujuanLabel.isNotEmpty &&
                                                 tujuanLabel != '-')
                                               tujuanLabel,
                                           ].join(' • ')
-                                        : '${_t('Expense', 'Expense')}: ${Formatters.rupiah(expense)}';
+                                        : [
+                                            '${_t('Expense', 'Expense')}: ${Formatters.rupiah(expense)}',
+                                            if (includeIncome &&
+                                                includeExpense &&
+                                                includeDriverCostColumns &&
+                                                sanguSopir > 0)
+                                              '${_t('Sangu Sopir', 'Driver Allowance')}: ${Formatters.rupiah(sanguSopir)}',
+                                            if (includeIncome &&
+                                                includeExpense &&
+                                                includeDriverCostColumns &&
+                                                gabungan > 0)
+                                              '${_t('Gabungan', 'Combined')}: ${Formatters.rupiah(gabungan)}',
+                                          ].join(' • ');
                                 final bayarController =
                                     reportBayarControllers[key];
                                 final sisaController =
@@ -4217,6 +5052,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                         'range': range,
                         'includeIncome': includeIncome,
                         'includeExpense': includeExpense,
+                        'includeDriverCostColumns': includeDriverCostColumns,
                         'customerKind': customerKind,
                         'month': selectedMonth,
                         'year': selectedYear,
@@ -4271,6 +5107,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         : DateTime(reportYear, reportMonth + 1, 1);
     final includeIncomeSelected = selection['includeIncome'] == true;
     final includeExpenseSelected = selection['includeExpense'] == true;
+    final includeDriverCostColumnsSelected =
+        selection['includeDriverCostColumns'] == true;
     const selectedOrientation = 'portrait';
     final statusFilters =
         (selection['statuses'] as List<dynamic>? ?? const <dynamic>[])
@@ -4306,6 +5144,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       end: end,
       includeIncome: includeIncomeSelected,
       includeExpense: includeExpenseSelected,
+      useInvoiceListDetail: includeIncomeSelected &&
+          includeExpenseSelected &&
+          includeDriverCostColumnsSelected,
       customerKind: selectedCustomerKind,
       allowedStatuses: statusFilters,
       keyword: keyword,
@@ -4322,13 +5163,17 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
             final key = '${row['__key']}';
             final total = _toNum(row['__total']);
             final paidLocked = row['__paid_locked'] == true;
+            final lockedPaidAmount = _toNum(row['__bayar_default']) > 0
+                ? _toNum(row['__bayar_default'])
+                : total;
             final bayarText = paidLocked
-                ? formatEditableReportAmount(total)
+                ? formatEditableReportAmount(lockedPaidAmount)
                 : (bayarInputs[key] ?? '').toString().trim();
             final sisaText =
                 paidLocked ? '' : (sisaInputs[key] ?? '').toString().trim();
-            final bayar =
-                paidLocked ? total : parseEditableReportAmount(bayarText);
+            final bayar = paidLocked
+                ? lockedPaidAmount
+                : parseEditableReportAmount(bayarText);
             final sisa = paidLocked ? 0.0 : parseEditableReportAmount(sisaText);
             return {
               ...row,
@@ -4353,9 +5198,12 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     final totalIncome = rows
         .where((row) => '${row['__type']}' == 'Income')
         .fold<double>(0, (sum, row) => sum + _toNum(row['__income']));
-    final totalExpense = rows
-        .where((row) => '${row['__type']}' == 'Expense')
-        .fold<double>(0, (sum, row) => sum + _toNum(row['__expense']));
+    final totalExpense = rows.fold<double>(0, (sum, row) {
+      if ('${row['__type']}' == 'Expense') {
+        return sum + _toNum(row['__expense']);
+      }
+      return sum + _toNum(row['__sangu_sopir']);
+    });
 
     try {
       final incomeInvoiceReport =
@@ -4368,6 +5216,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         totalExpense: totalExpense,
         includeIncome: includeIncomeSelected,
         includeExpense: includeExpenseSelected,
+        includeDriverCostColumns: includeDriverCostColumnsSelected,
         customerKind: selectedCustomerKind,
         orientation: selectedOrientation,
       );
@@ -4691,11 +5540,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         customerName: customerName,
       );
       final subtotal = _toNum(item['total_biaya']);
-      final pph = _toNum(item['pph']);
-      final totalBayar = _toNum(item['total_bayar']);
-      final effectiveTotal = isCompanyInvoice
-          ? (totalBayar > 0 ? totalBayar : max(0.0, subtotal - pph))
-          : subtotal;
+      final effectiveTotal =
+          isCompanyInvoice ? calculateInvoiceTotalAfterPph(subtotal) : subtotal;
       final searchFields = buildIncomeSearchFields(item);
       return {
         ...item,
@@ -4821,7 +5667,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       List<Map<String, dynamic>> rows) {
     final q = _search.text.trim().toLowerCase();
     final now = DateTime.now();
-    final oneMonthBack = now.subtract(const Duration(days: 30));
+    final visibleSince = DateTime(now.year, now.month - 1, 1);
     final filtered = rows.where((item) {
       final date = Formatters.parseDate(
         item['__date'] ??
@@ -4830,7 +5676,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
             item['created_at'],
       );
       if (date == null) return false;
-      if (date.isBefore(oneMonthBack) || date.isAfter(now)) return false;
+      if (date.isBefore(visibleSince) || date.isAfter(now)) return false;
       return _matchesKeywordInAnyColumn(item, q);
     }).toList();
 

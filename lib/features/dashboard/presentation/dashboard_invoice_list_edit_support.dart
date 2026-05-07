@@ -226,7 +226,7 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
           ];
 
     double detailSubtotal(Map<String, dynamic> row) {
-      return _resolveInvoiceDetailSubtotalShared(row);
+      return _resolveInvoiceDetailExcelSubtotalShared(row);
     }
 
     if (!mounted) return;
@@ -246,10 +246,11 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
               final isCompanyInvoiceMode =
                   Formatters.isCompanyInvoiceEntity(invoiceEntityMode);
               final pph = isCompanyInvoiceMode
-                  ? (subtotal * 0.02).floorToDouble()
+                  ? calculateInvoicePph2Percent(subtotal)
                   : 0.0;
-              final totalBayar =
-                  isCompanyInvoiceMode ? max(0.0, subtotal - pph) : subtotal;
+              final totalBayar = isCompanyInvoiceMode
+                  ? calculateInvoiceTotalAfterPph(subtotal)
+                  : subtotal;
 
               return AlertDialog(
                 title: Text(_t('Edit Invoice', 'Edit Invoice')),
@@ -1150,6 +1151,30 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                           }
                                           final isOngkosKuli =
                                               _isOngkosKuliIncomeRow(row);
+                                          final detailTonase = isOngkosKuli
+                                              ? null
+                                              : _nullableIncomeNumber(
+                                                  row['tonase'],
+                                                );
+                                          final detailHarga = isOngkosKuli
+                                              ? null
+                                              : _nullableIncomeNumber(
+                                                  row['harga'],
+                                                );
+                                          final rawDetailSubtotal =
+                                              row['subtotal_auto'] == true &&
+                                                      (detailTonase ?? 0) > 0 &&
+                                                      (detailHarga ?? 0) > 0
+                                                  ? null
+                                                  : _nullableIncomeNumber(
+                                                      row['subtotal'],
+                                                    );
+                                          final detailSubtotal =
+                                              rawDetailSubtotal == null
+                                                  ? null
+                                                  : roundInvoiceRupiah(
+                                                      rawDetailSubtotal,
+                                                    );
                                           final resolvedPlate =
                                               selectedArmada != null
                                                   ? _normalizePlateText(
@@ -1210,19 +1235,9 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                                     : _toDbDate(
                                                         '${row['armada_end_date']}',
                                                       ),
-                                            'tonase': isOngkosKuli
-                                                ? null
-                                                : _nullableIncomeNumber(
-                                                    row['tonase'],
-                                                  ),
-                                            'harga': isOngkosKuli
-                                                ? null
-                                                : _nullableIncomeNumber(
-                                                    row['harga'],
-                                                  ),
-                                            'subtotal': _nullableIncomeNumber(
-                                              row['subtotal'],
-                                            ),
+                                            'tonase': detailTonase,
+                                            'harga': detailHarga,
+                                            'subtotal': detailSubtotal,
                                           };
                                         }).toList();
                                         final driverNames = detailsPayload

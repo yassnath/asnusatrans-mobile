@@ -33,9 +33,13 @@ extension _AdminInvoiceListViewStatePreviewSupport
           invoiceNumber: previewItem['no_invoice'],
           customerName: customerName,
         );
-        final subtotal = _toNum(previewItem['total_biaya']);
-        final pph = isCompanyInvoice ? _toNum(previewItem['pph']) : 0.0;
-        final total = isCompanyInvoice ? max(0.0, subtotal - pph) : subtotal;
+        final subtotal = _resolveInvoiceDetailsExcelSubtotalShared(
+          detailList,
+          fallbackSubtotal: _toNum(previewItem['total_biaya']),
+        );
+        final total = isCompanyInvoice
+            ? calculateInvoiceTotalAfterPph(subtotal)
+            : subtotal;
         return AlertDialog(
           title: Text(_t('Preview Invoice', 'Invoice Preview')),
           content: SizedBox(
@@ -71,7 +75,7 @@ extension _AdminInvoiceListViewStatePreviewSupport
                       final tonase = _toNum(row['tonase']);
                       final harga = _toNum(row['harga']);
                       final subtotalDetail =
-                          _resolveInvoiceDetailSubtotalShared(row);
+                          _resolveInvoiceDetailExcelSubtotalShared(row);
                       final driver = _isManualArmadaRow(row)
                           ? ''
                           : '${row['nama_supir'] ?? ''}'.trim();
@@ -389,11 +393,14 @@ extension _AdminInvoiceListViewStatePreviewSupport
         invoiceNumber: invoiceRawNumber,
         customerName: customerName,
       );
-      final subtotal = _toNum(item['total_biaya']);
-      final pph = isCompanyInvoice ? _toNum(item['pph']) : 0.0;
-      final total = isCompanyInvoice
-          ? _toNum(item['total_bayar'] ?? item['total_biaya'])
-          : subtotal;
+      final invoiceDetailList = _toDetailList(item['rincian']);
+      final subtotal = _resolveInvoiceDetailsExcelSubtotalShared(
+        invoiceDetailList,
+        fallbackSubtotal: _toNum(item['total_biaya']),
+      );
+      final pph = isCompanyInvoice ? calculateInvoicePph2Percent(subtotal) : 0.0;
+      final total =
+          isCompanyInvoice ? calculateInvoiceTotalAfterPph(subtotal) : subtotal;
       final effectiveKopDateRaw = (kopDateOverride ?? '').trim().isNotEmpty
           ? kopDateOverride!.trim()
           : '${item['tanggal_kop'] ?? item['tanggal'] ?? ''}'.trim();
@@ -531,7 +538,7 @@ extension _AdminInvoiceListViewStatePreviewSupport
           final tonase = hasData ? _toNum(row['tonase']) : 0;
           final harga = hasData ? _toNum(row['harga']) : 0;
           final rowSubtotal =
-              hasData ? _resolveInvoiceDetailSubtotalShared(row) : 0;
+              hasData ? _resolveInvoiceDetailExcelSubtotalShared(row) : 0;
           final armadaStartSource = row['armada_start_date'] ??
               item['armada_start_date'] ??
               row['tanggal'] ??
@@ -1412,7 +1419,7 @@ extension _AdminInvoiceListViewStatePreviewSupport
                     final tonase = hasData ? _toNum(row['tonase']) : 0;
                     final harga = hasData ? _toNum(row['harga']) : 0;
                     final rowSubtotal =
-                        hasData ? _resolveInvoiceDetailSubtotalShared(row) : 0;
+                        hasData ? _resolveInvoiceDetailExcelSubtotalShared(row) : 0;
                     final armadaStartSource = row['armada_start_date'] ??
                         item['armada_start_date'] ??
                         row['tanggal'] ??
@@ -1977,7 +1984,7 @@ extension _AdminInvoiceListViewStatePreviewSupport
       maxPlate = max(maxPlate, plate.length);
       final hargaText = Formatters.rupiah(_toNum(row['harga']));
       final totalText =
-          Formatters.rupiah(_resolveInvoiceDetailSubtotalShared(row));
+          Formatters.rupiah(_resolveInvoiceDetailExcelSubtotalShared(row));
       maxHarga = max(maxHarga, hargaText.length);
       maxTotal = max(maxTotal, totalText.length);
     }

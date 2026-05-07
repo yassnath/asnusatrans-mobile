@@ -435,6 +435,18 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
               armadaIdByPlate: armadaIdByPlate,
             );
       final isOngkosKuli = _isOngkosKuliIncomeRow(row);
+      final detailTonase =
+          isOngkosKuli ? null : _nullableIncomeNumber(row['tonase']);
+      final detailHarga =
+          isOngkosKuli ? null : _nullableIncomeNumber(row['harga']);
+      final rawDetailSubtotal = row['subtotal_auto'] == true &&
+              (detailTonase ?? 0) > 0 &&
+              (detailHarga ?? 0) > 0
+          ? null
+          : _nullableIncomeNumber(row['subtotal']);
+      final detailSubtotal = rawDetailSubtotal == null
+          ? null
+          : roundInvoiceRupiah(rawDetailSubtotal);
       return <String, dynamic>{
         'lokasi_muat': _nullableInputText(row['lokasi_muat']),
         'lokasi_bongkar': _nullableInputText(row['lokasi_bongkar']),
@@ -449,9 +461,9 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
         'armada_end_date': '${row['armada_end_date']}'.trim().isEmpty
             ? null
             : '${row['armada_end_date']}',
-        'tonase': isOngkosKuli ? null : _nullableIncomeNumber(row['tonase']),
-        'harga': isOngkosKuli ? null : _nullableIncomeNumber(row['harga']),
-        'subtotal': _nullableIncomeNumber(row['subtotal']),
+        'tonase': detailTonase,
+        'harga': detailHarga,
+        'subtotal': detailSubtotal,
       };
     }).toList();
     final driverNames = detailsPayload

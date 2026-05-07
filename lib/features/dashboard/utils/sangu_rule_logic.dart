@@ -50,6 +50,7 @@ String normalizeSanguPlace(String value) {
   if (normalized.contains('sgm')) return 'sgm';
   if (normalized.contains('molindo')) return 'molindo';
   if (normalized.contains('muncar')) return 'muncar';
+  if (normalized.contains('rex')) return 'rex';
   if (normalized.contains('royal')) return 'royal';
   if (normalized.contains('temanggung')) return 'temanggung';
   if (normalized.contains('danliris')) return 'danliris';
@@ -119,6 +120,18 @@ Map<String, dynamic>? resolvePrioritizedSanguRouteRule({
     };
   }
 
+  final langonToRex = pickupNorm == 'langon' && destinationNorm == 'rex';
+  if (langonToRex) {
+    return <String, dynamic>{
+      'tempat': 'T. LANGON - REX',
+      'lokasi_muat': 'T. LANGON',
+      'lokasi_bongkar': 'REX',
+      'nominal': 690000,
+      '__muat_norm': 'langon',
+      '__bongkar_norm': 'rex',
+    };
+  }
+
   final betoyoToMuncar = pickupNorm == 'betoyo' && destinationNorm == 'muncar';
   if (betoyoToMuncar) {
     return <String, dynamic>{
@@ -131,15 +144,47 @@ Map<String, dynamic>? resolvePrioritizedSanguRouteRule({
     };
   }
 
-  final betoyoToPare = pickupNorm == 'betoyo' && destinationNorm == 'pare';
-  if (betoyoToPare) {
+  final betoyoBaseSanguRules = <String, ({String label, int nominal})>{
+    'batang': (label: 'BATANG', nominal: 3400000),
+    'sarana': (label: 'SARANA', nominal: 1265000),
+    'rex': (label: 'REX', nominal: 690000),
+    'pare': (label: 'PARE', nominal: 1050000),
+    'sudali': (label: 'SUDALI', nominal: 805000),
+    'mkp': (label: 'MKP', nominal: 690000),
+    'bricon': (label: 'BRICON MOJO', nominal: 750000),
+    'gempol': (label: 'GEMPOL', nominal: 690000),
+    'royal': (label: 'ROYAL', nominal: 520000),
+    'temanggung': (label: 'TEMANGGUNG', nominal: 2435000),
+    'bumindo': (label: 'BUMINDO', nominal: 690000),
+    'surya warna sukoharjo': (
+      label: 'SURYA WARNA / SUKOHARJO',
+      nominal: 2435000,
+    ),
+  };
+  if (pickupNorm == 'betoyo') {
+    final baseRule = betoyoBaseSanguRules[destinationNorm];
+    if (baseRule != null) {
+      return <String, dynamic>{
+        'tempat': 'BETOYO - ${baseRule.label}',
+        'lokasi_muat': 'BETOYO',
+        'lokasi_bongkar': baseRule.label,
+        'nominal': baseRule.nominal + 115000,
+        '__muat_norm': 'betoyo',
+        '__bongkar_norm': destinationNorm,
+      };
+    }
+  }
+
+  final maspionToLangon =
+      pickupNorm == 'maspion' && destinationNorm == 'langon';
+  if (maspionToLangon) {
     return <String, dynamic>{
-      'tempat': 'BETOYO - PARE',
-      'lokasi_muat': 'BETOYO',
-      'lokasi_bongkar': 'PARE',
-      'nominal': 1165000,
-      '__muat_norm': 'betoyo',
-      '__bongkar_norm': 'pare',
+      'tempat': 'MASPION - T. LANGON',
+      'lokasi_muat': 'MASPION',
+      'lokasi_bongkar': 'T. LANGON',
+      'nominal': 400000,
+      '__muat_norm': 'maspion',
+      '__bongkar_norm': 'langon',
     };
   }
 
@@ -152,19 +197,6 @@ Map<String, dynamic>? resolvePrioritizedSanguRouteRule({
       'lokasi_bongkar': 'SURYA WARNA / SUKOHARJO',
       'nominal': 2435000,
       '__muat_norm': 'langon',
-      '__bongkar_norm': 'surya warna sukoharjo',
-    };
-  }
-
-  final betoyoToSuryaWarna =
-      pickupNorm == 'betoyo' && destinationNorm == 'surya warna sukoharjo';
-  if (betoyoToSuryaWarna) {
-    return <String, dynamic>{
-      'tempat': 'BETOYO - SURYA WARNA / SUKOHARJO',
-      'lokasi_muat': 'BETOYO',
-      'lokasi_bongkar': 'SURYA WARNA / SUKOHARJO',
-      'nominal': 2550000,
-      '__muat_norm': 'betoyo',
       '__bongkar_norm': 'surya warna sukoharjo',
     };
   }

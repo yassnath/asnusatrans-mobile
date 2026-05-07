@@ -215,9 +215,15 @@ extension DashboardRepositoryCrudExtension on DashboardRepository {
 
     final singleDetailList =
         sanitizedDetails.isEmpty ? effectiveDetails : sanitizedDetails;
+    final singleExcelSubtotal = sanitizedDetails.isNotEmpty
+        ? sanitizedDetails.fold<double>(
+            0,
+            (sum, detail) => sum + _resolveIncomeDetailTotal(detail),
+          )
+        : roundInvoiceRupiah(total);
     final singleInserted = await _insertSingleIncomeInvoice(
       customerName: customerName,
-      total: total,
+      total: singleExcelSubtotal,
       requestedNoInvoice: requestedInvoiceNumber,
       invoiceEntity: invoiceEntity,
       includePph: includePph,
@@ -318,8 +324,12 @@ extension DashboardRepositoryCrudExtension on DashboardRepository {
     final detailsUseOnlyManualArmada = details != null &&
         details.isNotEmpty &&
         details.every(_detailUsesManualArmada);
-    final pphValue = includePph ? max(0, (total * 0.02).floorToDouble()) : 0.0;
-    final totalBayarValue = max(0, total - pphValue);
+    final excelSubtotal = roundInvoiceRupiah(total);
+    final pphValue =
+        includePph ? calculateInvoicePph2Percent(excelSubtotal) : 0.0;
+    final totalBayarValue = includePph
+        ? calculateInvoiceTotalAfterPph(excelSubtotal)
+        : max(0, excelSubtotal);
     final normalizedInvoiceEntity = _resolveInvoiceEntity(
       invoiceEntity: invoiceEntity,
       invoiceNumber: requestedNoInvoice,
@@ -359,7 +369,7 @@ extension DashboardRepositoryCrudExtension on DashboardRepository {
       'muatan': muatan?.trim().isEmpty == true ? null : muatan?.trim(),
       'nama_supir': driverNames,
       'status': status,
-      'total_biaya': total,
+      'total_biaya': excelSubtotal,
       'pph': pphValue,
       'total_bayar': totalBayarValue,
       'diterima_oleh':
@@ -446,7 +456,7 @@ extension DashboardRepositoryCrudExtension on DashboardRepository {
           createdBy: createdBy,
           issueDate: date,
           customerName: customerName.trim(),
-          total: total,
+          total: excelSubtotal,
           pickup: pickup,
           destination: destination,
         );
