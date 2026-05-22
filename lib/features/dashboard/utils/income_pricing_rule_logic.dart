@@ -112,6 +112,7 @@ Map<String, dynamic>? resolveBuiltInIncomePricingRule({
     String? ruleCustomerName,
     double? flatTotal,
     int priority = 130,
+    double priceOffset = 7,
   }) {
     if (!pickupIsBetoyo) return null;
     if (incomePricingLocationKeyMatches(destinationKey, 'muncar')) return null;
@@ -125,7 +126,7 @@ Map<String, dynamic>? resolveBuiltInIncomePricingRule({
       'customer_name': ruleCustomerName,
       'lokasi_muat': 'Betoyo',
       'lokasi_bongkar': lokasiBongkar,
-      'harga_per_ton': baseHarga + 7,
+      'harga_per_ton': baseHarga + priceOffset,
       'flat_total': flatTotal,
       'priority': priority,
       'is_active': true,
@@ -183,6 +184,7 @@ Map<String, dynamic>? resolveBuiltInIncomePricingRule({
         : null,
     priority:
         incomePricingCustomerNameMatches(customerKey, 'bornava') ? 225 : 125,
+    priceOffset: 0,
   );
   if (betoyoBatangRule != null) return betoyoBatangRule;
 
@@ -208,6 +210,8 @@ Map<String, dynamic>? resolveBuiltInIncomePricingRule({
     (lokasiBongkar: 'Bumindo', baseHarga: 55.0),
     (lokasiBongkar: 'Temanggung', baseHarga: 165.0),
     (lokasiBongkar: 'Danliris', baseHarga: 155.0),
+    (lokasiBongkar: 'Minatex', baseHarga: 80.0),
+    (lokasiBongkar: 'Jaskin', baseHarga: 168.0),
   ];
   for (final rule in betoyoGenericRules) {
     final betoyoRule = betoyoDerivedRule(
@@ -299,6 +303,20 @@ Map<String, dynamic>? resolveBuiltInIncomePricingRule({
     };
   }
 
+  if (incomePricingCustomerNameMatches(customerKey, 'antok') &&
+      incomePricingLocationKeyMatches(pickupKey, 'maspion') &&
+      incomePricingLocationKeyMatches(destinationKey, 't langon')) {
+    return <String, dynamic>{
+      'customer_name': 'Antok',
+      'lokasi_muat': 'Maspion',
+      'lokasi_bongkar': 'T. Langon',
+      'harga_per_ton': 21.0,
+      'flat_total': null,
+      'priority': 230,
+      'is_active': true,
+    };
+  }
+
   if (incomePricingLocationKeyMatches(pickupKey, 'maspion') &&
       incomePricingLocationKeyMatches(destinationKey, 't langon')) {
     return <String, dynamic>{
@@ -358,6 +376,32 @@ Map<String, dynamic>? resolveBuiltInIncomePricingRule({
       'lokasi_muat': null,
       'lokasi_bongkar': 'Danliris',
       'harga_per_ton': 155.0,
+      'flat_total': null,
+      'priority': 120,
+      'is_active': true,
+    };
+  }
+
+  if (!pickupIsBetoyo &&
+      incomePricingLocationKeyMatches(destinationKey, 'minatex')) {
+    return <String, dynamic>{
+      'customer_name': null,
+      'lokasi_muat': null,
+      'lokasi_bongkar': 'Minatex',
+      'harga_per_ton': 80.0,
+      'flat_total': null,
+      'priority': 120,
+      'is_active': true,
+    };
+  }
+
+  if (!pickupIsBetoyo &&
+      incomePricingLocationKeyMatches(destinationKey, 'jaskin')) {
+    return <String, dynamic>{
+      'customer_name': null,
+      'lokasi_muat': null,
+      'lokasi_bongkar': 'Jaskin',
+      'harga_per_ton': 168.0,
       'flat_total': null,
       'priority': 120,
       'is_active': true,

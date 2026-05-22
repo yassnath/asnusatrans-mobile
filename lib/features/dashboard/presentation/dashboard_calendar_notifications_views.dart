@@ -224,6 +224,13 @@ class _AdminCalendarViewState extends State<_AdminCalendarView> {
       return ket.startsWith('auto sangu sopir -');
     }
 
+    bool isAutoGabunganExpense(Map<String, dynamic> expense) {
+      final note = '${expense['note'] ?? ''}'.trim().toUpperCase();
+      if (note.startsWith('AUTO_GABUNGAN:')) return true;
+      final ket = '${expense['keterangan'] ?? ''}'.trim().toLowerCase();
+      return ket.startsWith('auto gabungan -');
+    }
+
     String normalizeToken(String value) {
       return value
           .trim()
@@ -296,12 +303,19 @@ class _AdminCalendarViewState extends State<_AdminCalendarView> {
       if (note.toUpperCase().startsWith('AUTO_SANGU:')) {
         return note.substring('AUTO_SANGU:'.length).trim();
       }
+      if (note.toUpperCase().startsWith('AUTO_GABUNGAN:')) {
+        return note.substring('AUTO_GABUNGAN:'.length).trim();
+      }
 
       final ket = '${expense['keterangan'] ?? ''}'.trim();
       final lowerKet = ket.toLowerCase();
       const prefix = 'auto sangu sopir -';
       if (lowerKet.startsWith(prefix)) {
         return ket.substring(prefix.length).trim();
+      }
+      const gabunganPrefix = 'auto gabungan -';
+      if (lowerKet.startsWith(gabunganPrefix)) {
+        return ket.substring(gabunganPrefix.length).trim();
       }
 
       return '';
@@ -349,7 +363,7 @@ class _AdminCalendarViewState extends State<_AdminCalendarView> {
     }
 
     String buildExpenseSubtitle(Map<String, dynamic> expense) {
-      if (isAutoSanguExpense(expense)) {
+      if (isAutoSanguExpense(expense) || isAutoGabunganExpense(expense)) {
         final details = detailRows(expense['rincian']);
         final labels = <String>[];
         final seen = <String>{};

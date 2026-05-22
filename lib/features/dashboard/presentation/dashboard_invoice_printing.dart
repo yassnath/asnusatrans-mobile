@@ -2127,6 +2127,52 @@ extension _AdminInvoiceListViewPrinting on _DashboardInvoicePrintHost {
     return 0;
   }
 
+  String _invoicePayloadDateKey(Map<String, String> row) {
+    final parsed = _parseInvoicePayloadDate(row);
+    if (parsed != null) {
+      return '${parsed.year.toString().padLeft(4, '0')}-'
+          '${parsed.month.toString().padLeft(2, '0')}-'
+          '${parsed.day.toString().padLeft(2, '0')}';
+    }
+    return 'raw:${(row['sort_date'] ?? row['tanggal'] ?? '').trim()}';
+  }
+
+  String _invoicePayloadNormalizedText(String value) {
+    return value
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  String _invoicePayloadNormalizedNumberText(String value) {
+    return value.replaceAll(RegExp(r'[^0-9]'), '');
+  }
+
+  bool _invoicePayloadRowsShareTolakanPair(
+    Map<String, String> regularRow,
+    Map<String, String> tolakanRow,
+  ) {
+    if (_invoicePayloadDateKey(regularRow) !=
+        _invoicePayloadDateKey(tolakanRow)) {
+      return false;
+    }
+
+    final regularPlate =
+        _invoicePayloadNormalizedText(regularRow['plat'] ?? '');
+    final tolakanPlate =
+        _invoicePayloadNormalizedText(tolakanRow['plat'] ?? '');
+    if (regularPlate.isEmpty || regularPlate != tolakanPlate) {
+      return false;
+    }
+
+    final regularTonase =
+        _invoicePayloadNormalizedNumberText(regularRow['tonase'] ?? '');
+    final tolakanTonase =
+        _invoicePayloadNormalizedNumberText(tolakanRow['tonase'] ?? '');
+    return regularTonase.isNotEmpty && regularTonase == tolakanTonase;
+  }
+
   List<Map<String, String>> _sortRowsByTanggalAsc(
     List<Map<String, String>> rows,
   ) {
@@ -2151,15 +2197,58 @@ extension _AdminInvoiceListViewPrinting on _DashboardInvoicePrintHost {
       final bDate = _parseInvoicePayloadDate(b.row) ?? fallbackDate;
       final byDate = aDate.compareTo(bDate);
       if (byDate != 0) return byDate;
-      final byCargo = _invoicePayloadCargoSortPriority(a.row)
-          .compareTo(_invoicePayloadCargoSortPriority(b.row));
-      if (byCargo != 0) return byCargo;
       return a.index.compareTo(b.index);
     });
 
+    final orderedFilledRows = <({int index, Map<String, String> row})>[];
+    for (var offset = 0; offset < filledRows.length;) {
+      final dateKey = _invoicePayloadDateKey(filledRows[offset].row);
+      final dateRows = <({int index, Map<String, String> row})>[];
+      while (offset < filledRows.length &&
+          _invoicePayloadDateKey(filledRows[offset].row) == dateKey) {
+        dateRows.add(filledRows[offset]);
+        offset++;
+      }
+
+      final usedTolakanIndexes = <int>{};
+      final regularRows = dateRows
+          .where((entry) => _invoicePayloadCargoSortPriority(entry.row) == 0)
+          .toList(growable: false);
+      final tolakanRows = dateRows
+          .where((entry) => isTolakanCargo(entry.row['muatan'] ?? ''))
+          .toList(growable: false);
+      final footerRows = dateRows
+          .where((entry) => isOngkosKuliCargo(entry.row['muatan'] ?? ''))
+          .toList(growable: false);
+
+      for (final regular in regularRows) {
+        orderedFilledRows.add(regular);
+        for (var tolakanOffset = 0;
+            tolakanOffset < tolakanRows.length;
+            tolakanOffset++) {
+          if (usedTolakanIndexes.contains(tolakanOffset)) continue;
+          final tolakan = tolakanRows[tolakanOffset];
+          if (!_invoicePayloadRowsShareTolakanPair(regular.row, tolakan.row)) {
+            continue;
+          }
+          orderedFilledRows.add(tolakan);
+          usedTolakanIndexes.add(tolakanOffset);
+        }
+      }
+
+      for (var tolakanOffset = 0;
+          tolakanOffset < tolakanRows.length;
+          tolakanOffset++) {
+        if (!usedTolakanIndexes.contains(tolakanOffset)) {
+          orderedFilledRows.add(tolakanRows[tolakanOffset]);
+        }
+      }
+      orderedFilledRows.addAll(footerRows);
+    }
+
     final renumberedFilledRows = <Map<String, String>>[];
-    for (var i = 0; i < filledRows.length; i++) {
-      final row = Map<String, String>.from(filledRows[i].row);
+    for (var i = 0; i < orderedFilledRows.length; i++) {
+      final row = Map<String, String>.from(orderedFilledRows[i].row);
       row['no'] = '${i + 1}';
       renumberedFilledRows.add(row);
     }

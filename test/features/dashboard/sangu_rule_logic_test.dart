@@ -13,6 +13,7 @@ void main() {
       expect(normalizeSanguPlace('Royal Mix'), 'royal');
       expect(normalizeSanguPlace('TEMANGGUNG'), 'temanggung');
       expect(normalizeSanguPlace('bumindo'), 'bumindo');
+      expect(normalizeSanguPlace('JaSkIn'), 'jaskin');
       expect(
         normalizeSanguPlace('Surya Warna / Sukoharjo'),
         'surya warna sukoharjo',
@@ -135,6 +136,30 @@ void main() {
       expect(bricon?['nominal'], 865000);
     });
 
+    test('keeps Betoyo to Bimoli at fixed T. Langon Bimoli nominal', () {
+      final rule = resolvePrioritizedSanguRouteRule(
+        pickup: 'Betoyo',
+        destination: 'BiMoLi',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule!['nominal'], 550000);
+      expect(rule['lokasi_muat'], 'BETOYO');
+      expect(rule['lokasi_bongkar'], 'BIMOLI');
+    });
+
+    test('keeps Betoyo to Batang at fixed T. Langon Batang nominal', () {
+      final rule = resolvePrioritizedSanguRouteRule(
+        pickup: 'Betoyo',
+        destination: 'BaTaNg',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule!['nominal'], 3400000);
+      expect(rule['lokasi_muat'], 'BETOYO');
+      expect(rule['lokasi_bongkar'], 'BATANG');
+    });
+
     test('prioritizes Maspion to T. Langon route with fixed nominal', () {
       final rule = resolvePrioritizedSanguRouteRule(
         pickup: 'mAsPiOn',
@@ -214,6 +239,25 @@ void main() {
       expect(rule, isNotNull);
       expect(rule!['nominal'], 690000);
       expect(rule['lokasi_bongkar'], 'BUMINDO');
+    });
+
+    test('prioritizes Jaskin destination and Betoyo derivative sangu', () {
+      final generic = resolvePrioritizedSanguRouteRule(
+        pickup: 'T. Langon',
+        destination: 'jAsKiN',
+      );
+      final betoyo = resolvePrioritizedSanguRouteRule(
+        pickup: 'BETOYO',
+        destination: 'JASKIN',
+      );
+
+      expect(generic, isNotNull);
+      expect(generic!['nominal'], 2530000);
+      expect(generic['lokasi_bongkar'], 'JASKIN');
+      expect(betoyo, isNotNull);
+      expect(betoyo!['nominal'], 2645000);
+      expect(betoyo['lokasi_muat'], 'BETOYO');
+      expect(betoyo['lokasi_bongkar'], 'JASKIN');
     });
 
     test('returns null for unrelated route', () {

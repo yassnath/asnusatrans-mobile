@@ -23,6 +23,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
   static const _customerManualOptionId = '__other__';
   static const _manualArmadaOptionId = '__other_manual_armada__';
   static const _manualDriverOptionId = '__other_manual_driver__';
+  static const _defaultCargoText = 'Batubara';
   static const _companyKeywords = <String>[
     r'\bcv\b',
     r'\bpt\b',
@@ -215,9 +216,12 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
       final hargaText = _safeNumberInputText(option['harga']);
       final subtotalText = _safeNumberInputText(option['subtotal']);
       final driverText = _safeInputText(option['nama_supir']);
+      final muatanText = _safeInputText(option['muatan']);
+      final effectiveMuatan =
+          muatanText.isEmpty ? _defaultCargoText : muatanText;
       final isDriverManual =
           driverText.isNotEmpty && !_isKnownDriverOption(driverText);
-      final isOngkosKuli = isOngkosKuliCargo(_safeInputText(option['muatan']));
+      final isOngkosKuli = isOngkosKuliCargo(effectiveMuatan);
       final row = <String, dynamic>{
         '__row_key': _newDetailRowKey(),
         'lokasi_muat': _safeInputText(option['lokasi_muat']),
@@ -228,7 +232,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                   _safeInputText(option['lokasi_muat']),
                 ),
         'lokasi_bongkar': _safeInputText(option['lokasi_bongkar']),
-        'muatan': _safeInputText(option['muatan']),
+        'muatan': effectiveMuatan,
         'nama_supir': driverText,
         'nama_supir_manual': isDriverManual ? driverText : '',
         'nama_supir_is_manual': isDriverManual,
@@ -247,6 +251,26 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
         'subtotal_auto':
             !isOngkosKuli && subtotalText.isNotEmpty && hargaText.isEmpty,
       };
+      final autoHarga = _resolveHargaPerTon(
+        customerName: _customer.text.trim(),
+        lokasiMuat: '${row['lokasi_muat'] ?? ''}',
+        lokasiBongkar: '${row['lokasi_bongkar'] ?? ''}',
+        muatan: '${row['muatan'] ?? ''}',
+      );
+      final autoSubtotal = _resolveFlatSubtotal(
+        customerName: _customer.text.trim(),
+        lokasiMuat: '${row['lokasi_muat'] ?? ''}',
+        lokasiBongkar: '${row['lokasi_bongkar'] ?? ''}',
+        muatan: '${row['muatan'] ?? ''}',
+      );
+      if (!isOngkosKuli) {
+        if (autoHarga != null && _toNum(hargaText) == autoHarga) {
+          row['harga_auto'] = true;
+        }
+        if (autoSubtotal != null && _toNum(subtotalText) == autoSubtotal) {
+          row['subtotal_auto'] = true;
+        }
+      }
       final defaultDriver =
           _resolveDefaultDriverForRow(row, armadas: armadas)?.trim() ?? '';
       if (_isManualArmadaRow(row)) {
@@ -314,19 +338,6 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
       );
       return;
     }
-    final hasEmptyMuatan = _details.any(
-      (row) => '${row['muatan'] ?? ''}'.trim().isEmpty,
-    );
-    if (hasEmptyMuatan) {
-      _snack(
-        _t(
-          'Muatan wajib diisi di setiap rincian.',
-          'Cargo is required for every detail row.',
-        ),
-        error: true,
-      );
-      return;
-    }
     final invalidOngkosKuliIndexes = <int>[];
     for (var i = 0; i < _details.length; i++) {
       final row = _details[i];
@@ -347,9 +358,23 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
       return;
     }
     final first = _details.first;
-    final firstArmadaId = '${first['armada_id']}'.trim();
-    final firstArmadaManual = '${first['armada_manual'] ?? ''}'.trim();
     final armadaIdByPlate = _buildArmadaIdByPlate(armadas);
+
+    String manualArmadaInput(Map<String, dynamic> row) {
+      return _nullableInputText(row['armada_manual']) ??
+          _nullableInputText(row['armada_label']) ??
+          _nullableInputText(row['armada']) ??
+          (_isManualArmadaText(row['plat_nomor'])
+              ? _nullableInputText(row['plat_nomor'])
+              : null) ??
+          (_isManualArmadaText(row['no_polisi'])
+              ? _nullableInputText(row['no_polisi'])
+              : null) ??
+          '';
+    }
+
+    final firstArmadaId = '${first['armada_id']}'.trim();
+    final firstArmadaManual = manualArmadaInput(first);
     final firstResolvedArmadaId = _isManualArmadaRow(first)
         ? ''
         : _resolveArmadaIdFromInput(
@@ -357,16 +382,33 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
             armadaManual: firstArmadaManual,
             armadaIdByPlate: armadaIdByPlate,
           );
-    final hasArmadaSelection =
-        firstResolvedArmadaId.isNotEmpty || firstArmadaManual.isNotEmpty;
-    if (!_isOngkosKuliIncomeRow(first) &&
-        ('${first['lokasi_muat']}'.trim().isEmpty ||
-            '${first['lokasi_bongkar']}'.trim().isEmpty ||
-            !hasArmadaSelection)) {
+    final invalidRouteOrArmadaIndexes = <int>[];
+    for (var i = 0; i < _details.length; i++) {
+      final row = _details[i];
+      if (_isOngkosKuliIncomeRow(row)) continue;
+      final armadaId = '${row['armada_id']}'.trim();
+      final armadaManual = manualArmadaInput(row);
+      final resolvedArmadaId = _isManualArmadaRow(row)
+          ? ''
+          : _resolveArmadaIdFromInput(
+              armadaId: armadaId,
+              armadaManual: armadaManual,
+              armadaIdByPlate: armadaIdByPlate,
+            );
+      final hasArmadaSelection =
+          resolvedArmadaId.isNotEmpty || armadaManual.isNotEmpty;
+      if ('${row['lokasi_muat']}'.trim().isEmpty ||
+          '${row['lokasi_bongkar']}'.trim().isEmpty ||
+          !hasArmadaSelection) {
+        invalidRouteOrArmadaIndexes.add(i + 1);
+      }
+    }
+    if (invalidRouteOrArmadaIndexes.isNotEmpty) {
+      final detailLabels = invalidRouteOrArmadaIndexes.join(', ');
       _snack(
         _t(
-          'Lokasi muat, lokasi bongkar, dan armada wajib diisi.',
-          'Loading location, unloading location, and fleet are required.',
+          'Lokasi muat, lokasi bongkar, dan armada wajib diisi di setiap rincian. Periksa rincian ke-$detailLabels.',
+          'Loading location, unloading location, and fleet are required for every detail row. Check detail row(s) $detailLabels.',
         ),
         error: true,
       );
@@ -378,9 +420,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
           (row) => _resolveArmadaIdFromInput(
             armadaId:
                 _isManualArmadaRow(row) ? '' : '${row['armada_id']}'.trim(),
-            armadaManual: _isManualArmadaRow(row)
-                ? ''
-                : '${row['armada_manual'] ?? ''}'.trim(),
+            armadaManual: _isManualArmadaRow(row) ? '' : manualArmadaInput(row),
             armadaIdByPlate: armadaIdByPlate,
           ),
         )
@@ -416,16 +456,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
 
     final detailsPayload = _details.map((row) {
       final armadaId = '${row['armada_id']}'.trim();
-      final armadaManualRaw = _nullableInputText(row['armada_manual']) ??
-          _nullableInputText(row['armada_label']) ??
-          _nullableInputText(row['armada']) ??
-          (_isManualArmadaText(row['plat_nomor'])
-              ? _nullableInputText(row['plat_nomor'])
-              : null) ??
-          (_isManualArmadaText(row['no_polisi'])
-              ? _nullableInputText(row['no_polisi'])
-              : null) ??
-          '';
+      final armadaManualRaw = manualArmadaInput(row);
       final useManual = _isManualArmadaRow(row);
       final resolvedArmadaId = useManual
           ? ''

@@ -6,6 +6,125 @@ extension _AdminInvoiceListViewStatePrintGroupSupport
     return value.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
   }
 
+  String _invoicePrintDetailDateKey(Map<String, dynamic> row) {
+    final parsed = Formatters.parseDate(
+      row['armada_start_date'] ?? row['tanggal'],
+    );
+    if (parsed != null) {
+      return '${parsed.year.toString().padLeft(4, '0')}-'
+          '${parsed.month.toString().padLeft(2, '0')}-'
+          '${parsed.day.toString().padLeft(2, '0')}';
+    }
+    return 'raw:${row['armada_start_date'] ?? row['tanggal'] ?? ''}'.trim();
+  }
+
+  String _invoicePrintDetailNormalizedText(String value) {
+    return value
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  String _invoicePrintDetailNormalizedNumberText(dynamic value) {
+    return '$value'.replaceAll(RegExp(r'[^0-9]'), '');
+  }
+
+  bool _invoicePrintDetailsShareTolakanPair(
+    Map<String, dynamic> regularRow,
+    Map<String, dynamic> tolakanRow,
+  ) {
+    if (_invoicePrintDetailDateKey(regularRow) !=
+        _invoicePrintDetailDateKey(tolakanRow)) {
+      return false;
+    }
+
+    final regularPlate = _invoicePrintDetailNormalizedText(
+      _resolveDetailPlateText(regularRow),
+    );
+    final tolakanPlate = _invoicePrintDetailNormalizedText(
+      _resolveDetailPlateText(tolakanRow),
+    );
+    if (regularPlate.isEmpty || regularPlate != tolakanPlate) {
+      return false;
+    }
+
+    final regularTonase =
+        _invoicePrintDetailNormalizedNumberText(regularRow['tonase']);
+    final tolakanTonase =
+        _invoicePrintDetailNormalizedNumberText(tolakanRow['tonase']);
+    return regularTonase.isNotEmpty && regularTonase == tolakanTonase;
+  }
+
+  List<Map<String, dynamic>> _sortInvoicePrintDetailsByDateAndTolakanPair(
+    List<Map<String, dynamic>> rows,
+  ) {
+    final indexedRows = <({int index, Map<String, dynamic> row})>[];
+    for (var index = 0; index < rows.length; index++) {
+      indexedRows
+          .add((index: index, row: Map<String, dynamic>.from(rows[index])));
+    }
+
+    final fallbackDate = DateTime.fromMillisecondsSinceEpoch(0);
+    indexedRows.sort((a, b) {
+      final aDate = Formatters.parseDate(
+            a.row['armada_start_date'] ?? a.row['tanggal'],
+          ) ??
+          fallbackDate;
+      final bDate = Formatters.parseDate(
+            b.row['armada_start_date'] ?? b.row['tanggal'],
+          ) ??
+          fallbackDate;
+      final byDate = aDate.compareTo(bDate);
+      if (byDate != 0) return byDate;
+      return a.index.compareTo(b.index);
+    });
+
+    final orderedRows = <({int index, Map<String, dynamic> row})>[];
+    for (var offset = 0; offset < indexedRows.length;) {
+      final dateKey = _invoicePrintDetailDateKey(indexedRows[offset].row);
+      final dateRows = <({int index, Map<String, dynamic> row})>[];
+      while (offset < indexedRows.length &&
+          _invoicePrintDetailDateKey(indexedRows[offset].row) == dateKey) {
+        dateRows.add(indexedRows[offset]);
+        offset++;
+      }
+
+      final usedTolakanIndexes = <int>{};
+      final regularRows = dateRows
+          .where((entry) => !isTolakanCargo('${entry.row['muatan'] ?? ''}'))
+          .toList(growable: false);
+      final tolakanRows = dateRows
+          .where((entry) => isTolakanCargo('${entry.row['muatan'] ?? ''}'))
+          .toList(growable: false);
+
+      for (final regular in regularRows) {
+        orderedRows.add(regular);
+        for (var tolakanOffset = 0;
+            tolakanOffset < tolakanRows.length;
+            tolakanOffset++) {
+          if (usedTolakanIndexes.contains(tolakanOffset)) continue;
+          final tolakan = tolakanRows[tolakanOffset];
+          if (!_invoicePrintDetailsShareTolakanPair(regular.row, tolakan.row)) {
+            continue;
+          }
+          orderedRows.add(tolakan);
+          usedTolakanIndexes.add(tolakanOffset);
+        }
+      }
+
+      for (var tolakanOffset = 0;
+          tolakanOffset < tolakanRows.length;
+          tolakanOffset++) {
+        if (!usedTolakanIndexes.contains(tolakanOffset)) {
+          orderedRows.add(tolakanRows[tolakanOffset]);
+        }
+      }
+    }
+
+    return orderedRows.map((entry) => entry.row).toList(growable: false);
+  }
+
   Map<String, dynamic> _fallbackIncomeDetailRow(Map<String, dynamic> item) {
     return <String, dynamic>{
       'lokasi_muat': item['lokasi_muat'],
@@ -38,22 +157,7 @@ extension _AdminInvoiceListViewStatePrintGroupSupport
         details.add(_fallbackIncomeDetailRow(item));
       }
     }
-    details.sort((a, b) {
-      final aDate = Formatters.parseDate(
-            a['armada_start_date'] ?? a['tanggal'],
-          ) ??
-          DateTime.fromMillisecondsSinceEpoch(0);
-      final bDate = Formatters.parseDate(
-            b['armada_start_date'] ?? b['tanggal'],
-          ) ??
-          DateTime.fromMillisecondsSinceEpoch(0);
-      final byDate = aDate.compareTo(bDate);
-      if (byDate != 0) return byDate;
-      final aPlate = _resolveDetailPlateText(a);
-      final bPlate = _resolveDetailPlateText(b);
-      return aPlate.compareTo(bPlate);
-    });
-    return details;
+    return _sortInvoicePrintDetailsByDateAndTolakanPair(details);
   }
 
   List<_InvoicePrintGroup> _buildInvoicePrintGroups(
@@ -310,9 +414,98 @@ extension _AdminInvoiceListViewStatePrintGroupSupport
     return generatedById;
   }
 
+  String _buildNextPrintInvoiceNumberForDate({
+    required DateTime issuedDate,
+    required _InvoicePrintGroup group,
+    required List<Map<String, dynamic>> incomes,
+    required List<_FixedInvoiceBatch> fixedInvoiceBatches,
+  }) {
+    final targetDate = issuedDate.toLocal();
+    final targetMonth = targetDate.month;
+    final targetYearTwoDigits = targetDate.year % 100;
+    final targetEntity = _resolveInvoiceEntity(
+      invoiceEntity: group.baseItem['invoice_entity'],
+      invoiceNumber: group.baseItem['no_invoice'],
+      customerName: group.baseItem['nama_pelanggan'],
+    );
+    final excludedInvoiceIds = group.items
+        .map((item) => '${item['id'] ?? ''}'.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    final excludedBatchIds = <String>{
+      if (excludedInvoiceIds.isNotEmpty)
+        _buildFixedInvoiceBatchId(excludedInvoiceIds),
+    };
+
+    var maxSeq = 0;
+    void consume({
+      required String invoiceNumber,
+      required String invoiceEntity,
+      required DateTime referenceDate,
+    }) {
+      final seq = _extractPrintInvoiceSequence(
+        invoiceNumber: invoiceNumber,
+        month: targetMonth,
+        yearTwoDigits: targetYearTwoDigits,
+        invoiceEntity: targetEntity,
+        referenceDate: referenceDate,
+      );
+      if (seq <= 0) return;
+      final normalizedSource = Formatters.normalizeInvoiceEntity(invoiceEntity);
+      if (normalizedSource != Formatters.normalizeInvoiceEntity(targetEntity)) {
+        return;
+      }
+      maxSeq = max(maxSeq, seq);
+    }
+
+    for (final income in incomes) {
+      final id = '${income['id'] ?? ''}'.trim();
+      if (id.isNotEmpty && excludedInvoiceIds.contains(id)) continue;
+      final rawNumber = '${income['no_invoice'] ?? ''}'.trim();
+      if (rawNumber.isEmpty) continue;
+      final referenceDate = Formatters.parseDate(
+            income['tanggal_kop'] ?? income['tanggal'] ?? income['created_at'],
+          ) ??
+          targetDate;
+      consume(
+        invoiceNumber: rawNumber,
+        invoiceEntity: _resolveInvoiceEntity(
+          invoiceEntity: income['invoice_entity'],
+          invoiceNumber: income['no_invoice'],
+          customerName: income['nama_pelanggan'],
+        ),
+        referenceDate: referenceDate,
+      );
+    }
+
+    for (final batch in fixedInvoiceBatches) {
+      if (excludedBatchIds.contains(batch.batchId)) continue;
+      final rawNumber = batch.invoiceNumber.trim();
+      if (rawNumber.isEmpty) continue;
+      final referenceDate =
+          Formatters.parseDate(batch.kopDate ?? batch.createdAt) ?? targetDate;
+      consume(
+        invoiceNumber: rawNumber,
+        invoiceEntity: _resolveInvoiceEntity(
+          invoiceNumber: batch.invoiceNumber,
+          customerName: batch.customerName,
+        ),
+        referenceDate: referenceDate,
+      );
+    }
+
+    return _buildPrintInvoiceNumber(
+      sequence: maxSeq + 1,
+      issuedDate: targetDate,
+      invoiceEntity: targetEntity,
+    );
+  }
+
   Future<_InvoicePrintOverrides?> _openSingleInvoicePrintEditor(
     _InvoicePrintGroup group, {
     required String generatedInvoiceNumber,
+    required List<Map<String, dynamic>> invoices,
+    required List<_FixedInvoiceBatch> fixedInvoiceBatches,
   }) async {
     if (!mounted) return null;
     final item = group.baseItem;
@@ -360,6 +553,12 @@ extension _AdminInvoiceListViewStatePrintGroupSupport
               if (picked == null) return;
               setDialogState(() {
                 kopDateController.text = _toInvoicePrintDisplayDate(picked);
+                invoiceController.text = _buildNextPrintInvoiceNumberForDate(
+                  issuedDate: picked,
+                  group: group,
+                  incomes: invoices,
+                  fixedInvoiceBatches: fixedInvoiceBatches,
+                );
               });
             }
 
@@ -550,6 +749,8 @@ extension _AdminInvoiceListViewStatePrintGroupSupport
       final edited = await _openSingleInvoicePrintEditor(
         group,
         generatedInvoiceNumber: generatedInvoiceNo,
+        invoices: incomes.cast<Map<String, dynamic>>().toList(),
+        fixedInvoiceBatches: fixedInvoiceBatches,
       );
       if (edited == null) return;
 

@@ -11,6 +11,7 @@
         android:label="AS Nusa Trans"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="true"
         android:allowBackup="false"
         android:fullBackupContent="false">
         <meta-data

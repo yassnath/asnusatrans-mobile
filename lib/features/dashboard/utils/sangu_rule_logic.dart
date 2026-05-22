@@ -54,6 +54,7 @@ String normalizeSanguPlace(String value) {
   if (normalized.contains('royal')) return 'royal';
   if (normalized.contains('temanggung')) return 'temanggung';
   if (normalized.contains('danliris')) return 'danliris';
+  if (normalized.contains('jaskin')) return 'jaskin';
   if (normalized.contains('sukoharjo') ||
       (normalized.contains('surya') && normalized.contains('warna'))) {
     return 'surya warna sukoharjo';
@@ -144,6 +145,30 @@ Map<String, dynamic>? resolvePrioritizedSanguRouteRule({
     };
   }
 
+  final betoyoToBimoli = pickupNorm == 'betoyo' && destinationNorm == 'bimoli';
+  if (betoyoToBimoli) {
+    return <String, dynamic>{
+      'tempat': 'BETOYO - BIMOLI',
+      'lokasi_muat': 'BETOYO',
+      'lokasi_bongkar': 'BIMOLI',
+      'nominal': 550000,
+      '__muat_norm': 'betoyo',
+      '__bongkar_norm': 'bimoli',
+    };
+  }
+
+  final betoyoToBatang = pickupNorm == 'betoyo' && destinationNorm == 'batang';
+  if (betoyoToBatang) {
+    return <String, dynamic>{
+      'tempat': 'BETOYO - BATANG',
+      'lokasi_muat': 'BETOYO',
+      'lokasi_bongkar': 'BATANG',
+      'nominal': 3400000,
+      '__muat_norm': 'betoyo',
+      '__bongkar_norm': 'batang',
+    };
+  }
+
   final betoyoBaseSanguRules = <String, ({String label, int nominal})>{
     'batang': (label: 'BATANG', nominal: 3400000),
     'sarana': (label: 'SARANA', nominal: 1265000),
@@ -156,6 +181,7 @@ Map<String, dynamic>? resolvePrioritizedSanguRouteRule({
     'royal': (label: 'ROYAL', nominal: 520000),
     'temanggung': (label: 'TEMANGGUNG', nominal: 2435000),
     'bumindo': (label: 'BUMINDO', nominal: 690000),
+    'jaskin': (label: 'JASKIN', nominal: 2530000),
     'surya warna sukoharjo': (
       label: 'SURYA WARNA / SUKOHARJO',
       nominal: 2435000,
@@ -173,6 +199,17 @@ Map<String, dynamic>? resolvePrioritizedSanguRouteRule({
         '__bongkar_norm': destinationNorm,
       };
     }
+  }
+
+  if (destinationNorm == 'bimoli') {
+    return <String, dynamic>{
+      'tempat': 'BIMOLI',
+      'lokasi_muat': '',
+      'lokasi_bongkar': 'BIMOLI',
+      'nominal': 550000,
+      '__muat_norm': '',
+      '__bongkar_norm': 'bimoli',
+    };
   }
 
   final maspionToLangon =
@@ -243,6 +280,17 @@ Map<String, dynamic>? resolvePrioritizedSanguRouteRule({
       'nominal': 690000,
       '__muat_norm': '',
       '__bongkar_norm': 'bumindo',
+    };
+  }
+
+  if (destinationNorm == 'jaskin') {
+    return <String, dynamic>{
+      'tempat': 'JASKIN',
+      'lokasi_muat': '',
+      'lokasi_bongkar': 'JASKIN',
+      'nominal': 2530000,
+      '__muat_norm': '',
+      '__bongkar_norm': 'jaskin',
     };
   }
 

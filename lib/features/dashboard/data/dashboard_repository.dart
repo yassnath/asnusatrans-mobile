@@ -132,6 +132,16 @@ class _AutoSanguSyncResult {
   final int deleted;
   final int skipped;
   final int failed;
+
+  _AutoSanguSyncResult plus(_AutoSanguSyncResult other) {
+    return _AutoSanguSyncResult(
+      created: created + other.created,
+      updated: updated + other.updated,
+      deleted: deleted + other.deleted,
+      skipped: skipped + other.skipped,
+      failed: failed + other.failed,
+    );
+  }
 }
 
 class DashboardRepository {
@@ -1028,11 +1038,74 @@ class DashboardRepository {
         normalized.contains('input manual');
   }
 
-  bool _shouldSkipAutoSanguForManualArmada(
-    List<Map<String, dynamic>> details,
-  ) {
-    if (details.isEmpty) return false;
-    return details.any(_detailUsesManualArmada);
+  String _normalizeGabunganExpenseRouteKey(dynamic value) {
+    final key = normalizeIncomePricingRuleKey('${value ?? ''}');
+    if (key.contains('bimoli')) return 'bimoli';
+    if (key.contains('kendal')) return 'kendal';
+    if (key.contains('kediri')) return 'kediri';
+    if (key.contains('semarang')) return 'semarang';
+    if (key.contains('kedawung') || key.contains('dawung')) {
+      return 'kedawung';
+    }
+    if (key.contains('royal')) return 'royal';
+    if (key.contains('pare')) return 'pare';
+    if (key.contains('gempol')) return 'gempol';
+    if (key.contains('kedamean')) return 'kedamean';
+    if (key.contains('temanggung')) return 'temanggung';
+    if (key.contains('kig')) return 'kig';
+    if (key.contains('sgm')) return 'sgm';
+    if (key.contains('rex') || key.contains('beji')) return 'rex_beji';
+    if (key == 't langon' || key == 'langon' || key == 'tlangon') {
+      return 'langon';
+    }
+    if (key.contains('maspion')) return 'maspion';
+    if (key == 'betoyo') return 'betoyo';
+    return key;
+  }
+
+  double _resolveGabunganExpenseHargaPerTon({
+    required String pickup,
+    required String destination,
+    String? customerName,
+  }) {
+    final pickupKey = _normalizeGabunganExpenseRouteKey(pickup);
+    final destinationKey = _normalizeGabunganExpenseRouteKey(destination);
+    final customerKey = normalizeIncomePricingRuleKey(customerName ?? '');
+    if (pickupKey == 'betoyo' && destinationKey == 'bimoli') return 33.0;
+    if (customerKey.contains('antok') &&
+        pickupKey == 'maspion' &&
+        destinationKey == 'langon') {
+      return 0.0;
+    }
+    if (pickupKey == 'maspion' && destinationKey == 'langon') return 23.0;
+    switch (destinationKey) {
+      case 'kendal':
+        return 170.0;
+      case 'kediri':
+        return 80.0;
+      case 'semarang':
+        return 158.0;
+      case 'kedawung':
+        return 40.0;
+      case 'royal':
+        return 40.0;
+      case 'pare':
+        return 78.0;
+      case 'gempol':
+        return 50.0;
+      case 'kedamean':
+        return 41.0;
+      case 'temanggung':
+        return 230.0;
+      case 'kig':
+        return 38.0;
+      case 'sgm':
+        return 40.0;
+      case 'rex_beji':
+        return 53.0;
+      default:
+        return 0.0;
+    }
   }
 
   Future<_AutoSanguSyncResult> _createSanguExpenseFromIncomeBestEffort({
@@ -1044,6 +1117,7 @@ class DashboardRepository {
     String? fallbackDestination,
     String? fallbackArmadaId,
     String? fallbackCargo,
+    String? fallbackCustomerName,
     List<Map<String, dynamic>>? preloadedRules,
     Map<String, String>? preloadedPlateById,
   }) async {
@@ -1078,10 +1152,30 @@ class DashboardRepository {
         return markerCandidates.contains(marker);
       }).toList();
 
-      if (_shouldSkipAutoSanguForManualArmada(details)) {
-        var deletedCount = 0;
-        if (existingAutoRows.isNotEmpty) {
-          for (final row in existingAutoRows) {
+      final existingGabunganRows = _toMapList(
+        await _supabase
+            .from('expenses')
+            .select(
+              'id,no_expense,tanggal,status,dicatat_oleh,note,kategori,keterangan,rincian',
+            )
+            .like('note', 'AUTO_GABUNGAN:%'),
+      ).where((row) {
+        final note = '${row['note'] ?? ''}'.trim();
+        if (!note.startsWith('AUTO_GABUNGAN:')) return false;
+        final marker = note.substring('AUTO_GABUNGAN:'.length).trim();
+        return markerCandidates.contains(marker);
+      }).toList();
+
+      Future<_AutoSanguSyncResult> syncAutoExpenseRows({
+        required List<Map<String, dynamic>> existingRows,
+        required List<Map<String, dynamic>> nextDetails,
+        required String kategori,
+        required String keterangan,
+        required String notePrefix,
+      }) async {
+        if (nextDetails.isEmpty) {
+          var deletedCount = 0;
+          for (final row in existingRows) {
             final staleId = '${row['id'] ?? ''}'.trim();
             if (staleId.isEmpty) continue;
             try {
@@ -1089,10 +1183,59 @@ class DashboardRepository {
               deletedCount++;
             } catch (_) {}
           }
+          return _AutoSanguSyncResult(
+            deleted: deletedCount,
+            skipped: deletedCount == 0 ? 1 : 0,
+          );
+        }
+
+        final totalExpense = nextDetails.fold<double>(
+          0,
+          (sum, row) => sum + _num(row['jumlah']),
+        );
+
+        if (existingRows.isEmpty) {
+          await createExpense(
+            total: totalExpense,
+            status: 'Paid',
+            expenseDate: expenseDate,
+            kategori: kategori,
+            keterangan: keterangan,
+            note: '$notePrefix:$preferredMarker',
+            details: nextDetails,
+          );
+          return const _AutoSanguSyncResult(created: 1);
+        }
+
+        final primary = existingRows.first;
+        final primaryId = '${primary['id'] ?? ''}'.trim();
+        if (primaryId.isEmpty) {
+          return const _AutoSanguSyncResult(skipped: 1);
+        }
+        await updateExpense(
+          id: primaryId,
+          date: _dateOnly(expenseDate),
+          status: 'Paid',
+          total: totalExpense,
+          kategori: kategori,
+          keterangan: keterangan,
+          note: '$notePrefix:$preferredMarker',
+          recordedBy: '${primary['dicatat_oleh'] ?? 'Admin'}'.trim(),
+          details: nextDetails,
+        );
+
+        var deletedCount = 0;
+        if (existingRows.length > 1) {
+          for (final row in existingRows.skip(1)) {
+            final duplicateId = '${row['id'] ?? ''}'.trim();
+            if (duplicateId.isEmpty) continue;
+            await deleteExpense(duplicateId);
+            deletedCount++;
+          }
         }
         return _AutoSanguSyncResult(
+          updated: 1,
           deleted: deletedCount,
-          skipped: 1,
         );
       }
 
@@ -1135,6 +1278,7 @@ class DashboardRepository {
           };
 
       final expenseDetails = <Map<String, dynamic>>[];
+      final gabunganExpenseDetails = <Map<String, dynamic>>[];
       for (final detail in details) {
         final originalPickup = _firstNonEmptyText([
           detail['lokasi_muat'],
@@ -1168,6 +1312,46 @@ class DashboardRepository {
           fallbackCargo,
         ]);
         if (isOngkosKuliCargo(effectiveCargo)) {
+          continue;
+        }
+        if (_detailUsesManualArmada(detail)) {
+          final tonase = _num(detail['tonase']);
+          final gabunganHarga = _resolveGabunganExpenseHargaPerTon(
+            pickup: originalPickup,
+            destination: originalDestination,
+            customerName: _firstNonEmptyText([
+              detail['nama_pelanggan'],
+              detail['customer_name'],
+              fallbackCustomerName,
+            ]),
+          );
+          final gabunganTotal = tonase > 0 && gabunganHarga > 0
+              ? roundInvoiceRupiah(tonase * gabunganHarga)
+              : 0.0;
+          if (gabunganTotal <= 0) {
+            continue;
+          }
+          final pickupLabel =
+              originalPickup.trim().isEmpty ? '-' : originalPickup.trim();
+          final bongkarLabel = originalDestination.trim().isEmpty
+              ? '-'
+              : originalDestination.trim();
+          final manualLabel = _firstNonEmptyText([
+            detail['armada_manual'],
+            detail['armada_label'],
+            detail['armada'],
+            'Gabungan',
+          ]);
+          gabunganExpenseDetails.add(<String, dynamic>{
+            'nama': '$manualLabel ($pickupLabel-$bongkarLabel)',
+            'nama_supir': null,
+            'lokasi_muat': originalPickup,
+            'lokasi_bongkar': originalDestination,
+            'muatan': effectiveCargo,
+            'tonase': tonase,
+            'harga': gabunganHarga,
+            'jumlah': gabunganTotal,
+          });
           continue;
         }
         final baseRoute = (
@@ -1237,71 +1421,32 @@ class DashboardRepository {
         });
       }
 
-      if (expenseDetails.isEmpty) {
-        var deletedCount = 0;
-        if (existingAutoRows.isNotEmpty) {
-          for (final row in existingAutoRows) {
-            final staleId = '${row['id'] ?? ''}'.trim();
-            if (staleId.isEmpty) continue;
-            try {
-              await deleteExpense(staleId);
-              deletedCount++;
-            } catch (_) {}
-          }
-        }
-        return _AutoSanguSyncResult(
-          deleted: deletedCount,
-          skipped: 1,
-        );
-      }
-      final totalExpense = expenseDetails.fold<double>(
-        0,
-        (sum, row) => sum + _num(row['jumlah']),
+      final gabunganResult = await syncAutoExpenseRows(
+        existingRows: existingGabunganRows,
+        nextDetails: gabunganExpenseDetails,
+        kategori: 'Gabungan',
+        keterangan: 'Auto gabungan - $invoiceNumber',
+        notePrefix: 'AUTO_GABUNGAN',
       );
 
-      if (existingAutoRows.isEmpty) {
-        await createExpense(
-          total: totalExpense,
-          status: 'Paid',
-          expenseDate: expenseDate,
-          kategori: 'Sangu Sopir',
-          keterangan: 'Auto sangu sopir - $invoiceNumber',
-          note: 'AUTO_SANGU:$preferredMarker',
-          details: expenseDetails,
-        );
-        return const _AutoSanguSyncResult(created: 1);
-      }
-
-      final primary = existingAutoRows.first;
-      final primaryId = '${primary['id'] ?? ''}'.trim();
-      if (primaryId.isEmpty) {
-        return const _AutoSanguSyncResult(skipped: 1);
-      }
-      await updateExpense(
-        id: primaryId,
-        date: _dateOnly(expenseDate),
-        status: 'Paid',
-        total: totalExpense,
+      final sanguResult = await syncAutoExpenseRows(
+        existingRows: existingAutoRows,
+        nextDetails: expenseDetails,
         kategori: 'Sangu Sopir',
         keterangan: 'Auto sangu sopir - $invoiceNumber',
-        note: 'AUTO_SANGU:$preferredMarker',
-        recordedBy: '${primary['dicatat_oleh'] ?? 'Admin'}'.trim(),
-        details: expenseDetails,
+        notePrefix: 'AUTO_SANGU',
       );
 
-      var deletedCount = 0;
-      if (existingAutoRows.length > 1) {
-        for (final row in existingAutoRows.skip(1)) {
-          final duplicateId = '${row['id'] ?? ''}'.trim();
-          if (duplicateId.isEmpty) continue;
-          await deleteExpense(duplicateId);
-          deletedCount++;
-        }
+      final combined = gabunganResult.plus(sanguResult);
+      if (combined.created + combined.updated + combined.deleted > 0) {
+        return _AutoSanguSyncResult(
+          created: combined.created,
+          updated: combined.updated,
+          deleted: combined.deleted,
+          failed: combined.failed,
+        );
       }
-      return _AutoSanguSyncResult(
-        updated: 1,
-        deleted: deletedCount,
-      );
+      return combined;
     } catch (_) {
       // Best effort: invoice income tetap sukses walau auto-expense gagal.
       return const _AutoSanguSyncResult(failed: 1);
@@ -1356,17 +1501,30 @@ class DashboardRepository {
         }
       }
 
-      final existingAutoRows = _toMapList(
-        await _supabase.from('expenses').select('id,note').like(
-              'note',
-              'AUTO_SANGU:%',
-            ),
-      );
+      final existingAutoRows = [
+        ..._toMapList(
+          await _supabase.from('expenses').select('id,note').like(
+                'note',
+                'AUTO_SANGU:%',
+              ),
+        ),
+        ..._toMapList(
+          await _supabase.from('expenses').select('id,note').like(
+                'note',
+                'AUTO_GABUNGAN:%',
+              ),
+        ),
+      ];
       for (final row in existingAutoRows) {
         final id = '${row['id'] ?? ''}'.trim();
         final note = '${row['note'] ?? ''}'.trim();
-        if (id.isEmpty || !note.startsWith('AUTO_SANGU:')) continue;
-        final marker = note.substring('AUTO_SANGU:'.length).trim();
+        if (id.isEmpty) continue;
+        final upperNote = note.toUpperCase();
+        final marker = upperNote.startsWith('AUTO_SANGU:')
+            ? note.substring('AUTO_SANGU:'.length).trim()
+            : upperNote.startsWith('AUTO_GABUNGAN:')
+                ? note.substring('AUTO_GABUNGAN:'.length).trim()
+                : '';
         final markerKey = normalizeMarker(marker);
         if (markerKey.isEmpty) continue;
         if (!validMarkers.contains(markerKey)) {
@@ -1416,6 +1574,7 @@ class DashboardRepository {
           fallbackDestination: '${invoice['lokasi_bongkar'] ?? ''}',
           fallbackArmadaId: '${invoice['armada_id'] ?? ''}',
           fallbackCargo: '${invoice['muatan'] ?? ''}',
+          fallbackCustomerName: '${invoice['nama_pelanggan'] ?? ''}',
           preloadedRules: rules,
           preloadedPlateById: plateById,
         );

@@ -190,6 +190,7 @@ extension DashboardRepositoryCrudExtension on DashboardRepository {
             fallbackDestination: detailDestination,
             fallbackArmadaId: detailArmadaId,
             fallbackCargo: detailMuatan,
+            fallbackCustomerName: customerName,
           );
         }
         if (effectiveSubmissionRole == 'pengurus' &&
@@ -262,6 +263,7 @@ extension DashboardRepositoryCrudExtension on DashboardRepository {
         fallbackDestination: destination,
         fallbackArmadaId: armadaId,
         fallbackCargo: muatan,
+        fallbackCustomerName: customerName,
       );
     }
     if (effectiveSubmissionRole == 'pengurus' &&
@@ -872,6 +874,7 @@ extension DashboardRepositoryCrudExtension on DashboardRepository {
           fallbackDestination: destination,
           fallbackArmadaId: armadaId,
           fallbackCargo: muatan,
+          fallbackCustomerName: customerName,
         );
       }
       await _syncArmadaStatusNowBestEffort();

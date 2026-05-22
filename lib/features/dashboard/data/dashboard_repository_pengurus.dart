@@ -136,6 +136,7 @@ extension DashboardRepositoryPengurusExtension on DashboardRepository {
       fallbackDestination: '${invoice['lokasi_bongkar'] ?? ''}',
       fallbackArmadaId: '${invoice['armada_id'] ?? ''}',
       fallbackCargo: '${invoice['muatan'] ?? ''}',
+      fallbackCustomerName: '${invoice['nama_pelanggan'] ?? ''}',
     );
     final creatorId = '${invoice['created_by'] ?? ''}'.trim();
     if (creatorId.isNotEmpty) {

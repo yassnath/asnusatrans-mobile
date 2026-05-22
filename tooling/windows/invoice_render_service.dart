@@ -174,7 +174,27 @@ Future<List<int>> _renderTablePdf(
     }
     return outputFile.readAsBytes();
   } finally {
-    unawaited(tempDir.delete(recursive: true));
+    unawaited(_deleteTempDirQuietly(tempDir));
+  }
+}
+
+Future<void> _deleteTempDirQuietly(Directory tempDir) async {
+  for (var attempt = 0; attempt < 5; attempt++) {
+    try {
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+      return;
+    } on FileSystemException catch (error) {
+      if (attempt == 4) {
+        stderr.writeln(
+          'Warning: could not delete temp render directory '
+          '${tempDir.path}: ${error.message}',
+        );
+        return;
+      }
+      await Future<void>.delayed(Duration(milliseconds: 250 * (attempt + 1)));
+    }
   }
 }
 

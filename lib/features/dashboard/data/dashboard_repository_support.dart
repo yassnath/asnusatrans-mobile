@@ -173,8 +173,15 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
       return description.startsWith('auto sangu sopir -');
     }
 
+    bool isAutoGabunganExpense(Map<String, dynamic> expense) {
+      final note = '${expense['note'] ?? ''}'.trim().toUpperCase();
+      if (note.startsWith('AUTO_GABUNGAN:')) return true;
+      final description = '${expense['keterangan'] ?? ''}'.trim().toLowerCase();
+      return description.startsWith('auto gabungan -');
+    }
+
     String expenseDashboardLabel(Map<String, dynamic> expense) {
-      if (isAutoSanguExpense(expense)) {
+      if (isAutoSanguExpense(expense) || isAutoGabunganExpense(expense)) {
         return _expenseRouteLabel(expense);
       }
       final category = '${expense['kategori'] ?? ''}'.trim();
@@ -258,9 +265,11 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
         final id = (expense['id'] ?? '').toString();
         final dateValue = expense['tanggal'] ?? expense['created_at'];
         final autoSangu = isAutoSanguExpense(expense);
+        final autoGabungan = isAutoGabunganExpense(expense);
+        final autoTrackedExpense = autoSangu || autoGabungan;
         return {
           'type': 'expense',
-          'isAutoSangu': autoSangu,
+          'isAutoSangu': autoTrackedExpense,
           'date': Formatters.parseDate(dateValue),
           'timestamp': resolveCreatedAt(expense['created_at'] ?? dateValue),
           'item': TransactionItem(
@@ -275,7 +284,7 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
             total: _expenseTotal(expense),
             status: (expense['status'] ?? 'Recorded').toString(),
             link: '/expense-preview?id=$id',
-            isAutoSangu: autoSangu,
+            isAutoSangu: autoTrackedExpense,
           ),
         };
       }),
@@ -1706,8 +1715,21 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
       }
     }
 
+    final tonaseValue = _num(nextDetail['tonase']);
     if (nextFlatTotal != null && nextFlatTotal > 0) {
       clearExplicitTotals();
+      if (tonaseValue > 0 && nextHarga != null && nextHarga > 0) {
+        final currentHarga = _num(nextDetail['harga']);
+        if ((currentHarga - nextHarga).abs() > 0.0001) {
+          nextDetail['harga'] = nextHarga;
+          changed = true;
+        }
+        if (nextDetail['subtotal_auto'] != true) {
+          nextDetail['subtotal_auto'] = true;
+          changed = true;
+        }
+        return changed ? nextDetail : null;
+      }
       final currentHarga = _num(nextDetail['harga']);
       if (currentHarga != 0) {
         nextDetail['harga'] = 0;

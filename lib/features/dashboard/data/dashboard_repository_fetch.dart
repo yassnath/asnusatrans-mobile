@@ -121,7 +121,7 @@ extension DashboardRepositoryFetchExtension on DashboardRepository {
       columns,
       (resolvedColumns) {
         dynamic query = _supabase.from('invoices').select(resolvedColumns).or(
-              'tanggal.gte.$iso,tanggal_kop.gte.$iso,armada_start_date.gte.$iso',
+              'tanggal.gte.$iso,tanggal_kop.gte.$iso,armada_start_date.gte.$iso,created_at.gte.$iso,updated_at.gte.$iso',
             );
         if (cleanedCreatedBy != null && cleanedCreatedBy.isNotEmpty) {
           query = query.eq('created_by', cleanedCreatedBy);
@@ -543,11 +543,17 @@ extension DashboardRepositoryFetchExtension on DashboardRepository {
           String? muatan,
           Map<String, dynamic>? source,
         }) {
-          final rawArmadaId = '${source?['armada_id'] ?? ''}'.trim();
+          dynamic sourceValue(String key) {
+            final direct = source?[key];
+            if (normalize(direct).isNotEmpty) return direct;
+            return row[key];
+          }
+
+          final rawArmadaId = '${sourceValue('armada_id') ?? ''}'.trim();
           final rawManualArmada = normalize(
-            source?['armada_manual'] ??
-                source?['armada_label'] ??
-                source?['armada'],
+            sourceValue('armada_manual') ??
+                sourceValue('armada_label') ??
+                sourceValue('armada'),
           );
           final resolvedArmadaId = rawArmadaId.isNotEmpty
               ? rawArmadaId
@@ -558,13 +564,13 @@ extension DashboardRepositoryFetchExtension on DashboardRepository {
             'lokasi_muat': muat,
             'lokasi_bongkar': bongkar,
             'muatan': normalize(muatan),
-            'nama_supir': normalize(source?['nama_supir']),
+            'nama_supir': normalize(sourceValue('nama_supir')),
             'armada_id': resolvedArmadaId,
             'armada_manual': resolvedManualArmada,
-            'armada_start_date': normalize(source?['armada_start_date']),
-            'armada_end_date': normalize(source?['armada_end_date']),
-            'tonase': source?['tonase'],
-            'harga': source?['harga'],
+            'armada_start_date': normalize(sourceValue('armada_start_date')),
+            'armada_end_date': normalize(sourceValue('armada_end_date')),
+            'tonase': sourceValue('tonase'),
+            'harga': sourceValue('harga'),
           };
           final detailFingerprint = [
             normalize(detailEntry['lokasi_muat']),
@@ -596,13 +602,13 @@ extension DashboardRepositoryFetchExtension on DashboardRepository {
             'lokasi_muat': muat,
             'lokasi_bongkar': bongkar,
             'muatan': normalize(muatan),
-            'nama_supir': normalize(source?['nama_supir']),
+            'nama_supir': normalize(sourceValue('nama_supir')),
             'armada_id': resolvedArmadaId,
             'armada_manual': resolvedManualArmada,
-            'armada_start_date': normalize(source?['armada_start_date']),
-            'armada_end_date': normalize(source?['armada_end_date']),
-            'tonase': source?['tonase'],
-            'harga': source?['harga'],
+            'armada_start_date': normalize(sourceValue('armada_start_date')),
+            'armada_end_date': normalize(sourceValue('armada_end_date')),
+            'tonase': sourceValue('tonase'),
+            'harga': sourceValue('harga'),
             'details': <Map<String, dynamic>>[detailEntry],
             '__stamp': rowStamp(row),
             '__detail_fingerprints': <String>{detailFingerprint},

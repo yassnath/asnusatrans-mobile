@@ -443,7 +443,7 @@ extension _AdminCreateIncomeViewStateSupport on _AdminCreateIncomeViewState {
       'lokasi_muat_manual': '',
       'lokasi_muat_is_manual': false,
       'lokasi_bongkar': '',
-      'muatan': '',
+      'muatan': _AdminCreateIncomeViewState._defaultCargoText,
       'nama_supir': '',
       'nama_supir_manual': '',
       'nama_supir_is_manual': false,
