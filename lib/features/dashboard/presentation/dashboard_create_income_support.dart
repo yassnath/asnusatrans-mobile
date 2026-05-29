@@ -30,6 +30,24 @@ double? _nullableIncomeNumber(dynamic value) {
   return _toNum(value);
 }
 
+class _IncomeDuplicateMatch {
+  const _IncomeDuplicateMatch({
+    required this.invoiceNumber,
+    required this.customerName,
+    required this.dateLabel,
+    required this.routeLabel,
+    required this.armadaLabel,
+    this.fixedInvoiceNumber,
+  });
+
+  final String invoiceNumber;
+  final String customerName;
+  final String dateLabel;
+  final String routeLabel;
+  final String armadaLabel;
+  final String? fixedInvoiceNumber;
+}
+
 extension _AdminCreateIncomeViewStateSupport on _AdminCreateIncomeViewState {
   String _safeInputText(dynamic value) {
     final raw = (value ?? '').toString().trim();
@@ -463,6 +481,376 @@ extension _AdminCreateIncomeViewStateSupport on _AdminCreateIncomeViewState {
 
   double _detailSubtotal(Map<String, dynamic> row) {
     return _resolveInvoiceDetailExcelSubtotalShared(row);
+  }
+
+  Future<List<_IncomeDuplicateMatch>> _findDuplicateIncomeMatches({
+    required List<Map<String, dynamic>> detailsPayload,
+    required List<Map<String, dynamic>> armadas,
+  }) async {
+    final plateByArmadaId = _buildArmadaPlateById(armadas);
+    final targetSignatures = detailsPayload
+        .map(
+          (detail) => _incomeDuplicateSignature(
+            customerName: _customer.text.trim(),
+            invoiceEntity: _invoiceEntity,
+            detail: detail,
+            parent: null,
+            plateByArmadaId: plateByArmadaId,
+          ),
+        )
+        .where((signature) => signature.isNotEmpty)
+        .toSet();
+    if (targetSignatures.isEmpty) return const <_IncomeDuplicateMatch>[];
+
+    final results = await Future.wait<dynamic>([
+      widget.repository.fetchInvoices(),
+      widget.repository.fetchFixedInvoiceBatches(),
+    ]);
+    final invoices = (results[0] as List)
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList(growable: false);
+    final fixedBatches = (results[1] as List)
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .map(_FixedInvoiceBatch.fromJson)
+        .whereType<_FixedInvoiceBatch>()
+        .toList(growable: false);
+    final fixedNumberByInvoiceId = <String, String>{};
+    for (final batch in fixedBatches) {
+      final invoiceNumber = batch.invoiceNumber.trim();
+      if (invoiceNumber.isEmpty) continue;
+      for (final id in batch.invoiceIds) {
+        fixedNumberByInvoiceId[id.trim()] = invoiceNumber;
+      }
+    }
+
+    final matches = <_IncomeDuplicateMatch>[];
+    final seenInvoiceIds = <String>{};
+    for (final invoice in invoices) {
+      final invoiceId = '${invoice['id'] ?? ''}'.trim();
+      final rows = _incomeDuplicateRowsForInvoice(invoice);
+      Map<String, dynamic>? matchedDetail;
+      for (final detail in rows) {
+        final signature = _incomeDuplicateSignature(
+          customerName: '${invoice['nama_pelanggan'] ?? ''}',
+          invoiceEntity: '${invoice['invoice_entity'] ?? ''}',
+          detail: detail,
+          parent: invoice,
+          plateByArmadaId: plateByArmadaId,
+        );
+        if (targetSignatures.contains(signature)) {
+          matchedDetail = detail;
+          break;
+        }
+      }
+      if (matchedDetail == null || !seenInvoiceIds.add(invoiceId)) continue;
+      matches.add(
+        _incomeDuplicateMatchFromInvoice(
+          invoice,
+          matchedDetail,
+          fixedNumberByInvoiceId[invoiceId],
+          plateByArmadaId,
+        ),
+      );
+      if (matches.length >= 5) break;
+    }
+    return matches;
+  }
+
+  Future<bool> _confirmDuplicateIncomeSave(
+    List<_IncomeDuplicateMatch> matches,
+  ) async {
+    final lines = matches.map((match) {
+      final fixedLabel = (match.fixedInvoiceNumber ?? '').trim().isEmpty
+          ? ''
+          : ' • Fix: ${match.fixedInvoiceNumber}';
+      return '• ${match.invoiceNumber} • ${match.dateLabel} • '
+          '${match.customerName} • ${match.routeLabel} • '
+          '${match.armadaLabel}$fixedLabel';
+    }).join('\n');
+    return showCvantConfirmPopup(
+      context: context,
+      type: CvantPopupType.warning,
+      title: _t(
+        'Data income sudah pernah dibuat',
+        'Income data already exists',
+      ),
+      message: _t(
+        'Data yang sama persis sudah ditemukan di invoice list/fix invoice:\n\n$lines\n\nKalau ini memang data baru yang sengaja dibuat ulang, pilih Tetap Simpan.',
+        'The exact same data was found in invoice list/fixed invoice:\n\n$lines\n\nIf this is intentionally a new duplicate entry, choose Save Anyway.',
+      ),
+      cancelLabel: _t('Batal Simpan', 'Cancel Save'),
+      confirmLabel: _t('Tetap Simpan', 'Save Anyway'),
+    );
+  }
+
+  List<Map<String, dynamic>> _incomeDuplicateRowsForInvoice(
+    Map<String, dynamic> invoice,
+  ) {
+    final rows = _fixedInvoiceMapList(invoice['rincian']);
+    if (rows.isNotEmpty) return rows;
+    return <Map<String, dynamic>>[invoice];
+  }
+
+  _IncomeDuplicateMatch _incomeDuplicateMatchFromInvoice(
+    Map<String, dynamic> invoice,
+    Map<String, dynamic> detail,
+    String? fixedInvoiceNumber,
+    Map<String, String> plateByArmadaId,
+  ) {
+    final invoiceNumber = Formatters.invoiceNumber(
+      invoice['no_invoice'],
+      invoice['tanggal'] ?? invoice['tanggal_kop'] ?? invoice['created_at'],
+      customerName: invoice['nama_pelanggan'],
+    );
+    final pickup = _incomeDuplicateDisplayField(
+      detail,
+      invoice,
+      const ['lokasi_muat'],
+      fallback: '-',
+    );
+    final destination = _incomeDuplicateDisplayField(
+      detail,
+      invoice,
+      const ['lokasi_bongkar'],
+      fallback: '-',
+    );
+    final armada = _incomeDuplicateArmadaDisplay(
+      detail,
+      invoice,
+      plateByArmadaId,
+    );
+    return _IncomeDuplicateMatch(
+      invoiceNumber: invoiceNumber == '-' ? 'Invoice' : invoiceNumber,
+      customerName: _incomeDuplicateDisplayField(
+        invoice,
+        null,
+        const ['nama_pelanggan', 'customer_name'],
+        fallback: '-',
+      ),
+      dateLabel: _incomeDuplicateDateDisplay(
+        _incomeDuplicateRawField(
+          detail,
+          invoice,
+          const ['armada_start_date', 'tanggal'],
+        ),
+      ),
+      routeLabel: '$pickup-$destination',
+      armadaLabel: armada,
+      fixedInvoiceNumber: fixedInvoiceNumber,
+    );
+  }
+
+  Map<String, String> _buildArmadaPlateById(
+    List<Map<String, dynamic>> armadas,
+  ) {
+    final map = <String, String>{};
+    for (final armada in armadas) {
+      final id = '${armada['id'] ?? ''}'.trim();
+      final plate = _normalizePlateText('${armada['plat_nomor'] ?? ''}');
+      if (id.isNotEmpty && plate.isNotEmpty) {
+        map[id] = plate;
+      }
+    }
+    return map;
+  }
+
+  String _incomeDuplicateSignature({
+    required String customerName,
+    required String invoiceEntity,
+    required Map<String, dynamic> detail,
+    required Map<String, dynamic>? parent,
+    required Map<String, String> plateByArmadaId,
+  }) {
+    final entity = Formatters.normalizeInvoiceEntity(
+      invoiceEntity,
+      invoiceNumber: parent?['no_invoice'],
+      customerName: customerName,
+    );
+    final subtotal = _incomeDuplicateSubtotal(detail, parent);
+    final parts = <String>[
+      _incomeDuplicateTextKey(entity),
+      _incomeDuplicateTextKey(customerName),
+      _incomeDuplicateDateKey(
+        _incomeDuplicateRawField(
+          detail,
+          parent,
+          const ['armada_start_date', 'tanggal'],
+        ),
+      ),
+      _incomeDuplicateDateKey(
+        _incomeDuplicateRawField(detail, parent, const ['armada_end_date']),
+      ),
+      _incomeDuplicateTextKey(
+        _incomeDuplicateRawField(detail, parent, const ['lokasi_muat']),
+      ),
+      _incomeDuplicateTextKey(
+        _incomeDuplicateRawField(detail, parent, const ['lokasi_bongkar']),
+      ),
+      _incomeDuplicateTextKey(
+        _incomeDuplicateRawField(detail, parent, const ['muatan']),
+      ),
+      _incomeDuplicateArmadaKey(detail, parent, plateByArmadaId),
+      _incomeDuplicateTonaseKey(
+        _incomeDuplicateRawField(detail, parent, const ['tonase']),
+      ),
+      _incomeDuplicateRateKey(
+        _incomeDuplicateRawField(detail, parent, const ['harga']),
+      ),
+      subtotal > 0 ? roundInvoiceRupiah(subtotal).toStringAsFixed(0) : '',
+    ];
+    return parts.join('|');
+  }
+
+  dynamic _incomeDuplicateRawField(
+    Map<String, dynamic> detail,
+    Map<String, dynamic>? parent,
+    List<String> keys,
+  ) {
+    for (final key in keys) {
+      final value = detail[key];
+      if (_incomeDuplicateHasValue(value)) return value;
+    }
+    if (parent != null) {
+      for (final key in keys) {
+        final value = parent[key];
+        if (_incomeDuplicateHasValue(value)) return value;
+      }
+    }
+    return '';
+  }
+
+  String _incomeDuplicateDisplayField(
+    Map<String, dynamic> detail,
+    Map<String, dynamic>? parent,
+    List<String> keys, {
+    String fallback = '',
+  }) {
+    final value = '${_incomeDuplicateRawField(detail, parent, keys)}'.trim();
+    return value.isEmpty ? fallback : value;
+  }
+
+  bool _incomeDuplicateHasValue(dynamic value) {
+    final raw = '${value ?? ''}'.trim();
+    if (raw.isEmpty) return false;
+    final lowered = raw.toLowerCase();
+    return lowered != 'null' && lowered != 'undefined';
+  }
+
+  String _incomeDuplicateTextKey(dynamic value) {
+    return '${value ?? ''}'
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  String _incomeDuplicateDateKey(dynamic value) {
+    final raw = '${value ?? ''}'.trim();
+    if (raw.isEmpty) return '';
+    final parsed = Formatters.parseDate(raw);
+    if (parsed == null) return _incomeDuplicateTextKey(raw);
+    final mm = parsed.month.toString().padLeft(2, '0');
+    final dd = parsed.day.toString().padLeft(2, '0');
+    return '${parsed.year}-$mm-$dd';
+  }
+
+  String _incomeDuplicateDateDisplay(dynamic value) {
+    final parsed = Formatters.parseDate(value);
+    if (parsed == null) {
+      final raw = '${value ?? ''}'.trim();
+      return raw.isEmpty ? '-' : raw;
+    }
+    final dd = parsed.day.toString().padLeft(2, '0');
+    final mm = parsed.month.toString().padLeft(2, '0');
+    return '$dd-$mm-${parsed.year}';
+  }
+
+  String _incomeDuplicateTonaseKey(dynamic value) {
+    if (!_incomeDuplicateHasValue(value)) return '';
+    return _toNum(value).toStringAsFixed(3);
+  }
+
+  String _incomeDuplicateRateKey(dynamic value) {
+    if (!_incomeDuplicateHasValue(value)) return '';
+    return _toNum(value).toStringAsFixed(2);
+  }
+
+  double _incomeDuplicateSubtotal(
+    Map<String, dynamic> detail,
+    Map<String, dynamic>? parent,
+  ) {
+    for (final key in const ['subtotal', 'total', 'jumlah', 'total_biaya']) {
+      final value = detail[key];
+      if (_incomeDuplicateHasValue(value) && _toNum(value) > 0) {
+        return roundInvoiceRupiah(_toNum(value));
+      }
+    }
+    final tonase = _toNum(_incomeDuplicateRawField(
+      detail,
+      parent,
+      const ['tonase'],
+    ));
+    final harga = _toNum(_incomeDuplicateRawField(
+      detail,
+      parent,
+      const ['harga'],
+    ));
+    final computed = tonase * harga;
+    if (computed > 0) return roundInvoiceRupiah(computed);
+    if (parent != null) {
+      for (final key in const ['total_biaya', 'total_bayar']) {
+        final value = parent[key];
+        if (_incomeDuplicateHasValue(value) && _toNum(value) > 0) {
+          return roundInvoiceRupiah(_toNum(value));
+        }
+      }
+    }
+    return 0;
+  }
+
+  String _incomeDuplicateArmadaKey(
+    Map<String, dynamic> detail,
+    Map<String, dynamic>? parent,
+    Map<String, String> plateByArmadaId,
+  ) {
+    final armadaId = '${_incomeDuplicateRawField(
+      detail,
+      parent,
+      const ['armada_id'],
+    )}'
+        .trim();
+    if (armadaId.isNotEmpty && plateByArmadaId[armadaId] != null) {
+      return _normalizePlateText(plateByArmadaId[armadaId]!);
+    }
+    for (final key in const [
+      'plat_nomor',
+      'no_polisi',
+      'nopol',
+      'plat',
+      'armada_manual',
+      'armada_label',
+      'armada',
+    ]) {
+      final raw = '${_incomeDuplicateRawField(detail, parent, [key])}'.trim();
+      if (raw.isEmpty) continue;
+      final plate = _extractPlateFromText(raw);
+      if (plate != null && plate.isNotEmpty) return _normalizePlateText(plate);
+      return _incomeDuplicateTextKey(raw);
+    }
+    if (armadaId.isNotEmpty) return armadaId;
+    return '';
+  }
+
+  String _incomeDuplicateArmadaDisplay(
+    Map<String, dynamic> detail,
+    Map<String, dynamic>? parent,
+    Map<String, String> plateByArmadaId,
+  ) {
+    final key = _incomeDuplicateArmadaKey(detail, parent, plateByArmadaId);
+    if (key.isEmpty) return '-';
+    return key == _incomeDuplicateTextKey(key) ? key : key.toUpperCase();
   }
 
   String? _nullableInputText(dynamic value) {

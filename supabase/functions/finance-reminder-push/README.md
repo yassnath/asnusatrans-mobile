@@ -23,6 +23,12 @@ Deploy:
 npx supabase functions deploy finance-reminder-push --project-ref msziutqvkrbwwohcdoou --use-api
 ```
 
+Pastikan secret cron diset dan nilainya sama dengan yang dipakai di SQL cron:
+
+```bash
+npx supabase secrets set FINANCE_REMINDER_CRON_SECRET=isi-secret-kuat --project-ref msziutqvkrbwwohcdoou
+```
+
 Manual test dengan user JWT admin/owner:
 
 ```bash
@@ -34,4 +40,16 @@ curl -X POST "https://msziutqvkrbwwohcdoou.supabase.co/functions/v1/finance-remi
 
 Untuk mengaktifkan cron, jalankan SQL patch:
 
-`supabase/patch_finance_reminder_push_cron_20260502.sql`
+`supabase/patch_finance_reminder_push_cron_20260529.sql`
+
+Sebelum run patch, ganti `GANTI_DENGAN_FINANCE_REMINDER_CRON_SECRET` dengan
+value `FINANCE_REMINDER_CRON_SECRET` yang sama. Setelah patch berhasil:
+
+```sql
+select jobid, jobname, schedule, active
+from cron.job
+where jobname like 'cvant_finance_reminder_%';
+
+select public.trigger_finance_reminder_push('weekly');
+select public.trigger_finance_reminder_push('monthly');
+```

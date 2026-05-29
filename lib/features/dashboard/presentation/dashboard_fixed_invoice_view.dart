@@ -367,7 +367,6 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
   }
 
   String _buildDepartureSummary(Map<String, dynamic> item) {
-    final details = _toDetailList(item['rincian']);
     final lines = <String>[];
     final seen = <String>{};
 
@@ -395,16 +394,9 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
       lines.add('$dateLabel • $plate');
     }
 
-    if (details.isNotEmpty) {
-      for (final row in details) {
-        pushLine(
-          row,
-          item['armada_start_date'] ?? item['tanggal_kop'] ?? item['tanggal'],
-        );
-      }
-    } else {
+    for (final row in _buildPreviewDetailRows(item)) {
       pushLine(
-        item,
+        row,
         item['armada_start_date'] ?? item['tanggal_kop'] ?? item['tanggal'],
       );
     }
@@ -473,24 +465,69 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
   ) {
     final rows = _toDetailList(item['rincian']);
     final detailRows = rows.isNotEmpty
-        ? rows.map((row) => Map<String, dynamic>.from(row)).toList()
-        : <Map<String, dynamic>>[_fallbackPreviewDetailRow(item)];
+        ? rows.asMap().entries.map((entry) {
+            return <String, dynamic>{
+              ...Map<String, dynamic>.from(entry.value),
+              '__preview_original_detail_index': entry.key,
+            };
+          }).toList()
+        : <Map<String, dynamic>>[
+            {
+              ..._fallbackPreviewDetailRow(item),
+              '__preview_original_detail_index': 0,
+            }
+          ];
+    final fallbackDate =
+        item['armada_start_date'] ?? item['tanggal_kop'] ?? item['tanggal'];
 
     detailRows.sort((a, b) {
       final aDate = Formatters.parseDate(
-            a['armada_start_date'] ?? a['tanggal'],
+            a['armada_start_date'] ?? a['tanggal'] ?? fallbackDate,
           ) ??
           DateTime.fromMillisecondsSinceEpoch(0);
       final bDate = Formatters.parseDate(
-            b['armada_start_date'] ?? b['tanggal'],
+            b['armada_start_date'] ?? b['tanggal'] ?? fallbackDate,
           ) ??
           DateTime.fromMillisecondsSinceEpoch(0);
       final byDate = aDate.compareTo(bDate);
       if (byDate != 0) return byDate;
-      return _extractPreviewPlate(a).compareTo(_extractPreviewPlate(b));
+      final byPlate = _extractPreviewPlate(a).compareTo(
+        _extractPreviewPlate(b),
+      );
+      if (byPlate != 0) return byPlate;
+      final aIndex = (a['__preview_original_detail_index'] as num?)?.toInt() ??
+          detailRows.indexOf(a);
+      final bIndex = (b['__preview_original_detail_index'] as num?)?.toInt() ??
+          detailRows.indexOf(b);
+      return aIndex.compareTo(bIndex);
     });
 
     return detailRows;
+  }
+
+  DateTime _resolvePreviewSourceSortDate(Map<String, dynamic> item) {
+    final detailDates = _buildPreviewDetailRows(item)
+        .map(
+          (row) => Formatters.parseDate(
+            row['armada_start_date'] ??
+                row['tanggal'] ??
+                item['armada_start_date'] ??
+                item['tanggal'],
+          ),
+        )
+        .whereType<DateTime>()
+        .toList(growable: false);
+    if (detailDates.isNotEmpty) {
+      detailDates.sort((a, b) => a.compareTo(b));
+      return detailDates.first;
+    }
+    return Formatters.parseDate(
+          item['armada_start_date'] ??
+              item['tanggal_kop'] ??
+              item['tanggal'] ??
+              item['created_at'],
+        ) ??
+        DateTime.fromMillisecondsSinceEpoch(0);
   }
 
   double _previewDetailSubtotal(Map<String, dynamic> row) {
@@ -527,7 +564,24 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
             .whereType<Map>()
             .map((row) => Map<String, dynamic>.from(row))
             .toList();
-    return sourceItems.isNotEmpty ? sourceItems : <Map<String, dynamic>>[item];
+    final resolvedItems =
+        sourceItems.isNotEmpty ? sourceItems : <Map<String, dynamic>>[item];
+    resolvedItems.sort((a, b) {
+      final byDate = _resolvePreviewSourceSortDate(a).compareTo(
+        _resolvePreviewSourceSortDate(b),
+      );
+      if (byDate != 0) return byDate;
+      final byPlate = _extractPreviewPlate(
+        _buildPreviewDetailRows(a).first,
+      ).compareTo(
+        _extractPreviewPlate(_buildPreviewDetailRows(b).first),
+      );
+      if (byPlate != 0) return byPlate;
+      return '${a['id'] ?? a['no_invoice'] ?? ''}'.compareTo(
+        '${b['id'] ?? b['no_invoice'] ?? ''}',
+      );
+    });
+    return resolvedItems;
   }
 
   _FixedInvoiceBatch _buildBatchSnapshotFromItem(Map<String, dynamic> item) {
@@ -1173,10 +1227,15 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                             ...detailRows.asMap().entries.map((entry) {
                               final index = entry.key;
                               final detail = entry.value;
+                              final originalDetailIndex =
+                                  (detail['__preview_original_detail_index']
+                                              as num?)
+                                          ?.toInt() ??
+                                      index;
                               final detailKey = _fixedInvoicePaymentDetailKey(
                                 invoiceId:
                                     '${source['id'] ?? sourceNumber}'.trim(),
-                                detailIndex: index,
+                                detailIndex: originalDetailIndex,
                               );
                               final paymentEntry = paymentEntryByKey[detailKey];
                               final startDate = detail['armada_start_date'] ??

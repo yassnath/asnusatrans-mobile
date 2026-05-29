@@ -212,6 +212,18 @@ Map<String, dynamic>? resolvePrioritizedSanguRouteRule({
     };
   }
 
+  final depoToLangon = pickupNorm == 'depo' && destinationNorm == 'langon';
+  if (depoToLangon) {
+    return <String, dynamic>{
+      'tempat': 'DEPO - T. LANGON',
+      'lokasi_muat': 'DEPO',
+      'lokasi_bongkar': 'T. LANGON',
+      'nominal': 400000,
+      '__muat_norm': 'depo',
+      '__bongkar_norm': 'langon',
+    };
+  }
+
   final maspionToLangon =
       pickupNorm == 'maspion' && destinationNorm == 'langon';
   if (maspionToLangon) {

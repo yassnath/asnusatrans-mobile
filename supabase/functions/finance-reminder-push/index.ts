@@ -40,6 +40,10 @@ type DeviceTokenRow = {
   token?: unknown;
 };
 
+type StoredNotificationRow = {
+  user_id?: unknown;
+};
+
 type Summary = {
   cvIncome: number;
   cvExpense: number;
@@ -95,6 +99,16 @@ function normalizeMarker(value: unknown): string {
     .toUpperCase()
     .replaceAll(/[^A-Z0-9.]+/g, "")
     .trim();
+}
+
+function isMissingCustomerNotificationsError(error: unknown): boolean {
+  const message = String((error as { message?: unknown })?.message ?? "")
+    .toLowerCase();
+  return message.includes("customer_notifications") &&
+    (message.includes("schema cache") ||
+      message.includes("could not find") ||
+      message.includes("does not exist") ||
+      message.includes("not found"));
 }
 
 function toNumber(value: unknown): number {
@@ -520,6 +534,20 @@ Deno.serve(async (req) => {
       .map((row) => String(row.id ?? "").trim())
       .filter((id) => id.length > 0);
 
+    const notificationType = type === "monthly"
+      ? "monthly_finance_summary"
+      : "weekly_finance_summary";
+    const periodStart = isoDate(period.start);
+    const periodEnd = isoDate(addDays(period.endExclusive, -1));
+    const notificationPayload = {
+      target: "invoice_list",
+      notification_type: notificationType,
+      source_type: "scheduled_finance_reminder",
+      period_start: periodStart,
+      period_end: periodEnd,
+      summary,
+    };
+
     let tokenRows: DeviceTokenRow[] = [];
     if (userIds.length > 0) {
       const { data, error } = await serviceClient
@@ -551,6 +579,82 @@ Deno.serve(async (req) => {
       tokenRows = (data ?? []) as DeviceTokenRow[];
     }
 
+    const notificationUserIds = Array.from(
+      new Set([
+        ...userIds,
+        ...tokenRows
+          .map((row) => String(row.user_id ?? "").trim())
+          .filter((id) => id.length > 0),
+      ]),
+    );
+
+    let storedNotifications = 0;
+    let storedNotificationsWarning = "";
+    if (notificationUserIds.length > 0) {
+      const { data: existingRows, error: existingError } = await serviceClient
+        .from("customer_notifications")
+        .select("user_id")
+        .in("user_id", notificationUserIds)
+        .eq("source_type", "scheduled_finance_reminder")
+        .contains("payload", {
+          notification_type: notificationType,
+          period_start: periodStart,
+        });
+
+      if (existingError) {
+        if (isMissingCustomerNotificationsError(existingError)) {
+          storedNotificationsWarning = existingError.message;
+        } else {
+          return jsonResponse(500, {
+            error: "Failed to check stored finance notifications.",
+            detail: existingError.message,
+          });
+        }
+      } else {
+        const existingUserIds = new Set(
+          ((existingRows ?? []) as StoredNotificationRow[])
+            .map((row) => String(row.user_id ?? "").trim())
+            .filter((id) => id.length > 0),
+        );
+        const missingUserIds = notificationUserIds.filter((id) =>
+          !existingUserIds.has(id)
+        );
+
+        if (missingUserIds.length > 0) {
+          const { error: insertNotificationError } = await serviceClient
+            .from("customer_notifications")
+            .insert(
+              missingUserIds.map((userId) => ({
+                user_id: userId,
+                title,
+                message,
+                status: "unread",
+                kind: "finance",
+                source_type: "scheduled_finance_reminder",
+                source_id: null,
+                payload: {
+                  ...notificationPayload,
+                  sent_at: new Date().toISOString(),
+                },
+              })),
+            );
+
+          if (insertNotificationError) {
+            if (isMissingCustomerNotificationsError(insertNotificationError)) {
+              storedNotificationsWarning = insertNotificationError.message;
+            } else {
+              return jsonResponse(500, {
+                error: "Failed to store finance reminder notifications.",
+                detail: insertNotificationError.message,
+              });
+            }
+          } else {
+            storedNotifications = missingUserIds.length;
+          }
+        }
+      }
+    }
+
     const targets = Array.from(
       new Map(
         tokenRows
@@ -566,6 +670,8 @@ Deno.serve(async (req) => {
     if (targets.length === 0) {
       return jsonResponse(200, {
         delivered: 0,
+        storedNotifications,
+        storedNotificationsWarning,
         skipped: true,
         reason: "No active device tokens found.",
         title,
@@ -578,13 +684,7 @@ Deno.serve(async (req) => {
     const errors: string[] = [];
     let delivered = 0;
     const payload = stringifyData({
-      target: "invoice_list",
-      notification_type: type === "monthly"
-        ? "monthly_finance_summary"
-        : "weekly_finance_summary",
-      source_type: "scheduled_finance_reminder",
-      period_start: isoDate(period.start),
-      period_end: isoDate(addDays(period.endExclusive, -1)),
+      ...notificationPayload,
       title,
       body: message,
       notification_title: title,
@@ -674,13 +774,15 @@ Deno.serve(async (req) => {
 
     return jsonResponse(200, {
       delivered,
+      storedNotifications,
+      storedNotificationsWarning,
       attempted: targets.length,
       invalidTokens: invalidTokens.length,
       errors,
       title,
       message,
-      periodStart: isoDate(period.start),
-      periodEnd: isoDate(addDays(period.endExclusive, -1)),
+      periodStart,
+      periodEnd,
     });
   } catch (error) {
     return jsonResponse(500, {

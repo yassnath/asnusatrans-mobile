@@ -576,8 +576,7 @@ class _DashboardPageState extends State<DashboardPage> {
 
   int get _staffUnreadNotificationCount => _staffNotifications
       .where(
-        (item) =>
-            '${item['status'] ?? 'unread'}'.trim().toLowerCase() != 'read',
+        _isUnreadStaffNotification,
       )
       .length;
 
@@ -695,36 +694,103 @@ class _DashboardPageState extends State<DashboardPage> {
     });
   }
 
-  Future<void> _openStaffNotificationTarget(
+  bool _isUnreadStaffNotification(Map<String, dynamic> item) {
+    return '${item['status'] ?? 'unread'}'.trim().toLowerCase() != 'read';
+  }
+
+  bool _isFinanceStaffNotification(Map<String, dynamic> item) {
+    final sourceType = '${item['source_type'] ?? ''}'.trim().toLowerCase();
+    final kind = '${item['kind'] ?? ''}'.trim().toLowerCase();
+    final payload = item['payload'];
+    final notificationType = payload is Map
+        ? '${payload['notification_type'] ?? ''}'.trim().toLowerCase()
+        : '';
+    return sourceType == 'scheduled_finance_reminder' ||
+        kind.contains('finance') ||
+        notificationType == 'weekly_finance_summary' ||
+        notificationType == 'monthly_finance_summary';
+  }
+
+  int _staffNotificationTargetIndex(Map<String, dynamic> item) {
+    final payload = item['payload'];
+    final target =
+        payload is Map ? '${payload['target'] ?? ''}'.trim().toLowerCase() : '';
+    final requestType = payload is Map
+        ? '${payload['request_type'] ?? ''}'.trim().toLowerCase()
+        : '';
+    final sourceType = '${item['source_type'] ?? ''}'.trim().toLowerCase();
+
+    if (_isFinanceStaffNotification(item) ||
+        target == 'invoice_list' ||
+        (sourceType == 'invoice' &&
+            requestType != 'new_income' &&
+            requestType != 'edit_request')) {
+      return 1;
+    }
+    return 8;
+  }
+
+  String _staffNotificationOpenTooltip(Map<String, dynamic> item) {
+    return _staffNotificationTargetIndex(item) == 1
+        ? 'Buka Daftar Invoice'
+        : 'Buka Penerimaan Order';
+  }
+
+  Future<bool> _markStaffNotificationRead(
     Map<String, dynamic> item, {
     Iterable<Map<String, dynamic>>? visibleNotifications,
   }) async {
     final notificationId = '${item['id'] ?? ''}'.trim();
     final isSynthetic = item['__synthetic'] == true;
-    if (notificationId.isNotEmpty && !isSynthetic) {
-      try {
+
+    try {
+      if (notificationId.isNotEmpty && !isSynthetic) {
         await widget.repository.markCustomerNotificationRead(notificationId);
-      } catch (_) {
-        // Keep navigation working even if marking as read fails.
       }
-    }
-    if (isSynthetic) {
-      await _markStaffAlertsRead(
-        visibleNotifications ?? _staffNotifications,
+      if (isSynthetic) {
+        await _markStaffAlertsRead(
+          visibleNotifications ?? <Map<String, dynamic>>[item],
+        );
+      }
+    } catch (error) {
+      if (!mounted) return false;
+      showCvantPopup(
+        context: context,
+        type: CvantPopupType.error,
+        title: 'Gagal',
+        message: error.toString().replaceFirst('Exception: ', ''),
       );
+      return false;
     }
-    if (!mounted) return;
-    Navigator.of(context).pop();
+
+    if (!mounted) return false;
     setState(() {
-      _adminIndex = 8;
       _staffNotifications = _staffNotifications.map((current) {
-        if (isSynthetic) {
+        if (isSynthetic && current['__synthetic'] == true) {
           return <String, dynamic>{...current, 'status': 'read'};
         }
         if (notificationId.isEmpty) return current;
         if ('${current['id'] ?? ''}'.trim() != notificationId) return current;
         return <String, dynamic>{...current, 'status': 'read'};
       }).toList(growable: false);
+    });
+    return true;
+  }
+
+  Future<void> _openStaffNotificationTarget(
+    Map<String, dynamic> item, {
+    Iterable<Map<String, dynamic>>? visibleNotifications,
+  }) async {
+    if (!mounted) return;
+    final targetIndex = _staffNotificationTargetIndex(item);
+    final marked = await _markStaffNotificationRead(
+      item,
+      visibleNotifications: visibleNotifications,
+    );
+    if (!mounted || !marked) return;
+    Navigator.of(context).pop();
+    setState(() {
+      _adminIndex = targetIndex;
     });
     unawaited(_refreshStaffAlerts());
   }
@@ -914,14 +980,23 @@ class _DashboardPageState extends State<DashboardPage> {
     if (!widget.session.isAdminOrOwner) return;
     try {
       await _ensureStaffAlertsSeenLoaded();
-      final queue = await widget.repository.fetchPengurusApprovalQueue();
+      final results = await Future.wait<dynamic>([
+        widget.repository.fetchPengurusApprovalQueue(),
+        widget.repository.fetchCustomerNotifications(currentUserOnly: true),
+      ]);
+      final queue = (results[0] as List).cast<Map<String, dynamic>>();
+      final storedNotifications =
+          (results[1] as List).cast<Map<String, dynamic>>();
       final alertItems = _applySeenStatusToStaffAlerts(
         _buildStaffApprovalAlerts(queue),
       );
       if (!mounted) return;
       setState(() {
         _staffApprovalBadgeCount = queue.length;
-        _staffNotifications = alertItems;
+        _staffNotifications = <Map<String, dynamic>>[
+          ...alertItems,
+          ...storedNotifications,
+        ];
       });
     } catch (_) {
       // Keep existing badge values when refresh fails.
@@ -944,107 +1019,156 @@ class _DashboardPageState extends State<DashboardPage> {
       context: context,
       barrierColor: AppColors.popupOverlay,
       builder: (context) {
-        return AlertDialog(
-          title: const Text('Notifications Alert'),
-          content: SizedBox(
-            width: 520,
-            child: notifications.isEmpty
-                ? Text(
-                    'Belum ada request income pengurus yang menunggu persetujuan.',
-                    style: TextStyle(color: AppColors.textMutedFor(context)),
-                  )
-                : ListView.separated(
-                    shrinkWrap: true,
-                    itemCount: notifications.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (context, index) {
-                      final item = notifications[index];
-                      final kind = '${item['kind'] ?? 'info'}'.toLowerCase();
-                      final color = kind.contains('success')
-                          ? AppColors.success
-                          : kind.contains('warning')
-                              ? AppColors.warning
-                              : kind.contains('error')
-                                  ? AppColors.danger
-                                  : AppColors.blue;
-                      return Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(12),
-                          border:
-                              Border.all(color: AppColors.cardBorder(context)),
-                          color: AppColors.surfaceSoft(context),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
+        var visibleNotifications = notifications;
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            Future<void> markReadAndRefreshDialog(
+              Map<String, dynamic> item,
+            ) async {
+              final marked = await _markStaffNotificationRead(item);
+              if (!mounted || !marked) return;
+              final notificationId = '${item['id'] ?? ''}'.trim();
+              final isSynthetic = item['__synthetic'] == true;
+              setDialogState(() {
+                visibleNotifications = visibleNotifications.map((current) {
+                  if (isSynthetic && current['__synthetic'] == true) {
+                    return <String, dynamic>{...current, 'status': 'read'};
+                  }
+                  if (notificationId.isEmpty ||
+                      '${current['id'] ?? ''}'.trim() != notificationId) {
+                    return current;
+                  }
+                  return <String, dynamic>{...current, 'status': 'read'};
+                }).toList(growable: false);
+              });
+            }
+
+            return AlertDialog(
+              title: const Text('Notifikasi'),
+              content: SizedBox(
+                width: 520,
+                child: visibleNotifications.isEmpty
+                    ? Text(
+                        'Belum ada notifikasi internal untuk owner/admin.',
+                        style:
+                            TextStyle(color: AppColors.textMutedFor(context)),
+                      )
+                    : ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: visibleNotifications.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        itemBuilder: (context, index) {
+                          final item = visibleNotifications[index];
+                          final kind =
+                              '${item['kind'] ?? 'info'}'.toLowerCase();
+                          final isRead = !_isUnreadStaffNotification(item);
+                          final color = _isFinanceStaffNotification(item)
+                              ? AppColors.success
+                              : kind.contains('success')
+                                  ? AppColors.success
+                                  : kind.contains('warning')
+                                      ? AppColors.warning
+                                      : kind.contains('error')
+                                          ? AppColors.danger
+                                          : AppColors.blue;
+                          return Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                  color: AppColors.cardBorder(context)),
+                              color: isRead
+                                  ? AppColors.surfaceSoft(context)
+                                  : color.withValues(alpha: 0.08),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Icon(
-                                  Icons.notifications_active_outlined,
-                                  size: 18,
-                                  color: color,
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    '${item['title'] ?? 'Notifikasi'}',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w700,
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.notifications_active_outlined,
+                                      size: 18,
+                                      color: color,
                                     ),
-                                  ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        '${item['title'] ?? 'Notifikasi'}',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ),
+                                    Text(
+                                      Formatters.dmy(
+                                        item['created_at'] ?? DateTime.now(),
+                                      ),
+                                      style: TextStyle(
+                                        color: AppColors.textMutedFor(context),
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
                                 ),
+                                const SizedBox(height: 6),
                                 Text(
-                                  Formatters.dmy(
-                                    item['created_at'] ?? DateTime.now(),
-                                  ),
+                                  '${item['message'] ?? '-'}',
                                   style: TextStyle(
                                     color: AppColors.textMutedFor(context),
-                                    fontSize: 12,
                                   ),
                                 ),
-                              ],
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              '${item['message'] ?? '-'}',
-                              style: TextStyle(
-                                color: AppColors.textMutedFor(context),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.end,
-                              children: [
-                                IconButton(
-                                  tooltip: 'Buka Penerimaan Order',
-                                  onPressed: () => _openStaffNotificationTarget(
-                                    item,
-                                    visibleNotifications: notifications,
-                                  ),
-                                  style: IconButton.styleFrom(
-                                    foregroundColor: AppColors.blue,
-                                    side: BorderSide(
-                                      color: AppColors.blue,
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    _StatusPill(
+                                      label: isRead
+                                          ? 'Sudah dibaca'
+                                          : 'Belum dibaca',
                                     ),
-                                  ),
-                                  icon:
-                                      const Icon(Icons.remove_red_eye_outlined),
+                                    const Spacer(),
+                                    TextButton(
+                                      onPressed: isRead
+                                          ? null
+                                          : () =>
+                                              markReadAndRefreshDialog(item),
+                                      child: const Text('Tandai sudah dibaca'),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    IconButton(
+                                      tooltip:
+                                          _staffNotificationOpenTooltip(item),
+                                      onPressed: () =>
+                                          _openStaffNotificationTarget(
+                                        item,
+                                        visibleNotifications:
+                                            visibleNotifications,
+                                      ),
+                                      style: IconButton.styleFrom(
+                                        foregroundColor: AppColors.blue,
+                                        side: BorderSide(
+                                          color: AppColors.blue,
+                                        ),
+                                      ),
+                                      icon: const Icon(
+                                          Icons.remove_red_eye_outlined),
+                                    ),
+                                  ],
                                 ),
                               ],
                             ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-          ),
-          actions: [
-            FilledButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Tutup'),
-            ),
-          ],
+                          );
+                        },
+                      ),
+              ),
+              actions: [
+                FilledButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Tutup'),
+                ),
+              ],
+            );
+          },
         );
       },
     );

@@ -274,6 +274,20 @@ void main() {
       expect(rule?['flat_total'], isNull);
     });
 
+    test('returns built-in Depo to T. Langon fallback rule', () {
+      final rule = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'dEpO',
+        destination: 't. LANGON',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule?['lokasi_muat'], 'Depo');
+      expect(rule?['lokasi_bongkar'], 'T. Langon');
+      expect(rule?['harga_per_ton'], 30.0);
+      expect(rule?['flat_total'], isNull);
+    });
+
     test('prioritizes Antok tongkang rate for Maspion to T. Langon', () {
       final rule = resolveBuiltInIncomePricingRule(
         customerName: 'aNtOk',

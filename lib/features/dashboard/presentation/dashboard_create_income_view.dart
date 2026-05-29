@@ -521,6 +521,29 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
     final effectiveDate =
         resolvedDepartureDate ?? Formatters.parseDate(_kopDate.text) ?? _date;
 
+    List<_IncomeDuplicateMatch> duplicateMatches;
+    try {
+      duplicateMatches = await _findDuplicateIncomeMatches(
+        detailsPayload: detailsPayload,
+        armadas: armadas,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      _snack(
+        _t(
+          'Gagal mengecek duplikasi income. Data belum disimpan, coba simpan ulang.',
+          'Failed to check duplicate income. Data was not saved, please try again.',
+        ),
+        error: true,
+      );
+      return;
+    }
+    if (!mounted) return;
+    if (duplicateMatches.isNotEmpty) {
+      final proceed = await _confirmDuplicateIncomeSave(duplicateMatches);
+      if (!proceed) return;
+    }
+
     setState(() => _loading = true);
     try {
       await widget.repository.createInvoice(
