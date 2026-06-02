@@ -1043,130 +1043,207 @@ class _DashboardPageState extends State<DashboardPage> {
               });
             }
 
-            return AlertDialog(
-              title: const Text('Notifikasi'),
-              content: SizedBox(
-                width: 520,
-                child: visibleNotifications.isEmpty
-                    ? Text(
-                        'Belum ada notifikasi internal untuk owner/admin.',
-                        style:
-                            TextStyle(color: AppColors.textMutedFor(context)),
-                      )
-                    : ListView.separated(
-                        shrinkWrap: true,
-                        itemCount: visibleNotifications.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 8),
-                        itemBuilder: (context, index) {
-                          final item = visibleNotifications[index];
-                          final kind =
-                              '${item['kind'] ?? 'info'}'.toLowerCase();
-                          final isRead = !_isUnreadStaffNotification(item);
-                          final color = _isFinanceStaffNotification(item)
-                              ? AppColors.success
-                              : kind.contains('success')
-                                  ? AppColors.success
-                                  : kind.contains('warning')
-                                      ? AppColors.warning
-                                      : kind.contains('error')
-                                          ? AppColors.danger
-                                          : AppColors.blue;
-                          return Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                  color: AppColors.cardBorder(context)),
-                              color: isRead
-                                  ? AppColors.surfaceSoft(context)
-                                  : color.withValues(alpha: 0.08),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Icon(
-                                      Icons.notifications_active_outlined,
-                                      size: 18,
-                                      color: color,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        '${item['title'] ?? 'Notifikasi'}',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                    ),
-                                    Text(
-                                      Formatters.dmy(
-                                        item['created_at'] ?? DateTime.now(),
-                                      ),
-                                      style: TextStyle(
-                                        color: AppColors.textMutedFor(context),
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  '${item['message'] ?? '-'}',
-                                  style: TextStyle(
-                                    color: AppColors.textMutedFor(context),
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Row(
-                                  children: [
-                                    _StatusPill(
-                                      label: isRead
-                                          ? 'Sudah dibaca'
-                                          : 'Belum dibaca',
-                                    ),
-                                    const Spacer(),
-                                    TextButton(
-                                      onPressed: isRead
-                                          ? null
-                                          : () =>
-                                              markReadAndRefreshDialog(item),
-                                      child: const Text('Tandai sudah dibaca'),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    IconButton(
-                                      tooltip:
-                                          _staffNotificationOpenTooltip(item),
-                                      onPressed: () =>
-                                          _openStaffNotificationTarget(
-                                        item,
-                                        visibleNotifications:
-                                            visibleNotifications,
-                                      ),
-                                      style: IconButton.styleFrom(
-                                        foregroundColor: AppColors.blue,
-                                        side: BorderSide(
-                                          color: AppColors.blue,
-                                        ),
-                                      ),
-                                      icon: const Icon(
-                                          Icons.remove_red_eye_outlined),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
+            final media = MediaQuery.sizeOf(context);
+            final dialogWidth = min(560.0, max(300.0, media.width - 24));
+            final dialogMaxHeight =
+                min(media.height - 48, max(320.0, media.height * 0.72));
+            return Dialog(
+              insetPadding: EdgeInsets.symmetric(
+                horizontal: media.width < 420 ? 12 : 24,
+                vertical: 24,
               ),
-              actions: [
-                FilledButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Tutup'),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: 560,
+                  maxHeight: dialogMaxHeight,
                 ),
-              ],
+                child: Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Expanded(
+                            child: Text(
+                              'Notifikasi',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'Tutup',
+                            onPressed: () => Navigator.pop(context),
+                            icon: const Icon(Icons.close),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Flexible(
+                        child: SizedBox(
+                          width: dialogWidth,
+                          child: visibleNotifications.isEmpty
+                              ? Padding(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 24),
+                                  child: Text(
+                                    'Belum ada notifikasi internal untuk owner/admin.',
+                                    style: TextStyle(
+                                      color: AppColors.textMutedFor(context),
+                                    ),
+                                  ),
+                                )
+                              : ListView.separated(
+                                  itemCount: visibleNotifications.length,
+                                  separatorBuilder: (_, __) =>
+                                      const SizedBox(height: 8),
+                                  itemBuilder: (context, index) {
+                                    final item = visibleNotifications[index];
+                                    final kind = '${item['kind'] ?? 'info'}'
+                                        .toLowerCase();
+                                    final isRead =
+                                        !_isUnreadStaffNotification(item);
+                                    final color = _isFinanceStaffNotification(
+                                      item,
+                                    )
+                                        ? AppColors.success
+                                        : kind.contains('success')
+                                            ? AppColors.success
+                                            : kind.contains('warning')
+                                                ? AppColors.warning
+                                                : kind.contains('error')
+                                                    ? AppColors.danger
+                                                    : AppColors.blue;
+                                    return Container(
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(14),
+                                        border: Border.all(
+                                          color: AppColors.cardBorder(context),
+                                        ),
+                                        color: isRead
+                                            ? AppColors.surfaceSoft(context)
+                                            : color.withValues(alpha: 0.08),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Icon(
+                                                Icons
+                                                    .notifications_active_outlined,
+                                                size: 18,
+                                                color: color,
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
+                                                      '${item['title'] ?? 'Notifikasi'}',
+                                                      style: const TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w800,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 2),
+                                                    Text(
+                                                      Formatters.dmy(
+                                                        item['created_at'] ??
+                                                            DateTime.now(),
+                                                      ),
+                                                      style: TextStyle(
+                                                        color: AppColors
+                                                            .textMutedFor(
+                                                          context,
+                                                        ),
+                                                        fontSize: 12,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            '${item['message'] ?? '-'}',
+                                            style: TextStyle(
+                                              color: AppColors.textMutedFor(
+                                                context,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 10),
+                                          Wrap(
+                                            spacing: 8,
+                                            runSpacing: 8,
+                                            crossAxisAlignment:
+                                                WrapCrossAlignment.center,
+                                            children: [
+                                              _StatusPill(
+                                                label: isRead
+                                                    ? 'Sudah dibaca'
+                                                    : 'Belum dibaca',
+                                              ),
+                                              TextButton(
+                                                onPressed: isRead
+                                                    ? null
+                                                    : () =>
+                                                        markReadAndRefreshDialog(
+                                                          item,
+                                                        ),
+                                                child: const Text(
+                                                  'Tandai sudah dibaca',
+                                                ),
+                                              ),
+                                              OutlinedButton.icon(
+                                                onPressed: () =>
+                                                    _openStaffNotificationTarget(
+                                                  item,
+                                                  visibleNotifications:
+                                                      visibleNotifications,
+                                                ),
+                                                icon: const Icon(
+                                                  Icons.remove_red_eye_outlined,
+                                                  size: 18,
+                                                ),
+                                                label: Text(
+                                                  _staffNotificationOpenTooltip(
+                                                    item,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: FilledButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('Tutup'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             );
           },
         );

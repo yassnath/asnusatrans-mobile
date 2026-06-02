@@ -531,13 +531,23 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
   }
 
   double _previewDetailSubtotal(Map<String, dynamic> row) {
+    for (final key in const [
+      'manual_subtotal',
+      'subtotal_manual',
+    ]) {
+      final value = fixedInvoiceNum(row[key]);
+      if (value > 0) return _roundInvoiceRupiah(value);
+    }
+    final computed =
+        fixedInvoiceNum(row['tonase']) * fixedInvoiceNum(row['harga']);
+    if (row['subtotal_auto'] == true && computed > 0) {
+      return _roundInvoiceRupiah(computed);
+    }
     for (final key in const ['subtotal', 'total', 'total_biaya', 'jumlah']) {
       final value = fixedInvoiceNum(row[key]);
       if (value > 0) return _roundInvoiceRupiah(value);
     }
-    return _roundInvoiceRupiah(
-      fixedInvoiceNum(row['tonase']) * fixedInvoiceNum(row['harga']),
-    );
+    return _roundInvoiceRupiah(computed);
   }
 
   String _resolveDisplayNumber(Map<String, dynamic> item) {
@@ -785,99 +795,55 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
               });
             }
 
+            final dialogWidth = min(
+              620.0,
+              max(300.0, MediaQuery.sizeOf(context).width - 32),
+            );
+            final paymentListHeight = min(
+              320.0,
+              max(180.0, MediaQuery.sizeOf(context).height * 0.32),
+            );
             return AlertDialog(
               title: Text(_t('Edit Status Fix Invoice', 'Edit Fixed Invoice')),
               content: SizedBox(
-                width: 620,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    CvantDropdownField<String>(
-                      key: ValueKey(selectedStatus),
-                      initialValue: selectedStatus,
-                      decoration: InputDecoration(
-                        labelText: _t('Status', 'Status'),
-                      ),
-                      items: [
-                        DropdownMenuItem(
-                          value: 'Unpaid',
-                          child: Text('Unpaid'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'Partial',
-                          child: Text(_t('Partial', 'Partial')),
-                        ),
-                        DropdownMenuItem(
-                          value: 'Paid',
-                          child: Text('Paid'),
-                        ),
-                      ],
-                      onChanged: (value) => setDialogState(() {
-                        selectedStatus = value ?? 'Unpaid';
-                        if (selectedStatus == 'Unpaid') {
-                          for (var i = 0; i < paymentEntries.length; i++) {
-                            paymentEntries[i] = paymentEntries[i].copyWith(
-                              paid: false,
-                              clearPaidAt: true,
-                            );
-                          }
-                          selectedPaidDate = null;
-                        } else if (selectedStatus == 'Paid') {
-                          selectedPaidDate ??= DateTime.now();
-                          final batchDate = _toDbDate(selectedPaidDate!);
-                          for (var i = 0; i < paymentEntries.length; i++) {
-                            paymentEntries[i] = paymentEntries[i].copyWith(
-                              paid: true,
-                              paidAt: batchDate,
-                            );
-                          }
-                        }
-                      }),
-                    ),
-                    const SizedBox(height: 10),
-                    InkWell(
-                      onTap: selectedStatus != 'Unpaid' ? pickPaidDate : null,
-                      borderRadius: BorderRadius.circular(10),
-                      child: InputDecorator(
+                width: dialogWidth,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      CvantDropdownField<String>(
+                        key: ValueKey(selectedStatus),
+                        initialValue: selectedStatus,
                         decoration: InputDecoration(
-                          labelText: _t('Tanggal Bayar', 'Payment Date'),
+                          labelText: _t('Status', 'Status'),
                         ),
-                        child: Text(paidDateLabel()),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: manualPaidController,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration: InputDecoration(
-                        labelText: _t(
-                          'Nominal bayar manual',
-                          'Manual paid amount',
-                        ),
-                        hintText: '15.000.000',
-                        helperText: _t(
-                          'Isi jika customer bayar nominal bulat, bukan per raid.',
-                          'Use this when the customer pays a rounded amount.',
-                        ),
-                      ),
-                      onChanged: (_) => setDialogState(recalculateStatus),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Text(
-                          _t('Pembayaran per raid', 'Per-raid payment'),
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                        const Spacer(),
-                        TextButton(
-                          onPressed: () => setDialogState(() {
-                            selectedStatus = 'Paid';
+                        items: [
+                          DropdownMenuItem(
+                            value: 'Unpaid',
+                            child: Text('Unpaid'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'Partial',
+                            child: Text(_t('Partial', 'Partial')),
+                          ),
+                          DropdownMenuItem(
+                            value: 'Paid',
+                            child: Text('Paid'),
+                          ),
+                        ],
+                        onChanged: (value) => setDialogState(() {
+                          selectedStatus = value ?? 'Unpaid';
+                          if (selectedStatus == 'Unpaid') {
+                            for (var i = 0; i < paymentEntries.length; i++) {
+                              paymentEntries[i] = paymentEntries[i].copyWith(
+                                paid: false,
+                                clearPaidAt: true,
+                              );
+                            }
+                            selectedPaidDate = null;
+                          } else if (selectedStatus == 'Paid') {
                             selectedPaidDate ??= DateTime.now();
-                            manualPaidController.text = '';
                             final batchDate = _toDbDate(selectedPaidDate!);
                             for (var i = 0; i < paymentEntries.length; i++) {
                               paymentEntries[i] = paymentEntries[i].copyWith(
@@ -885,119 +851,183 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                                 paidAt: batchDate,
                               );
                             }
-                          }),
-                          child: Text(_t('Bayar Semua', 'Pay All')),
-                        ),
-                        TextButton(
-                          onPressed: () => setDialogState(() {
-                            selectedStatus = 'Unpaid';
-                            selectedPaidDate = null;
-                            manualPaidController.clear();
-                            for (var i = 0; i < paymentEntries.length; i++) {
-                              paymentEntries[i] = paymentEntries[i].copyWith(
-                                paid: false,
-                                clearPaidAt: true,
-                              );
-                            }
-                          }),
-                          child: Text(_t('Kosongi', 'Clear')),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    SizedBox(
-                      height: 320,
-                      child: ListView.separated(
-                        shrinkWrap: true,
-                        itemCount: paymentEntries.length,
-                        separatorBuilder: (_, __) => Divider(
-                          height: 1,
-                          color: AppColors.cardBorder(context),
-                        ),
-                        itemBuilder: (context, index) {
-                          final entry = paymentEntries[index];
-                          final paidDate = Formatters.parseDate(entry.paidAt);
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 6),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Checkbox(
-                                  value: entry.paid,
-                                  onChanged: (value) => setDialogState(() {
-                                    paymentEntries[index] = entry.copyWith(
-                                      paid: value ?? false,
-                                      paidAt: value == true
-                                          ? (entry.paidAt ??
-                                              _toDbDate(DateTime.now()))
-                                          : null,
-                                      clearPaidAt: value != true,
-                                    );
-                                    recalculateStatus();
-                                  }),
-                                ),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        '${index + 1}. ${entry.departureDate.isEmpty ? '-' : Formatters.dmy(entry.departureDate)} • ${entry.plate}',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(entry.routeLabel),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        Formatters.rupiah(entry.total),
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                InkWell(
-                                  onTap: entry.paid
-                                      ? () => pickRaidPaidDate(index)
-                                      : null,
-                                  borderRadius: BorderRadius.circular(10),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 8,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      border: Border.all(
-                                        color: AppColors.cardBorder(context),
-                                      ),
-                                      borderRadius: BorderRadius.circular(10),
-                                      color: entry.paid
-                                          ? AppColors.surfaceSoft(context)
-                                          : AppColors.surface(context),
-                                    ),
-                                    child: Text(
-                                      paidDate == null
-                                          ? _t('Pilih Tanggal', 'Pick Date')
-                                          : Formatters.dmy(paidDate),
-                                      style: TextStyle(
-                                        color: entry.paid
-                                            ? AppColors.textPrimaryFor(context)
-                                            : AppColors.textMutedFor(context),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
+                          }
+                        }),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 10),
+                      InkWell(
+                        onTap: selectedStatus != 'Unpaid' ? pickPaidDate : null,
+                        borderRadius: BorderRadius.circular(10),
+                        child: InputDecorator(
+                          decoration: InputDecoration(
+                            labelText: _t('Tanggal Bayar', 'Payment Date'),
+                          ),
+                          child: Text(paidDateLabel()),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: manualPaidController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: InputDecoration(
+                          labelText: _t(
+                            'Nominal bayar manual',
+                            'Manual paid amount',
+                          ),
+                          hintText: '15.000.000',
+                          helperText: _t(
+                            'Isi jika customer bayar nominal bulat, bukan per raid.',
+                            'Use this when the customer pays a rounded amount.',
+                          ),
+                        ),
+                        onChanged: (_) => setDialogState(recalculateStatus),
+                      ),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          SizedBox(
+                            width: dialogWidth < 430
+                                ? dialogWidth
+                                : max(120, dialogWidth - 220),
+                            child: Text(
+                              _t('Pembayaran per raid', 'Per-raid payment'),
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w700),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () => setDialogState(() {
+                              selectedStatus = 'Paid';
+                              selectedPaidDate ??= DateTime.now();
+                              manualPaidController.text = '';
+                              final batchDate = _toDbDate(selectedPaidDate!);
+                              for (var i = 0; i < paymentEntries.length; i++) {
+                                paymentEntries[i] = paymentEntries[i].copyWith(
+                                  paid: true,
+                                  paidAt: batchDate,
+                                );
+                              }
+                            }),
+                            child: Text(_t('Bayar Semua', 'Pay All')),
+                          ),
+                          TextButton(
+                            onPressed: () => setDialogState(() {
+                              selectedStatus = 'Unpaid';
+                              selectedPaidDate = null;
+                              manualPaidController.clear();
+                              for (var i = 0; i < paymentEntries.length; i++) {
+                                paymentEntries[i] = paymentEntries[i].copyWith(
+                                  paid: false,
+                                  clearPaidAt: true,
+                                );
+                              }
+                            }),
+                            child: Text(_t('Kosongi', 'Clear')),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      SizedBox(
+                        height: paymentListHeight,
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: paymentEntries.length,
+                          separatorBuilder: (_, __) => Divider(
+                            height: 1,
+                            color: AppColors.cardBorder(context),
+                          ),
+                          itemBuilder: (context, index) {
+                            final entry = paymentEntries[index];
+                            final paidDate = Formatters.parseDate(entry.paidAt);
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 6),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Checkbox(
+                                    value: entry.paid,
+                                    onChanged: (value) => setDialogState(() {
+                                      paymentEntries[index] = entry.copyWith(
+                                        paid: value ?? false,
+                                        paidAt: value == true
+                                            ? (entry.paidAt ??
+                                                _toDbDate(DateTime.now()))
+                                            : null,
+                                        clearPaidAt: value != true,
+                                      );
+                                      recalculateStatus();
+                                    }),
+                                  ),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          '${index + 1}. ${entry.departureDate.isEmpty ? '-' : Formatters.dmy(entry.departureDate)} • ${entry.plate}',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(entry.routeLabel),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          Formatters.rupiah(entry.total),
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  InkWell(
+                                    onTap: entry.paid
+                                        ? () => pickRaidPaidDate(index)
+                                        : null,
+                                    borderRadius: BorderRadius.circular(10),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 8,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        border: Border.all(
+                                          color: AppColors.cardBorder(context),
+                                        ),
+                                        borderRadius: BorderRadius.circular(10),
+                                        color: entry.paid
+                                            ? AppColors.surfaceSoft(context)
+                                            : AppColors.surface(context),
+                                      ),
+                                      child: Text(
+                                        paidDate == null
+                                            ? _t('Pilih Tanggal', 'Pick Date')
+                                            : Formatters.dmy(paidDate),
+                                        style: TextStyle(
+                                          color: entry.paid
+                                              ? AppColors.textPrimaryFor(
+                                                  context)
+                                              : AppColors.textMutedFor(context),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
               actions: [
@@ -1108,10 +1138,14 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
       context: context,
       barrierColor: AppColors.popupOverlay,
       builder: (context) {
+        final dialogWidth = min(
+          620.0,
+          max(300.0, MediaQuery.sizeOf(context).width - 32),
+        );
         return AlertDialog(
           title: Text(_t('Preview Fix Invoice', 'Fixed Invoice Preview')),
           content: SizedBox(
-            width: 620,
+            width: dialogWidth,
             child: SingleChildScrollView(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

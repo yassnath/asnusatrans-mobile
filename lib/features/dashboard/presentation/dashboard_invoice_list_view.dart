@@ -92,6 +92,19 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
 
   String _t(String id, String en) => _isEn ? en : id;
 
+  double _resolveInvoiceJumlahWithSpecialRules(Map<String, dynamic> invoice) {
+    final details = _toDetailList(invoice['rincian']);
+    if (details.isNotEmpty) {
+      final detailSubtotal = _resolveInvoiceDetailsExcelSubtotalShared(details);
+      if (detailSubtotal > 0) return detailSubtotal;
+    }
+    final jumlah = _toNum(invoice['total_biaya']);
+    if (jumlah > 0) return jumlah;
+    final total = _toNum(invoice['total_bayar']);
+    if (total > 0) return total;
+    return 0;
+  }
+
   bool _isPengurusIncome(Map<String, dynamic> row) {
     return '${row['submission_role'] ?? ''}'.trim().toLowerCase() == 'pengurus';
   }
@@ -508,6 +521,15 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
   void dispose() {
     _search.dispose();
     super.dispose();
+  }
+
+  @override
+  void reassemble() {
+    super.reassemble();
+    if (!kDebugMode || !mounted) return;
+    setState(() {
+      _future = _load();
+    });
   }
 
   List<Map<String, dynamic>> _expandIncomeRowsForInvoiceList(
@@ -1642,10 +1664,12 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                 });
               }
 
+              final mediaWidth = MediaQuery.sizeOf(context).width;
+              final dialogWidth = min(640.0, max(300.0, mediaWidth - 32));
               return AlertDialog(
                 title: Text(_t('Edit KOP Invoice', 'Edit Invoice Header')),
                 content: SizedBox(
-                  width: 640,
+                  width: dialogWidth,
                   child: SingleChildScrollView(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1855,10 +1879,16 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         return StatefulBuilder(
           builder: (context, setDialogState) {
             final rows = filterRows();
+            final mediaWidth = MediaQuery.sizeOf(context).width;
+            final dialogWidth = min(700.0, max(420.0, mediaWidth - 24));
             return AlertDialog(
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 20,
+              ),
               title: Text(_t('Cetak Invoice', 'Print Invoice')),
               content: SizedBox(
-                width: 620,
+                width: dialogWidth,
                 child: SingleChildScrollView(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1888,7 +1918,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                                     ? AppColors.success
                                     : AppColors.cardBorder(context),
                               ),
-                              child: const Text('CV. ANT'),
+                              child: const Text('CV'),
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -1909,7 +1939,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                                     ? AppColors.cyan
                                     : AppColors.cardBorder(context),
                               ),
-                              child: const Text('PT. ANT'),
+                              child: const Text('PT'),
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -1930,7 +1960,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                                     ? AppColors.warning
                                     : AppColors.cardBorder(context),
                               ),
-                              child: Text(_t('Pribadi', 'Personal')),
+                              child: const Text('Pribadi'),
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -2491,11 +2521,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     }
 
     double resolveSingleInvoiceJumlah(Map<String, dynamic> invoice) {
-      final jumlah = _toNum(invoice['total_biaya']);
-      if (jumlah > 0) return jumlah;
-      final total = _toNum(invoice['total_bayar']);
-      if (total > 0) return total;
-      return 0;
+      return _resolveInvoiceJumlahWithSpecialRules(invoice);
     }
 
     double resolveSingleInvoicePph(Map<String, dynamic> invoice) {
@@ -2825,13 +2851,21 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       Map<String, dynamic> detail,
       Map<String, dynamic> invoice,
     ) {
-      for (final key in const ['subtotal', 'total', 'total_biaya', 'jumlah']) {
+      for (final key in const [
+        'manual_subtotal',
+        'subtotal_manual',
+      ]) {
         final explicit = _toNum(detail[key]);
         if (explicit > 0) return explicit;
       }
       final tonase = _toNum(detail['tonase'] ?? invoice['tonase']);
       final harga = _toNum(detail['harga'] ?? invoice['harga']);
       final computed = tonase * harga;
+      if (detail['subtotal_auto'] == true && computed > 0) return computed;
+      for (final key in const ['subtotal', 'total', 'total_biaya', 'jumlah']) {
+        final explicit = _toNum(detail[key]);
+        if (explicit > 0) return explicit;
+      }
       if (computed > 0) return computed;
       return resolveSingleInvoiceJumlah(invoice);
     }
@@ -5342,11 +5376,19 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
               final selectedCount = previewRows
                   .where((row) => rowSelections['${row['__key']}'] == true)
                   .length;
+              final dialogWidth = min(
+                700.0,
+                max(420.0, MediaQuery.sizeOf(context).width - 24),
+              );
 
               return AlertDialog(
+                insetPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 20,
+                ),
                 title: Text(_t('Buat Laporan PDF', 'Generate PDF Report')),
                 content: SizedBox(
-                  width: 560,
+                  width: dialogWidth,
                   child: SingleChildScrollView(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -5447,7 +5489,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                                       ? AppColors.success
                                       : AppColors.cardBorder(context),
                                 ),
-                                child: const Text('CV. ANT'),
+                                child: const Text('CV'),
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -5468,7 +5510,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                                       ? AppColors.cyan
                                       : AppColors.cardBorder(context),
                                 ),
-                                child: const Text('PT. ANT'),
+                                child: const Text('PT'),
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -5489,7 +5531,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                                       ? AppColors.warning
                                       : AppColors.cardBorder(context),
                                 ),
-                                child: Text(_t('Pribadi', 'Personal')),
+                                child: const Text('Pribadi'),
                               ),
                             ),
                           ],
@@ -5504,7 +5546,6 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                           children: [
                             if (range == 'month') ...[
                               Expanded(
-                                flex: 2,
                                 child: DropdownButtonFormField<int>(
                                   initialValue: selectedMonth,
                                   decoration: InputDecoration(
@@ -5646,19 +5687,22 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                         const SizedBox(height: 10),
                         Row(
                           children: [
-                            Text(
-                              _t(
-                                includeIncome && !includeExpense
-                                    ? 'Pilih Invoice Manual'
-                                    : 'Pilih Data Manual',
-                                includeIncome && !includeExpense
-                                    ? 'Manual Invoice Selection'
-                                    : 'Manual Data Selection',
+                            Expanded(
+                              child: Text(
+                                _t(
+                                  includeIncome && !includeExpense
+                                      ? 'Pilih Invoice Manual'
+                                      : 'Pilih Data Manual',
+                                  includeIncome && !includeExpense
+                                      ? 'Manual Invoice Selection'
+                                      : 'Manual Data Selection',
+                                ),
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w700),
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.w700),
                             ),
-                            const Spacer(),
+                            const SizedBox(width: 8),
                             TextButton(
                               onPressed: previewRows.isEmpty
                                   ? null
@@ -6441,7 +6485,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         invoiceNumber: item['no_invoice'],
         customerName: customerName,
       );
-      final subtotal = _toNum(item['total_biaya']);
+      final subtotal = _resolveInvoiceJumlahWithSpecialRules(item);
       final effectiveTotal =
           isCompanyInvoice ? calculateInvoiceTotalAfterPph(subtotal) : subtotal;
       final searchFields = buildIncomeSearchFields(item);
@@ -6796,66 +6840,93 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         final rows =
             _applyFilterAndLimit(_buildCombinedRows(incomes, expenses));
 
+        final limitPicker = Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              _t('Tampil', 'Show'),
+              style: TextStyle(color: AppColors.textMutedFor(context)),
+            ),
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 86,
+              child: CvantDropdownField<String>(
+                initialValue: _limit,
+                decoration: const InputDecoration(
+                  contentPadding: EdgeInsets.zero,
+                ),
+                items:
+                    const ['10', '20', '50', '100', '200', '500', '1000', 'all']
+                        .map(
+                          (item) => DropdownMenuItem(
+                            value: item,
+                            child: Text(
+                              item == 'all' ? _t('Semua', 'All') : item,
+                            ),
+                          ),
+                        )
+                        .toList(),
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() {
+                    _limit = value;
+                    _future = _load();
+                  });
+                },
+              ),
+            ),
+          ],
+        );
+
+        final searchField = TextField(
+          controller: _search,
+          onChanged: (_) => setState(() {}),
+          decoration: InputDecoration(
+            hintText: _t(
+              'Cari income atau expense...',
+              'Search income or expense...',
+            ),
+            prefixIcon: const Icon(Icons.search),
+          ),
+        );
+
+        Widget printActionButton({
+          required String label,
+          required Color color,
+          required VoidCallback onPressed,
+        }) {
+          return SizedBox(
+            height: 44,
+            child: OutlinedButton(
+              onPressed: onPressed,
+              style: CvantButtonStyles.outlined(
+                context,
+                color: color,
+                borderColor: color,
+              ).copyWith(
+                alignment: const Alignment(0, 0),
+              ),
+              child: Center(
+                child: Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+          );
+        }
+
         return Column(
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
               child: Row(
                 children: [
-                  Text(
-                    _t('Tampil', 'Show'),
-                    style: TextStyle(color: AppColors.textMutedFor(context)),
-                  ),
+                  limitPicker,
                   const SizedBox(width: 8),
-                  SizedBox(
-                    width: 86,
-                    child: CvantDropdownField<String>(
-                      initialValue: _limit,
-                      decoration: const InputDecoration(
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                      items: const [
-                        '10',
-                        '20',
-                        '50',
-                        '100',
-                        '200',
-                        '500',
-                        '1000',
-                        'all'
-                      ]
-                          .map(
-                            (item) => DropdownMenuItem(
-                              value: item,
-                              child: Text(
-                                item == 'all' ? _t('Semua', 'All') : item,
-                              ),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (value) {
-                        if (value == null) return;
-                        setState(() {
-                          _limit = value;
-                          _future = _load();
-                        });
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextField(
-                      controller: _search,
-                      onChanged: (_) => setState(() {}),
-                      decoration: InputDecoration(
-                        hintText: _t(
-                          'Cari income atau expense...',
-                          'Search income or expense...',
-                        ),
-                        prefixIcon: const Icon(Icons.search),
-                      ),
-                    ),
-                  ),
+                  Expanded(child: searchField),
                 ],
               ),
             ),
@@ -6865,53 +6936,21 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                 child: Row(
                   children: [
                     Expanded(
-                      child: SizedBox(
-                        height: 44,
-                        child: OutlinedButton(
-                          onPressed: () => _openReportSummary(
-                            expenses: expenses,
-                          ),
-                          style: CvantButtonStyles.outlined(
-                            context,
-                            color: AppColors.success,
-                            borderColor: AppColors.success,
-                          ).copyWith(
-                            alignment: const Alignment(0, 0),
-                          ),
-                          child: Center(
-                            child: Text(
-                              _t('Cetak Laporan', 'Print Report'),
-                              textAlign: TextAlign.center,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
+                      child: printActionButton(
+                        label: _t('Cetak Laporan', 'Print Report'),
+                        color: AppColors.success,
+                        onPressed: () => _openReportSummary(
+                          expenses: expenses,
                         ),
                       ),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: SizedBox(
-                        height: 44,
-                        child: OutlinedButton(
-                          onPressed: () => _openInvoicePrintSelector(
-                            incomes: incomes,
-                          ),
-                          style: CvantButtonStyles.outlined(
-                            context,
-                            color: AppColors.warning,
-                            borderColor: AppColors.warning,
-                          ).copyWith(
-                            alignment: const Alignment(0, 0),
-                          ),
-                          child: Center(
-                            child: Text(
-                              _t('Cetak Invoice', 'Print Invoice'),
-                              textAlign: TextAlign.center,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
+                      child: printActionButton(
+                        label: _t('Cetak Invoice', 'Print Invoice'),
+                        color: AppColors.warning,
+                        onPressed: () => _openInvoicePrintSelector(
+                          incomes: incomes,
                         ),
                       ),
                     ),

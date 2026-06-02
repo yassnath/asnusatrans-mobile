@@ -4,6 +4,22 @@ extension _AdminInvoiceListViewStatePreviewSupport
     on _AdminInvoiceListViewState {
   Future<void> _openInvoicePreview(Map<String, dynamic> item) async {
     final previewItem = await _resolveLatestInvoiceItem(item);
+    final latestCustomerName = '${previewItem['nama_pelanggan'] ?? ''}'.trim();
+    final latestIsCompanyInvoice = _resolveIsCompanyInvoice(
+      invoiceEntity: previewItem['invoice_entity'],
+      invoiceNumber: previewItem['no_invoice'],
+      customerName: latestCustomerName,
+    );
+    final latestSubtotal = _resolveInvoiceDetailsExcelSubtotalShared(
+      _toDetailList(previewItem['rincian']),
+      fallbackSubtotal: _toNum(previewItem['total_biaya']),
+    );
+    final latestDisplayTotal = latestIsCompanyInvoice
+        ? calculateInvoiceTotalAfterPph(latestSubtotal)
+        : latestSubtotal;
+    final displayedTotal = _toNum(item['__total']);
+    final shouldRefreshAfterPreview =
+        displayedTotal > 0 && (displayedTotal - latestDisplayTotal).abs() > 0.5;
     final armadas = await widget.repository.fetchArmadas();
     final armadaPlateById = <String, String>{
       for (final armada in armadas)
@@ -21,29 +37,22 @@ extension _AdminInvoiceListViewStatePreviewSupport
       context: context,
       barrierColor: AppColors.popupOverlay,
       builder: (context) {
+        final dialogWidth = min(
+          520.0,
+          max(300.0, MediaQuery.sizeOf(context).width - 32),
+        );
         final detailList = _toDetailList(previewItem['rincian']);
-        final customerName = '${previewItem['nama_pelanggan'] ?? ''}'.trim();
+        final customerName = latestCustomerName;
         final invoiceEntityLabel = _resolveInvoiceEntityLabel(
           invoiceEntity: previewItem['invoice_entity'],
           invoiceNumber: previewItem['no_invoice'],
           customerName: customerName,
         );
-        final isCompanyInvoice = _resolveIsCompanyInvoice(
-          invoiceEntity: previewItem['invoice_entity'],
-          invoiceNumber: previewItem['no_invoice'],
-          customerName: customerName,
-        );
-        final subtotal = _resolveInvoiceDetailsExcelSubtotalShared(
-          detailList,
-          fallbackSubtotal: _toNum(previewItem['total_biaya']),
-        );
-        final total = isCompanyInvoice
-            ? calculateInvoiceTotalAfterPph(subtotal)
-            : subtotal;
+        final total = latestDisplayTotal;
         return AlertDialog(
           title: Text(_t('Preview Invoice', 'Invoice Preview')),
           content: SizedBox(
-            width: 520,
+            width: dialogWidth,
             child: SingleChildScrollView(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -170,6 +179,9 @@ extension _AdminInvoiceListViewStatePreviewSupport
         );
       },
     );
+    if (shouldRefreshAfterPreview && mounted) {
+      await _refresh();
+    }
   }
 
   String _resolveInvoiceEntity({
@@ -2413,12 +2425,16 @@ extension _AdminInvoiceListViewStatePreviewSupport
       context: context,
       barrierColor: AppColors.popupOverlay,
       builder: (context) {
+        final dialogWidth = min(
+          520.0,
+          max(300.0, MediaQuery.sizeOf(context).width - 32),
+        );
         final detailList = _toDetailList(item['rincian']);
         return AlertDialog(
           title:
               Text('${_t('Preview', 'Preview')} ${item['no_expense'] ?? '-'}'),
           content: SizedBox(
-            width: 520,
+            width: dialogWidth,
             child: SingleChildScrollView(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

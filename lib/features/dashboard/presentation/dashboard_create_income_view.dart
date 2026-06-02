@@ -478,6 +478,8 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
       final detailSubtotal = rawDetailSubtotal == null
           ? null
           : roundInvoiceRupiah(rawDetailSubtotal);
+      final hasManualSubtotal =
+          row['subtotal_auto'] != true && detailSubtotal != null;
       return <String, dynamic>{
         'lokasi_muat': _nullableInputText(row['lokasi_muat']),
         'lokasi_bongkar': _nullableInputText(row['lokasi_bongkar']),
@@ -494,7 +496,9 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
             : '${row['armada_end_date']}',
         'tonase': detailTonase,
         'harga': detailHarga,
+        'manual_subtotal': hasManualSubtotal ? detailSubtotal : null,
         'subtotal': detailSubtotal,
+        'subtotal_auto': row['subtotal_auto'] == true,
       };
     }).toList();
     final driverNames = detailsPayload
@@ -737,6 +741,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                 _selectedCustomerOptionId == _customerManualOptionId
             ? _selectedCustomerOptionId
             : _customerManualOptionId;
+        final compactForm = MediaQuery.sizeOf(context).width < 390;
         return ListView(
           padding: const EdgeInsets.all(12),
           children: [
@@ -1242,55 +1247,92 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                             ),
                           ],
                           const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: InkWell(
-                                  onTap: () => _pickDetailDate(
-                                    index,
-                                    'armada_start_date',
-                                  ),
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: InputDecorator(
-                                    decoration: InputDecoration(
-                                      labelText:
-                                          _t('Tanggal Mulai', 'Start Date'),
+                          if (compactForm) ...[
+                            InkWell(
+                              onTap: () =>
+                                  _pickDetailDate(index, 'armada_start_date'),
+                              borderRadius: BorderRadius.circular(8),
+                              child: InputDecorator(
+                                decoration: InputDecoration(
+                                  labelText: _t('Tanggal Mulai', 'Start Date'),
+                                ),
+                                child: Text(
+                                  '${row['armada_start_date']}'.trim().isEmpty
+                                      ? '-'
+                                      : Formatters.dmy(
+                                          row['armada_start_date'],
+                                        ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            InkWell(
+                              onTap: () =>
+                                  _pickDetailDate(index, 'armada_end_date'),
+                              borderRadius: BorderRadius.circular(8),
+                              child: InputDecorator(
+                                decoration: InputDecoration(
+                                  labelText: _t('Tanggal Selesai', 'End Date'),
+                                ),
+                                child: Text(
+                                  '${row['armada_end_date']}'.trim().isEmpty
+                                      ? '-'
+                                      : Formatters.dmy(row['armada_end_date']),
+                                ),
+                              ),
+                            ),
+                          ] else
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: InkWell(
+                                    onTap: () => _pickDetailDate(
+                                      index,
+                                      'armada_start_date',
                                     ),
-                                    child: Text(
-                                      '${row['armada_start_date']}'
-                                              .trim()
-                                              .isEmpty
-                                          ? '-'
-                                          : Formatters.dmy(
-                                              row['armada_start_date'],
-                                            ),
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: InputDecorator(
+                                      decoration: InputDecoration(
+                                        labelText:
+                                            _t('Tanggal Mulai', 'Start Date'),
+                                      ),
+                                      child: Text(
+                                        '${row['armada_start_date']}'
+                                                .trim()
+                                                .isEmpty
+                                            ? '-'
+                                            : Formatters.dmy(
+                                                row['armada_start_date'],
+                                              ),
+                                      ),
                                     ),
                                   ),
                                 ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: InkWell(
-                                  onTap: () =>
-                                      _pickDetailDate(index, 'armada_end_date'),
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: InputDecorator(
-                                    decoration: InputDecoration(
-                                      labelText:
-                                          _t('Tanggal Selesai', 'End Date'),
-                                    ),
-                                    child: Text(
-                                      '${row['armada_end_date']}'.trim().isEmpty
-                                          ? '-'
-                                          : Formatters.dmy(
-                                              row['armada_end_date'],
-                                            ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: InkWell(
+                                    onTap: () => _pickDetailDate(
+                                        index, 'armada_end_date'),
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: InputDecorator(
+                                      decoration: InputDecoration(
+                                        labelText:
+                                            _t('Tanggal Selesai', 'End Date'),
+                                      ),
+                                      child: Text(
+                                        '${row['armada_end_date']}'
+                                                .trim()
+                                                .isEmpty
+                                            ? '-'
+                                            : Formatters.dmy(
+                                                row['armada_end_date'],
+                                              ),
+                                      ),
                                     ),
                                   ),
                                 ),
-                              ),
-                            ],
-                          ),
+                              ],
+                            ),
                           const SizedBox(height: 8),
                           if (_isOngkosKuliIncomeRow(row))
                             TextFormField(
@@ -1315,10 +1357,10 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                               },
                             )
                           else
-                            Row(
+                            Column(
                               children: [
-                                Expanded(
-                                  child: TextFormField(
+                                if (compactForm) ...[
+                                  TextFormField(
                                     key: ValueKey(
                                       'tonase-$index-$_detailFieldRefreshToken',
                                     ),
@@ -1335,10 +1377,8 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                                       setState(() {});
                                     },
                                   ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: TextFormField(
+                                  const SizedBox(height: 8),
+                                  TextFormField(
                                     key: ValueKey(
                                       'harga-$index-$_detailFieldRefreshToken-$_hargaFieldRefreshToken',
                                     ),
@@ -1359,6 +1399,80 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                                       setState(() {});
                                     },
                                   ),
+                                ] else
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: TextFormField(
+                                          key: ValueKey(
+                                            'tonase-$index-$_detailFieldRefreshToken',
+                                          ),
+                                          initialValue: '${row['tonase']}',
+                                          keyboardType: const TextInputType
+                                              .numberWithOptions(
+                                            decimal: true,
+                                          ),
+                                          decoration: InputDecoration(
+                                            hintText: _t('Tonase', 'Tonnage'),
+                                          ),
+                                          onChanged: (value) {
+                                            row['tonase'] = value;
+                                            setState(() {});
+                                          },
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: TextFormField(
+                                          key: ValueKey(
+                                            'harga-$index-$_detailFieldRefreshToken-$_hargaFieldRefreshToken',
+                                          ),
+                                          initialValue: '${row['harga']}',
+                                          keyboardType: const TextInputType
+                                              .numberWithOptions(
+                                            decimal: true,
+                                          ),
+                                          decoration: InputDecoration(
+                                            hintText: _t(
+                                              'Harga / Ton',
+                                              'Price / Ton',
+                                            ),
+                                          ),
+                                          onChanged: (value) {
+                                            row['harga'] = value;
+                                            row['subtotal'] = '';
+                                            row['harga_auto'] = false;
+                                            row['subtotal_auto'] = false;
+                                            setState(() {});
+                                          },
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                const SizedBox(height: 8),
+                                TextFormField(
+                                  key: ValueKey(
+                                    'subtotal-manual-$index-$_detailFieldRefreshToken-$_hargaFieldRefreshToken',
+                                  ),
+                                  initialValue: '${row['subtotal']}',
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                                  decoration: InputDecoration(
+                                    hintText: _t(
+                                      'Subtotal manual (opsional)',
+                                      'Manual subtotal (optional)',
+                                    ),
+                                  ),
+                                  onChanged: (value) {
+                                    row['subtotal'] = value;
+                                    row['subtotal_auto'] = false;
+                                    if (value.trim().isNotEmpty) {
+                                      row['harga_auto'] = false;
+                                    }
+                                    setState(() {});
+                                  },
                                 ),
                               ],
                             ),

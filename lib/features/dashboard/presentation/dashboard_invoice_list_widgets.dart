@@ -2,6 +2,59 @@ part of 'dashboard_page.dart';
 
 typedef _InvoiceRowActionButtonStyleBuilder = ButtonStyle Function(Color color);
 
+double _resolveInvoiceListCardDisplayTotal(
+  Map<String, dynamic> item, {
+  required bool isIncome,
+}) {
+  final current = _toNum(item['__total']);
+  if (!isIncome) return current;
+
+  final details = _invoiceListCardDetailList(item['rincian']);
+  final detailSubtotal = _resolveInvoiceDetailsExcelSubtotalShared(
+    details,
+    fallbackSubtotal: _toNum(item['total_biaya']),
+  );
+  if (detailSubtotal <= 0) return current;
+
+  final isCompany = _resolveIsCompanyInvoiceShared(
+    invoiceEntity: item['invoice_entity'],
+    invoiceNumber: item['no_invoice'] ?? item['__number'],
+    customerName: item['nama_pelanggan'] ?? item['__name'],
+    fallback: false,
+  );
+  final detailTotal = isCompany
+      ? calculateInvoiceTotalAfterPph(detailSubtotal)
+      : detailSubtotal;
+  if (detailTotal <= 0) return current;
+  if (current <= 0 || (detailTotal - current).abs() > 0.5) {
+    return detailTotal;
+  }
+  return current;
+}
+
+List<Map<String, dynamic>> _invoiceListCardDetailList(dynamic value) {
+  if (value is List) {
+    return value
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList(growable: false);
+  }
+  if (value is String && value.trim().isNotEmpty) {
+    try {
+      final decoded = jsonDecode(value);
+      if (decoded is List) {
+        return decoded
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList(growable: false);
+      }
+    } catch (_) {
+      return const <Map<String, dynamic>>[];
+    }
+  }
+  return const <Map<String, dynamic>>[];
+}
+
 class _AdminInvoiceListRowCard extends StatelessWidget {
   const _AdminInvoiceListRowCard({
     required this.item,
@@ -44,7 +97,10 @@ class _AdminInvoiceListRowCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final total = _toNum(item['__total']);
+    final total = _resolveInvoiceListCardDisplayTotal(
+      item,
+      isIncome: isIncome,
+    );
     final nameLabel = item['__is_auto_sangu'] == true
         ? translate('Nama Sopir', 'Driver')
         : translate('Nama', 'Name');

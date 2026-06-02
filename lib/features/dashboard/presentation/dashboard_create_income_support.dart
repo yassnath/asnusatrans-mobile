@@ -781,7 +781,14 @@ extension _AdminCreateIncomeViewStateSupport on _AdminCreateIncomeViewState {
     Map<String, dynamic> detail,
     Map<String, dynamic>? parent,
   ) {
-    for (final key in const ['subtotal', 'total', 'jumlah', 'total_biaya']) {
+    for (final key in const [
+      'manual_subtotal',
+      'subtotal_manual',
+      'subtotal',
+      'total',
+      'jumlah',
+      'total_biaya',
+    ]) {
       final value = detail[key];
       if (_incomeDuplicateHasValue(value) && _toNum(value) > 0) {
         return roundInvoiceRupiah(_toNum(value));

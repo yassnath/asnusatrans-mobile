@@ -342,7 +342,14 @@ double _fixedInvoicePaymentDetailSubtotal(
   Map<String, dynamic> invoice,
   int detailCount,
 ) {
-  for (final key in const ['subtotal', 'total', 'total_biaya', 'jumlah']) {
+  for (final key in const [
+    'manual_subtotal',
+    'subtotal_manual',
+    'subtotal',
+    'total',
+    'total_biaya',
+    'jumlah',
+  ]) {
     final value = _fixedInvoicePaymentNum(row[key]);
     if (value > 0) return value;
   }
@@ -915,6 +922,9 @@ String _formatEditableNumberShared(dynamic value) {
 }
 
 double _resolveInvoiceDetailSubtotalShared(Map<String, dynamic> row) {
+  final manual = _toNum(row['manual_subtotal'] ?? row['subtotal_manual']);
+  if (manual > 0) return manual;
+
   final computed = _toNum(row['tonase']) * _toNum(row['harga']);
   if (row['subtotal_auto'] == true && computed > 0) return computed;
 

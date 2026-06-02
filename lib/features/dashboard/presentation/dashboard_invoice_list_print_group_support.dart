@@ -562,10 +562,14 @@ extension _AdminInvoiceListViewStatePrintGroupSupport
               });
             }
 
+            final dialogWidth = min(
+              560.0,
+              max(300.0, MediaQuery.sizeOf(context).width - 32),
+            );
             return AlertDialog(
               title: Text(_t('Edit KOP Invoice', 'Edit Invoice Header')),
               content: SizedBox(
-                width: 560,
+                width: dialogWidth,
                 child: SingleChildScrollView(
                   child: Container(
                     padding: const EdgeInsets.all(10),

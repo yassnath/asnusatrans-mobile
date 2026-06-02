@@ -1000,6 +1000,10 @@ class DashboardRepository {
   }
 
   double _resolveIncomeDetailTotal(Map<String, dynamic> detail) {
+    final manualSubtotal =
+        _num(detail['manual_subtotal'] ?? detail['subtotal_manual']);
+    if (manualSubtotal > 0) return roundInvoiceRupiah(manualSubtotal);
+
     final tonase = _num(detail['tonase']);
     final harga = _num(detail['harga']);
     final computedTotal = max(0, tonase * harga).toDouble();

@@ -158,7 +158,12 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
       final muatIsManual = muatText.isNotEmpty &&
           !_AdminInvoiceListViewState._defaultMuatOptions.contains(muatText);
       final hargaText = _formatEditableNumber(row['harga']);
-      final subtotalText = _formatEditableNumber(row['subtotal']);
+      final manualSubtotalText = _formatEditableNumber(
+        row['manual_subtotal'] ?? row['subtotal_manual'],
+      );
+      final subtotalText = manualSubtotalText.isNotEmpty
+          ? manualSubtotalText
+          : _formatEditableNumber(row['subtotal']);
       final driverText = '${row['nama_supir'] ?? ''}'.trim();
       final isDriverManual =
           driverText.isNotEmpty && !_isKnownDriverOption(driverText);
@@ -197,7 +202,8 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
         'subtotal': subtotalText,
         'harga_auto':
             resolvedHarga != null && _toNum(hargaText) == resolvedHarga,
-        'subtotal_auto': resolvedSubtotal != null &&
+        'subtotal_auto': manualSubtotalText.isEmpty &&
+            resolvedSubtotal != null &&
             _toNum(subtotalText) == resolvedSubtotal,
       };
       if (useManual) {
@@ -239,6 +245,12 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
         builder: (context) {
           return StatefulBuilder(
             builder: (context, setDialogState) {
+              final dialogWidth = min(
+                560.0,
+                max(300.0, MediaQuery.sizeOf(context).width - 32),
+              );
+              final compactDialog = dialogWidth < 430;
+              final compactGap = compactDialog ? 6.0 : 8.0;
               final subtotal = details.fold<double>(
                 0,
                 (sum, row) => sum + detailSubtotal(row),
@@ -255,7 +267,7 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
               return AlertDialog(
                 title: Text(_t('Edit Invoice', 'Edit Invoice')),
                 content: SizedBox(
-                  width: 560,
+                  width: dialogWidth,
                   child: SingleChildScrollView(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -271,6 +283,7 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                             Expanded(
                               child: _buildEditInvoiceModeTab(
                                 label: 'CV. ANT',
+                                compact: compactDialog,
                                 selected: invoiceEntityMode ==
                                     Formatters.invoiceEntityCvAnt,
                                 onTap: () => setDialogState(
@@ -279,10 +292,11 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 8),
+                            SizedBox(width: compactGap),
                             Expanded(
                               child: _buildEditInvoiceModeTab(
                                 label: 'PT. ANT',
+                                compact: compactDialog,
                                 selected: invoiceEntityMode ==
                                     Formatters.invoiceEntityPtAnt,
                                 onTap: () => setDialogState(
@@ -291,10 +305,11 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 8),
+                            SizedBox(width: compactGap),
                             Expanded(
                               child: _buildEditInvoiceModeTab(
                                 label: _t('Pribadi', 'Personal'),
+                                compact: compactDialog,
                                 selected: invoiceEntityMode ==
                                     Formatters.invoiceEntityPersonal,
                                 onTap: () => setDialogState(
@@ -752,19 +767,23 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                             _t('Tanggal Mulai', 'Start Date'),
                                         value:
                                             '${row['armada_start_date'] ?? ''}',
+                                        compact: compactDialog,
                                         onChanged: (value) => setDialogState(
                                           () =>
                                               row['armada_start_date'] = value,
                                         ),
                                       ),
                                     ),
-                                    const SizedBox(width: 8),
+                                    SizedBox(width: compactGap),
                                     Expanded(
                                       child: _dateSelect(
-                                        label:
-                                            _t('Tanggal Selesai', 'End Date'),
+                                        label: _t(
+                                          'Tanggal Selesai',
+                                          'End Date',
+                                        ),
                                         value:
                                             '${row['armada_end_date'] ?? ''}',
+                                        compact: compactDialog,
                                         onChanged: (value) => setDialogState(
                                           () => row['armada_end_date'] = value,
                                         ),
@@ -797,52 +816,82 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                     },
                                   )
                                 else
-                                  Row(
+                                  Column(
                                     children: [
-                                      Expanded(
-                                        child: TextFormField(
-                                          key: ValueKey(
-                                            'edit-tonase-$index-$editDetailFieldRefreshToken',
-                                          ),
-                                          initialValue: '${row['tonase']}',
-                                          keyboardType: const TextInputType
-                                              .numberWithOptions(
-                                            decimal: true,
-                                          ),
-                                          decoration: InputDecoration(
-                                            hintText: _t('Tonase', 'Tonnage'),
-                                          ),
-                                          onChanged: (value) {
-                                            row['tonase'] = value;
-                                            setDialogState(() {});
-                                          },
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: TextFormField(
-                                          key: ValueKey(
-                                            'edit-harga-$index-$editDetailFieldRefreshToken-$editHargaFieldRefreshToken',
-                                          ),
-                                          initialValue: '${row['harga']}',
-                                          keyboardType: const TextInputType
-                                              .numberWithOptions(
-                                            decimal: true,
-                                          ),
-                                          decoration: InputDecoration(
-                                            hintText: _t(
-                                              'Harga / Ton',
-                                              'Price / Ton',
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: TextFormField(
+                                              key: ValueKey(
+                                                'edit-tonase-$index-$editDetailFieldRefreshToken',
+                                              ),
+                                              initialValue: '${row['tonase']}',
+                                              keyboardType: const TextInputType
+                                                  .numberWithOptions(
+                                                decimal: true,
+                                              ),
+                                              decoration: InputDecoration(
+                                                hintText:
+                                                    _t('Tonase', 'Tonnage'),
+                                              ),
+                                              onChanged: (value) {
+                                                row['tonase'] = value;
+                                                setDialogState(() {});
+                                              },
                                             ),
                                           ),
-                                          onChanged: (value) {
-                                            row['harga'] = value;
-                                            row['subtotal'] = '';
-                                            row['harga_auto'] = false;
-                                            row['subtotal_auto'] = false;
-                                            setDialogState(() {});
-                                          },
+                                          SizedBox(width: compactGap),
+                                          Expanded(
+                                            child: TextFormField(
+                                              key: ValueKey(
+                                                'edit-harga-$index-$editDetailFieldRefreshToken-$editHargaFieldRefreshToken',
+                                              ),
+                                              initialValue: '${row['harga']}',
+                                              keyboardType: const TextInputType
+                                                  .numberWithOptions(
+                                                decimal: true,
+                                              ),
+                                              decoration: InputDecoration(
+                                                hintText: _t(
+                                                  'Harga / Ton',
+                                                  'Price / Ton',
+                                                ),
+                                              ),
+                                              onChanged: (value) {
+                                                row['harga'] = value;
+                                                row['subtotal'] = '';
+                                                row['harga_auto'] = false;
+                                                row['subtotal_auto'] = false;
+                                                setDialogState(() {});
+                                              },
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 8),
+                                      TextFormField(
+                                        key: ValueKey(
+                                          'edit-subtotal-manual-$index-$editDetailFieldRefreshToken-$editHargaFieldRefreshToken',
                                         ),
+                                        initialValue: '${row['subtotal']}',
+                                        keyboardType: const TextInputType
+                                            .numberWithOptions(
+                                          decimal: true,
+                                        ),
+                                        decoration: InputDecoration(
+                                          hintText: _t(
+                                            'Subtotal manual (opsional)',
+                                            'Manual subtotal (optional)',
+                                          ),
+                                        ),
+                                        onChanged: (value) {
+                                          row['subtotal'] = value;
+                                          row['subtotal_auto'] = false;
+                                          if (value.trim().isNotEmpty) {
+                                            row['harga_auto'] = false;
+                                          }
+                                          setDialogState(() {});
+                                        },
                                       ),
                                     ],
                                   ),
@@ -965,7 +1014,7 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                           mainAxisAlignment: MainAxisAlignment.end,
                           children: [
                             SizedBox(
-                              width: 132,
+                              width: compactDialog ? 112 : 132,
                               child: OutlinedButton(
                                 onPressed: saving
                                     ? null
@@ -983,9 +1032,9 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                 child: Text(_t('Batal', 'Cancel')),
                               ),
                             ),
-                            const SizedBox(width: 10),
+                            SizedBox(width: compactDialog ? 8 : 10),
                             SizedBox(
-                              width: 132,
+                              width: compactDialog ? 112 : 132,
                               child: FilledButton(
                                 onPressed: saving
                                     ? null
@@ -997,21 +1046,6 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                             _t(
                                               'Nama customer dan total wajib diisi.',
                                               'Customer name and total are required.',
-                                            ),
-                                            error: true,
-                                          );
-                                          return;
-                                        }
-                                        final hasEmptyMuatan = details.any(
-                                          (row) => '${row['muatan'] ?? ''}'
-                                              .trim()
-                                              .isEmpty,
-                                        );
-                                        if (hasEmptyMuatan) {
-                                          _snack(
-                                            _t(
-                                              'Muatan wajib diisi di setiap rincian.',
-                                              'Cargo is required for every detail row.',
                                             ),
                                             error: true,
                                           );
@@ -1050,9 +1084,50 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                         }
                                         final firstArmadaId =
                                             '${first['armada_id']}'.trim();
+                                        String manualArmadaInputForValidation(
+                                          Map<String, dynamic> row,
+                                        ) {
+                                          String? cleanManual(dynamic value) {
+                                            final raw =
+                                                value?.toString().trim() ?? '';
+                                            if (raw.isEmpty) return null;
+                                            final lowered = raw.toLowerCase();
+                                            if (lowered == 'null' ||
+                                                lowered == 'undefined' ||
+                                                lowered == '-') {
+                                              return null;
+                                            }
+                                            return raw;
+                                          }
+
+                                          return cleanManual(
+                                                row['armada_manual'],
+                                              ) ??
+                                              cleanManual(
+                                                row['armada_label'],
+                                              ) ??
+                                              cleanManual(row['armada']) ??
+                                              (_isManualArmadaText(
+                                                row['plat_nomor'],
+                                              )
+                                                  ? cleanManual(
+                                                      row['plat_nomor'],
+                                                    )
+                                                  : null) ??
+                                              (_isManualArmadaText(
+                                                row['no_polisi'],
+                                              )
+                                                  ? cleanManual(
+                                                      row['no_polisi'],
+                                                    )
+                                                  : null) ??
+                                              '';
+                                        }
+
                                         final firstArmadaManual =
-                                            '${first['armada_manual'] ?? ''}'
-                                                .trim();
+                                            manualArmadaInputForValidation(
+                                          first,
+                                        );
                                         final firstResolvedArmadaId =
                                             _isManualArmadaRow(first)
                                                 ? ''
@@ -1063,21 +1138,54 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                                     armadaIdByPlate:
                                                         armadaIdByPlate,
                                                   );
-                                        final hasArmadaSelection =
-                                            firstResolvedArmadaId.isNotEmpty ||
-                                                firstArmadaManual.isNotEmpty;
-                                        if (!_isOngkosKuliIncomeRow(first) &&
-                                            ('${first['lokasi_muat']}'
-                                                    .trim()
-                                                    .isEmpty ||
-                                                '${first['lokasi_bongkar']}'
-                                                    .trim()
-                                                    .isEmpty ||
-                                                !hasArmadaSelection)) {
+                                        final invalidRouteOrArmadaIndexes =
+                                            <int>[];
+                                        for (var i = 0;
+                                            i < details.length;
+                                            i++) {
+                                          final row = details[i];
+                                          if (_isOngkosKuliIncomeRow(row)) {
+                                            continue;
+                                          }
+                                          final armadaId =
+                                              '${row['armada_id']}'.trim();
+                                          final armadaManual =
+                                              manualArmadaInputForValidation(
+                                            row,
+                                          );
+                                          final resolvedArmadaId =
+                                              _isManualArmadaRow(row)
+                                                  ? ''
+                                                  : _resolveArmadaIdFromInput(
+                                                      armadaId: armadaId,
+                                                      armadaManual:
+                                                          armadaManual,
+                                                      armadaIdByPlate:
+                                                          armadaIdByPlate,
+                                                    );
+                                          final hasArmadaSelection =
+                                              resolvedArmadaId.isNotEmpty ||
+                                                  armadaManual.isNotEmpty;
+                                          if ('${row['lokasi_muat']}'
+                                                  .trim()
+                                                  .isEmpty ||
+                                              '${row['lokasi_bongkar']}'
+                                                  .trim()
+                                                  .isEmpty ||
+                                              !hasArmadaSelection) {
+                                            invalidRouteOrArmadaIndexes
+                                                .add(i + 1);
+                                          }
+                                        }
+                                        if (invalidRouteOrArmadaIndexes
+                                            .isNotEmpty) {
+                                          final detailLabels =
+                                              invalidRouteOrArmadaIndexes
+                                                  .join(', ');
                                           _snack(
                                             _t(
-                                              'Lokasi muat, lokasi bongkar, dan armada wajib diisi.',
-                                              'Loading location, unloading location, and fleet are required.',
+                                              'Lokasi muat, lokasi bongkar, dan armada wajib diisi di setiap rincian. Periksa rincian ke-$detailLabels.',
+                                              'Loading location, unloading location, and fleet are required for every detail row. Check detail row(s) $detailLabels.',
                                             ),
                                             error: true,
                                           );
@@ -1175,6 +1283,9 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                                   : roundInvoiceRupiah(
                                                       rawDetailSubtotal,
                                                     );
+                                          final hasManualSubtotal =
+                                              row['subtotal_auto'] != true &&
+                                                  detailSubtotal != null;
                                           final resolvedPlate =
                                               selectedArmada != null
                                                   ? _normalizePlateText(
@@ -1237,7 +1348,12 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                                       ),
                                             'tonase': detailTonase,
                                             'harga': detailHarga,
+                                            'manual_subtotal': hasManualSubtotal
+                                                ? detailSubtotal
+                                                : null,
                                             'subtotal': detailSubtotal,
+                                            'subtotal_auto':
+                                                row['subtotal_auto'] == true,
                                           };
                                         }).toList();
                                         final driverNames = detailsPayload
@@ -1449,11 +1565,15 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
         builder: (context) {
           return StatefulBuilder(
             builder: (context, setDialogState) {
+              final dialogWidth = min(
+                560.0,
+                max(300.0, MediaQuery.sizeOf(context).width - 32),
+              );
               final totalAmount = expenseTotal();
               return AlertDialog(
                 title: Text(_t('Edit Expense', 'Edit Expense')),
                 content: SizedBox(
-                  width: 560,
+                  width: dialogWidth,
                   child: SingleChildScrollView(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1787,12 +1907,16 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
     required String label,
     required bool selected,
     required VoidCallback onTap,
+    bool compact = false,
   }) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(10),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 6 : 10,
+          vertical: compact ? 8 : 10,
+        ),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(10),
           gradient: selected ? AppColors.sidebarActiveGradient : null,
@@ -1806,7 +1930,10 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
         child: Center(
           child: Text(
             label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
+              fontSize: compact ? 13 : null,
               fontWeight: FontWeight.w700,
               color:
                   selected ? Colors.white : AppColors.textPrimaryFor(context),
@@ -1821,6 +1948,7 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
     required String label,
     required String value,
     required ValueChanged<String> onChanged,
+    bool compact = false,
   }) {
     return InkWell(
       onTap: () async {
@@ -1836,8 +1964,18 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
       },
       borderRadius: BorderRadius.circular(8),
       child: InputDecorator(
-        decoration: InputDecoration(labelText: label),
-        child: Text(value.isEmpty ? '-' : Formatters.dmy(value)),
+        decoration: InputDecoration(
+          labelText: label,
+          contentPadding: compact
+              ? const EdgeInsets.symmetric(horizontal: 10, vertical: 10)
+              : null,
+        ),
+        child: Text(
+          value.isEmpty ? '-' : Formatters.dmy(value),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(fontSize: compact ? 14 : null),
+        ),
       ),
     );
   }
