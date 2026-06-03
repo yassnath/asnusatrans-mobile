@@ -1355,7 +1355,7 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
                                         if (tonase > 0)
                                           '${_t('Tonase', 'Tonnage')}: ${formatInvoiceTonase(tonase)}',
                                         if (harga > 0)
-                                          '${_t('Harga/ton', 'Price/ton')}: ${formatInvoiceHargaPerTon(harga)}',
+                                          '${_t('Harga/Kg', 'Price/Kg')}: ${formatInvoiceHargaPerTon(harga)}',
                                       ].join(' • '),
                                       style: TextStyle(
                                         color: AppColors.textMutedFor(context),

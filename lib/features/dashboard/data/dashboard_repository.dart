@@ -147,6 +147,8 @@ class _AutoSanguSyncResult {
 class DashboardRepository {
   DashboardRepository(this._supabase);
 
+  static const _gabunganHargaRuleCustomerName = 'Gabungan';
+
   final SupabaseClient _supabase;
   bool? _invoiceNumberColumnAvailable;
   final Set<String> _unavailableInvoiceColumns = <String>{};
@@ -1054,6 +1056,7 @@ class DashboardRepository {
     if (key.contains('royal')) return 'royal';
     if (key.contains('pare')) return 'pare';
     if (key.contains('gempol')) return 'gempol';
+    if (key.contains('mkp')) return 'mkp';
     if (key.contains('kedamean')) return 'kedamean';
     if (key.contains('temanggung')) return 'temanggung';
     if (key.contains('kig')) return 'kig';
@@ -1067,20 +1070,83 @@ class DashboardRepository {
     return key;
   }
 
+  bool _isGabunganHargaRuleCustomer(dynamic value) {
+    final key = normalizeIncomePricingRuleKey('${value ?? ''}');
+    return key == normalizeIncomePricingRuleKey(_gabunganHargaRuleCustomerName);
+  }
+
+  double _resolveGabunganExpenseRuleHargaPerTon({
+    required List<Map<String, dynamic>> rules,
+    required String pickup,
+    required String destination,
+  }) {
+    if (rules.isEmpty) return 0.0;
+    final pickupKey = normalizeIncomePricingRuleKey(pickup);
+    final destinationKey = normalizeIncomePricingRuleKey(destination);
+    if (destinationKey.isEmpty) return 0.0;
+
+    int locationScore(String inputKey, String ruleKey) {
+      if (ruleKey.isEmpty) return 100;
+      if (inputKey.isEmpty) return 0;
+      if (!incomePricingLocationKeyMatches(inputKey, ruleKey)) return 0;
+      final inputCompact = inputKey.replaceAll(' ', '');
+      final ruleCompact = ruleKey.replaceAll(' ', '');
+      if (inputKey == ruleKey || inputCompact == ruleCompact) return 1000;
+      return 600;
+    }
+
+    Map<String, dynamic>? bestRule;
+    var bestScore = -1;
+    for (final rule in rules) {
+      if (rule['is_active'] == false) continue;
+      if (!_isGabunganHargaRuleCustomer(rule['customer_name'])) continue;
+      final harga = _num(rule['harga_per_ton'] ?? rule['harga']);
+      if (harga <= 0) continue;
+
+      final ruleBongkarKey =
+          normalizeIncomePricingRuleKey('${rule['lokasi_bongkar'] ?? ''}');
+      if (!incomePricingLocationKeyMatches(destinationKey, ruleBongkarKey)) {
+        continue;
+      }
+
+      final ruleMuatKey =
+          normalizeIncomePricingRuleKey('${rule['lokasi_muat'] ?? ''}');
+      if (ruleMuatKey.isNotEmpty &&
+          !incomePricingLocationKeyMatches(pickupKey, ruleMuatKey)) {
+        continue;
+      }
+
+      final priority = int.tryParse('${rule['priority'] ?? ''}') ??
+          _num(rule['priority']).toInt();
+      final score = priority +
+          locationScore(pickupKey, ruleMuatKey) +
+          locationScore(destinationKey, ruleBongkarKey);
+      if (score > bestScore) {
+        bestScore = score;
+        bestRule = rule;
+      }
+    }
+
+    return _num(bestRule?['harga_per_ton'] ?? bestRule?['harga']);
+  }
+
   double _resolveGabunganExpenseHargaPerTon({
     required String pickup,
     required String destination,
     String? customerName,
+    List<Map<String, dynamic>> hargaPerTonRules =
+        const <Map<String, dynamic>>[],
   }) {
+    final ruleHarga = _resolveGabunganExpenseRuleHargaPerTon(
+      rules: hargaPerTonRules,
+      pickup: pickup,
+      destination: destination,
+    );
+    if (ruleHarga > 0) return ruleHarga;
+
     final pickupKey = _normalizeGabunganExpenseRouteKey(pickup);
     final destinationKey = _normalizeGabunganExpenseRouteKey(destination);
-    final customerKey = normalizeIncomePricingRuleKey(customerName ?? '');
     if (pickupKey == 'betoyo' && destinationKey == 'bimoli') return 33.0;
-    if (customerKey.contains('antok') &&
-        pickupKey == 'maspion' &&
-        destinationKey == 'langon') {
-      return 0.0;
-    }
     if (pickupKey == 'maspion' && destinationKey == 'langon') return 23.0;
     switch (destinationKey) {
       case 'kendal':
@@ -1097,6 +1163,8 @@ class DashboardRepository {
         return 78.0;
       case 'gempol':
         return 50.0;
+      case 'mkp':
+        return 50.0;
       case 'kedamean':
         return 41.0;
       case 'temanggung':
@@ -1112,6 +1180,19 @@ class DashboardRepository {
     }
   }
 
+  double _resolveGabunganExpenseTonase(Map<String, dynamic> detail) {
+    final directTonase = _num(detail['tonase']);
+    if (directTonase > 0) return directTonase;
+
+    final detailTotal = _resolveIncomeDetailTotal(detail);
+    final detailHarga = _num(detail['harga']);
+    if (detailTotal > 0 && detailHarga > 0) {
+      return detailTotal / detailHarga;
+    }
+
+    return 0.0;
+  }
+
   Future<_AutoSanguSyncResult> _createSanguExpenseFromIncomeBestEffort({
     String? invoiceId,
     required String invoiceNumber,
@@ -1123,6 +1204,7 @@ class DashboardRepository {
     String? fallbackCargo,
     String? fallbackCustomerName,
     List<Map<String, dynamic>>? preloadedRules,
+    List<Map<String, dynamic>>? preloadedHargaPerTonRules,
     Map<String, String>? preloadedPlateById,
   }) async {
     if (details.isEmpty) {
@@ -1274,6 +1356,8 @@ class DashboardRepository {
       }
 
       final rules = preloadedRules ?? await _fetchSanguRulesBestEffort();
+      final hargaPerTonRules =
+          preloadedHargaPerTonRules ?? await fetchHargaPerTonRules();
       final plateById = preloadedPlateById ??
           <String, String>{
             for (final armada in await fetchArmadas())
@@ -1319,7 +1403,7 @@ class DashboardRepository {
           continue;
         }
         if (_detailUsesManualArmada(detail)) {
-          final tonase = _num(detail['tonase']);
+          final tonase = _resolveGabunganExpenseTonase(detail);
           final gabunganHarga = _resolveGabunganExpenseHargaPerTon(
             pickup: originalPickup,
             destination: originalDestination,
@@ -1328,6 +1412,7 @@ class DashboardRepository {
               detail['customer_name'],
               fallbackCustomerName,
             ]),
+            hargaPerTonRules: hargaPerTonRules,
           );
           final gabunganTotal = tonase > 0 && gabunganHarga > 0
               ? roundInvoiceRupiah(tonase * gabunganHarga)
@@ -1542,6 +1627,7 @@ class DashboardRepository {
       }
 
       final rules = await _fetchSanguRulesBestEffort();
+      final hargaPerTonRules = await fetchHargaPerTonRules();
       final plateById = <String, String>{
         for (final armada in await fetchArmadas())
           '${armada['id'] ?? ''}'.trim():
@@ -1580,6 +1666,7 @@ class DashboardRepository {
           fallbackCargo: '${invoice['muatan'] ?? ''}',
           fallbackCustomerName: '${invoice['nama_pelanggan'] ?? ''}',
           preloadedRules: rules,
+          preloadedHargaPerTonRules: hargaPerTonRules,
           preloadedPlateById: plateById,
         );
         createdExpenses += result.created;

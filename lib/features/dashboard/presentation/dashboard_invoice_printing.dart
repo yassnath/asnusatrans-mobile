@@ -1229,6 +1229,7 @@ Future<bool> _printDashboardInvoicePdf(
                   ),
                   _dashboardPdfCell(
                     hasData ? '${row['muatan'] ?? '-'}' : blankCell,
+                    bold: hasData && isTolakanCargo('${row['muatan'] ?? ''}'),
                     alignCenter: true,
                     hPadding: 4,
                     vPadding: tableRowVPadding,
@@ -2505,12 +2506,13 @@ extension _AdminInvoiceListViewPrinting on _DashboardInvoicePrintHost {
         required bool header,
         bool alignRight = false,
         bool alignCenter = false,
+        bool bold = false,
         int softLimitChars = 12,
         double minFontSize = 6.8,
       }) {
         return _dashboardPdfCell(
           text,
-          bold: header,
+          bold: header || bold,
           alignRight: alignRight,
           alignCenter: alignCenter,
           textColor: PdfColors.black,
@@ -2670,6 +2672,7 @@ extension _AdminInvoiceListViewPrinting on _DashboardInvoicePrintHost {
                         value('muatan'),
                         header: false,
                         alignCenter: true,
+                        bold: isTolakanCargo(value('muatan')),
                         softLimitChars: 14,
                         minFontSize: 6.5,
                       ),

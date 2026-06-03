@@ -2972,6 +2972,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       if (key.contains('royal')) return 'royal';
       if (key.contains('pare')) return 'pare';
       if (key.contains('gempol')) return 'gempol';
+      if (key.contains('mkp')) return 'mkp';
       if (key.contains('kedamean')) return 'kedamean';
       if (key.contains('temanggung')) return 'temanggung';
       if (key.contains('kig')) return 'kig';
@@ -2985,20 +2986,80 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       return key;
     }
 
+    bool isGabunganReportHargaRuleCustomer(dynamic value) {
+      final key = normalizeIncomePricingRuleKey('${value ?? ''}');
+      return key == normalizeIncomePricingRuleKey('Gabungan');
+    }
+
+    double resolveGabunganReportRuleHargaPerTon({
+      required String muat,
+      required String bongkar,
+    }) {
+      final muatKey = normalizeIncomePricingRuleKey(muat);
+      final bongkarKey = normalizeIncomePricingRuleKey(bongkar);
+      if (bongkarKey.isEmpty) return 0.0;
+
+      int locationScore(String inputKey, String ruleKey) {
+        if (ruleKey.isEmpty) return 100;
+        if (inputKey.isEmpty) return 0;
+        if (!incomePricingLocationKeyMatches(inputKey, ruleKey)) return 0;
+        final inputCompact = inputKey.replaceAll(' ', '');
+        final ruleCompact = ruleKey.replaceAll(' ', '');
+        if (inputKey == ruleKey || inputCompact == ruleCompact) return 1000;
+        return 600;
+      }
+
+      Map<String, dynamic>? bestRule;
+      var bestScore = -1;
+      for (final rule in reportHargaPerTonRules) {
+        if (rule['is_active'] == false) continue;
+        if (!isGabunganReportHargaRuleCustomer(rule['customer_name'])) {
+          continue;
+        }
+        final harga = _toNum(rule['harga_per_ton'] ?? rule['harga']);
+        if (harga <= 0) continue;
+
+        final ruleBongkarKey =
+            normalizeIncomePricingRuleKey('${rule['lokasi_bongkar'] ?? ''}');
+        if (!incomePricingLocationKeyMatches(bongkarKey, ruleBongkarKey)) {
+          continue;
+        }
+
+        final ruleMuatKey =
+            normalizeIncomePricingRuleKey('${rule['lokasi_muat'] ?? ''}');
+        if (ruleMuatKey.isNotEmpty &&
+            !incomePricingLocationKeyMatches(muatKey, ruleMuatKey)) {
+          continue;
+        }
+
+        final priority = int.tryParse('${rule['priority'] ?? ''}') ??
+            _toNum(rule['priority']).toInt();
+        final score = priority +
+            locationScore(muatKey, ruleMuatKey) +
+            locationScore(bongkarKey, ruleBongkarKey);
+        if (score > bestScore) {
+          bestScore = score;
+          bestRule = rule;
+        }
+      }
+
+      return _toNum(bestRule?['harga_per_ton'] ?? bestRule?['harga']);
+    }
+
     double resolveGabunganReportHargaPerTon({
       required String muat,
       required String bongkar,
       String? customerName,
     }) {
+      final ruleHarga = resolveGabunganReportRuleHargaPerTon(
+        muat: muat,
+        bongkar: bongkar,
+      );
+      if (ruleHarga > 0) return ruleHarga;
+
       final muatKey = normalizeGabunganReportRouteKey(muat);
       final bongkarKey = normalizeGabunganReportRouteKey(bongkar);
-      final customerKey = normalizeIncomePricingRuleKey(customerName ?? '');
       if (muatKey == 'betoyo' && bongkarKey == 'bimoli') return 33.0;
-      if (customerKey.contains('antok') &&
-          muatKey == 'maspion' &&
-          bongkarKey == 'langon') {
-        return 0.0;
-      }
       if (muatKey == 'maspion' && bongkarKey == 'langon') return 23.0;
       switch (bongkarKey) {
         case 'kendal':
@@ -3014,6 +3075,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         case 'pare':
           return 78.0;
         case 'gempol':
+          return 50.0;
+        case 'mkp':
           return 50.0;
         case 'kedamean':
           return 41.0;

@@ -853,8 +853,8 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                               ),
                                               decoration: InputDecoration(
                                                 hintText: _t(
-                                                  'Harga / Ton',
-                                                  'Price / Ton',
+                                                  'Harga / Kg',
+                                                  'Price / Kg',
                                                 ),
                                               ),
                                               onChanged: (value) {

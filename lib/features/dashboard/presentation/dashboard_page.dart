@@ -460,9 +460,9 @@ String _menuLabel(String key, AppLanguage language) {
     case 'invoice list':
       return isEn ? 'Invoice List' : 'Daftar Invoice';
     case 'invoice add income':
-      return isEn ? 'Invoice Add Income' : 'Tambah Pemasukkan';
+      return isEn ? 'Add Income' : 'Tambah Pemasukkan';
     case 'invoice add expense':
-      return isEn ? 'Invoice Add Expense' : 'Tambah Pengeluaran';
+      return isEn ? 'Add Expense' : 'Tambah Pengeluaran';
     case 'fix invoice':
       return isEn ? 'Fix Invoice' : 'Fix Invoice';
     case 'calendar':

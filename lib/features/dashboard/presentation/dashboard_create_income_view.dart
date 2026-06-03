@@ -1388,8 +1388,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                                       decimal: true,
                                     ),
                                     decoration: InputDecoration(
-                                      hintText:
-                                          _t('Harga / Ton', 'Price / Ton'),
+                                      hintText: _t('Harga / Kg', 'Price / Kg'),
                                     ),
                                     onChanged: (value) {
                                       row['harga'] = value;
@@ -1434,8 +1433,8 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                                           ),
                                           decoration: InputDecoration(
                                             hintText: _t(
-                                              'Harga / Ton',
-                                              'Price / Ton',
+                                              'Harga / Kg',
+                                              'Price / Kg',
                                             ),
                                           ),
                                           onChanged: (value) {

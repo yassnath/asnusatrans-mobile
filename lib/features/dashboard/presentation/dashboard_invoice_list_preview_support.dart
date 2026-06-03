@@ -50,7 +50,7 @@ extension _AdminInvoiceListViewStatePreviewSupport
         );
         final total = latestDisplayTotal;
         return AlertDialog(
-          title: Text(_t('Preview Invoice', 'Invoice Preview')),
+          title: Text(_t('Preview Income', 'Preview Income')),
           content: SizedBox(
             width: dialogWidth,
             child: SingleChildScrollView(
@@ -59,8 +59,6 @@ extension _AdminInvoiceListViewStatePreviewSupport
                 children: [
                   Text(
                       '${_t('Customer', 'Customer')}: ${previewItem['nama_pelanggan'] ?? '-'}'),
-                  Text(
-                      '${_t('Email', 'Email')}: ${previewItem['email'] ?? '-'}'),
                   Text(
                       '${_t('Tanggal', 'Date')}: ${Formatters.dmy(previewItem['tanggal'] ?? previewItem['armada_start_date'])}'),
                   Text('${_t('Tipe', 'Type')}: $invoiceEntityLabel'),
@@ -133,7 +131,7 @@ extension _AdminInvoiceListViewStatePreviewSupport
                               '${_t('Tonase', 'Tonnage')}: ${tonase > 0 ? formatInvoiceTonase(tonase) : '-'}',
                             ),
                             Text(
-                              '${_t('Harga / Ton', 'Price / Ton')}: ${harga > 0 ? formatInvoiceHargaPerTon(harga) : '-'}',
+                              '${_t('Harga / Kg', 'Price / Kg')}: ${harga > 0 ? formatInvoiceHargaPerTon(harga) : '-'}',
                             ),
                             const SizedBox(height: 4),
                             Text(
@@ -1471,6 +1469,8 @@ extension _AdminInvoiceListViewStatePreviewSupport
                         ),
                         _pdfCell(
                           hasData ? '${row['muatan'] ?? '-'}' : blankCell,
+                          bold:
+                              hasData && isTolakanCargo('${row['muatan'] ?? ''}'),
                           alignCenter: true,
                           hPadding: 4,
                           vPadding: tableRowVPadding,
@@ -2431,8 +2431,7 @@ extension _AdminInvoiceListViewStatePreviewSupport
         );
         final detailList = _toDetailList(item['rincian']);
         return AlertDialog(
-          title:
-              Text('${_t('Preview', 'Preview')} ${item['no_expense'] ?? '-'}'),
+          title: Text(_t('Preview Expense', 'Preview Expense')),
           content: SizedBox(
             width: dialogWidth,
             child: SingleChildScrollView(

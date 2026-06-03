@@ -139,7 +139,9 @@ try {
     Set-CellText $worksheet.Cells.Item($rowNumber, 1) $noValue
     Set-CellText $worksheet.Cells.Item($rowNumber, 2) $tanggalValue
     Set-CellText $worksheet.Cells.Item($rowNumber, 3) $platValue
-    Set-CellText $worksheet.Cells.Item($rowNumber, 4) $muatanValue
+    $muatanCell = $worksheet.Cells.Item($rowNumber, 4)
+    Set-CellText $muatanCell $muatanValue
+    $muatanCell.Font.Bold = ($muatanValue -match '(?i)tolakan')
     Set-CellText $worksheet.Cells.Item($rowNumber, 5) $muatValue
     Set-CellText $worksheet.Cells.Item($rowNumber, 6) $bongkarValue
     Set-CellText $worksheet.Cells.Item($rowNumber, 7) $tonaseValue
