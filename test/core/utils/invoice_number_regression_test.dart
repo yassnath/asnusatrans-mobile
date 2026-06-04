@@ -27,7 +27,8 @@ void main() {
       expect(out, 'BS260917');
     });
 
-    test('normalizes company legacy format and syncs month and year from date', () {
+    test('normalizes company legacy format and syncs month and year from date',
+        () {
       final out = Formatters.invoiceNumber(
         '017 / CV.ANT / I / 26',
         '2027-04-10',

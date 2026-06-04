@@ -154,7 +154,10 @@ double resolveBuiltInGabunganHargaPerKg({
     case 'kig':
       return 38;
     case 'sgm':
-      return 40;
+      if (pickupKey.isEmpty || incomePricingIsBetoyoLocationKey(pickupKey)) {
+        return 0;
+      }
+      return 41;
     case 'safelock':
       return 50;
     case 'rex_beji':

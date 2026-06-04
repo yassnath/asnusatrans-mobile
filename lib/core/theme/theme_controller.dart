@@ -22,6 +22,7 @@ class ThemeController {
   }
 
   static Future<void> toggle() async {
-    await setMode(mode.value == ThemeMode.light ? ThemeMode.dark : ThemeMode.light);
+    await setMode(
+        mode.value == ThemeMode.light ? ThemeMode.dark : ThemeMode.light);
   }
 }

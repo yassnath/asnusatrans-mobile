@@ -46,6 +46,20 @@ void main() {
         ),
         50,
       );
+      expect(
+        resolveBuiltInGabunganHargaPerKg(
+          pickup: 'T. Langon',
+          destination: 'SGM',
+        ),
+        41,
+      );
+      expect(
+        resolveBuiltInGabunganHargaPerKg(
+          pickup: 'Betoyo',
+          destination: 'SGM',
+        ),
+        0,
+      );
     });
 
     test('prioritizes database Gabungan route rules over fallback', () {
@@ -83,6 +97,36 @@ void main() {
           rules: rules,
         ),
         50,
+      );
+    });
+
+    test('matches database Selain Betoyo Gabungan rule safely', () {
+      final rules = <Map<String, dynamic>>[
+        {
+          'customer_name': 'Gabungan',
+          'lokasi_muat': 'Selain Betoyo',
+          'lokasi_bongkar': 'SGM',
+          'harga_per_ton': 41,
+          'priority': 320,
+          'is_active': true,
+        },
+      ];
+
+      expect(
+        resolveGabunganHargaPerKg(
+          pickup: 'T. Langon',
+          destination: 'SGM',
+          rules: rules,
+        ),
+        41,
+      );
+      expect(
+        resolveGabunganHargaPerKg(
+          pickup: 'Betoyo',
+          destination: 'SGM',
+          rules: rules,
+        ),
+        0,
       );
     });
 

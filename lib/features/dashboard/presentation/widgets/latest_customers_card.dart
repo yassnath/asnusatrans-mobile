@@ -105,10 +105,10 @@ class _LatestCustomersCardState extends State<LatestCustomersCard> {
                   final accent = item.type == 'Expense'
                       ? AppColors.danger
                       : AppColors.blue;
-                  final primaryName = (item.displayName ?? item.customer).trim();
+                  final primaryName =
+                      (item.displayName ?? item.customer).trim();
                   final routeLabel = (item.routeLabel ?? '').trim();
-                  final hasRoute =
-                      routeLabel.isNotEmpty && routeLabel != '-';
+                  final hasRoute = routeLabel.isNotEmpty && routeLabel != '-';
                   return Container(
                     margin: const EdgeInsets.only(bottom: 10),
                     padding: const EdgeInsets.all(12),
@@ -136,7 +136,9 @@ class _LatestCustomersCardState extends State<LatestCustomersCard> {
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
-                                    primaryName.isEmpty ? item.customer : primaryName,
+                                    primaryName.isEmpty
+                                        ? item.customer
+                                        : primaryName,
                                     style: TextStyle(
                                       fontSize: 12,
                                       color: muted,

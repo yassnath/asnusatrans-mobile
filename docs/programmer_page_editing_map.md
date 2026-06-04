@@ -1,6 +1,6 @@
 # Programmer Page Editing Map
 
-Update: 2026-06-03
+Update: 2026-06-04
 
 Dokumen ini adalah peta cepat untuk programmer saat ingin mengubah tampilan, fitur, logic, print, atau database. Nomor line adalah anchor kondisi repo saat dokumen dibuat; setelah ada edit besar, line bisa bergeser. Kalau line bergeser, cari nama symbol/fungsi yang disebutkan.
 
@@ -16,8 +16,9 @@ Dokumen ini adalah peta cepat untuk programmer saat ingin mengubah tampilan, fit
 | Ubah popup preview income/expense | `lib/features/dashboard/presentation/dashboard_invoice_list_preview_support.dart:5`, `lib/features/dashboard/presentation/dashboard_invoice_list_preview_support.dart:2423` |
 | Ubah popup edit income/expense | `lib/features/dashboard/presentation/dashboard_invoice_list_edit_support.dart:4`, `lib/features/dashboard/presentation/dashboard_invoice_list_edit_support.dart:1526` |
 | Ubah print invoice/PDF | `lib/features/dashboard/presentation/dashboard_invoice_printing.dart:372` |
-| Ubah print laporan | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:2379` |
-| Ubah harga/kg otomatis | `lib/features/dashboard/utils/income_pricing_rule_logic.dart:99`, `lib/features/dashboard/utils/gabungan_pricing_rule_logic.dart:1`, `supabase/patch_gabungan_sangu_extra_rules_20260603.sql:1` |
+| Ubah popup cetak invoice | `lib/features/dashboard/presentation/dashboard_invoice_list_print_selector.dart:4` |
+| Ubah print laporan | `lib/features/dashboard/presentation/dashboard_invoice_list_report_summary.dart:4` |
+| Ubah harga/kg otomatis | `lib/features/dashboard/utils/income_pricing_rule_logic.dart:99`, `lib/features/dashboard/utils/gabungan_pricing_rule_logic.dart:1` |
 | Ubah auto expense sangu/gabungan | `lib/features/dashboard/data/dashboard_repository.dart:1205`, `lib/features/dashboard/utils/sangu_rule_logic.dart:1` |
 | Ubah deteksi armada manual/Gabungan | `lib/features/dashboard/utils/manual_armada_logic.dart:1` |
 | Ubah parsing/normalisasi plat armada | `lib/features/dashboard/utils/armada_identifier_logic.dart:1` |
@@ -25,6 +26,7 @@ Dokumen ini adalah peta cepat untuk programmer saat ingin mengubah tampilan, fit
 | Ubah parsing/subtotal detail invoice | `lib/features/dashboard/utils/invoice_detail_amount_logic.dart:1` |
 | Ubah status pembayaran Paid/Partial/Unpaid | `lib/features/dashboard/utils/payment_status_logic.dart:1` |
 | Ubah data CRUD Supabase | `lib/features/dashboard/data/dashboard_repository_crud.dart:35` |
+| Ubah quality gate CI | `.github/workflows/flutter-quality.yml:1` |
 
 ## App, Theme, Core
 
@@ -44,6 +46,7 @@ Dokumen ini adalah peta cepat untuk programmer saat ingin mengubah tampilan, fit
 | Logo/image fallback | `lib/core/widgets/cvant_logo.dart:6`, `lib/core/widgets/cvant_logo.dart:105` | Asset logo dan fallback |
 | Animasi transisi page | `lib/core/widgets/page_fade_in.dart:3` | Fade-in page |
 | Security URL/error | `lib/core/security/app_security.dart:8`, `lib/core/security/app_security.dart:115` | Validasi URL, error widget release |
+| Quality gate CI | `.github/workflows/flutter-quality.yml:1` | `pubspec.lock` sync, repo hygiene, format penuh, analyze, test |
 
 ## Auth Pages
 
@@ -138,14 +141,14 @@ Dokumen ini adalah peta cepat untuk programmer saat ingin mengubah tampilan, fit
 | Delete expense | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:905` | Hapus expense |
 | Confirm delete | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:924` | Popup konfirmasi hapus |
 | Send invoice | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:949` | Kirim invoice ke notifikasi customer/email |
-| Fixed invoice cache/local remote | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:1058` sampai `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:1346` | Cache invoice yang sudah dicetak/fix |
+| Fixed invoice cache/local remote | `lib/features/dashboard/presentation/dashboard_invoice_list_fixed_invoice_cache.dart:4`, `lib/features/dashboard/presentation/dashboard_invoice_list_fixed_invoice_cache.dart:222` | Cache invoice yang sudah dicetak/fix |
 | Fixed invoice payment/detail | `lib/features/dashboard/presentation/dashboard_invoice_support.dart:262`, `lib/features/dashboard/utils/invoice_detail_amount_logic.dart:1`, `lib/features/dashboard/utils/armada_identifier_logic.dart:1`, `lib/features/dashboard/utils/payment_status_logic.dart:1` | Parsing nominal, subtotal detail, plat, status bayar fixed invoice |
-| Request edit pengurus | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:1348` | Pengurus minta izin edit income |
-| Build row gabungan income/expense | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:6258` | Mapping data mentah ke row display |
-| Build list UI | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:6775` | Pull-to-refresh/list/card |
-| Build page invoice list | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:6892` | Filter tampil, search, tombol Cetak Laporan/Invoice |
-| Tombol Cetak Laporan | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:7014` | Buka popup print laporan |
-| Tombol Cetak Invoice | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:7024` | Buka popup print invoice |
+| Request edit pengurus | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:1056` | Pengurus minta izin edit income |
+| Build row gabungan income/expense | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:4160` | Mapping data mentah ke row display |
+| Build list UI | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:4645` | Pull-to-refresh/list/card |
+| Build page invoice list | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:4762` | Filter tampil, search, tombol Cetak Laporan/Invoice |
+| Tombol Cetak Laporan | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:4882` | Buka popup print laporan |
+| Tombol Cetak Invoice | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:4892` | Buka popup print invoice |
 | Card total display | `lib/features/dashboard/presentation/dashboard_invoice_list_widgets.dart:5` | Nilai total yang tampil di card |
 | Card invoice/expense | `lib/features/dashboard/presentation/dashboard_invoice_list_widgets.dart:58`, `lib/features/dashboard/presentation/dashboard_invoice_list_widgets.dart:99` | Layout setiap card list |
 
@@ -196,14 +199,14 @@ Dokumen ini adalah peta cepat untuk programmer saat ingin mengubah tampilan, fit
 
 | Bagian | File/line | Untuk mengubah |
 | --- | --- | --- |
-| Open selector print invoice | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:1361` | Popup filter dan pilih invoice |
-| Build nomor otomatis group | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:1494` | Generate nomor invoice untuk grup |
-| Editor nomor/KOP | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:1589` | Popup edit nomor, tanggal KOP, lokasi KOP |
-| Filter row invoice | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:1853` | Filter bulan, tahun, CV/PT/Pribadi, search |
-| Width popup selector | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:1881` | Lebar popup Cetak Invoice |
-| Build selected groups | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:2175` | Menggabungkan invoice yang dipilih |
-| Save fixed batch setelah print | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:2256` | Simpan metadata fix invoice |
-| Print queue | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:2281` sampai `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:2340` | Jalankan PDF print per group |
+| Open selector print invoice | `lib/features/dashboard/presentation/dashboard_invoice_list_print_selector.dart:4` | Popup filter dan pilih invoice |
+| Build nomor otomatis group | `lib/features/dashboard/presentation/dashboard_invoice_list_print_selector.dart:134` | Generate nomor invoice untuk grup |
+| Editor nomor/KOP | `lib/features/dashboard/presentation/dashboard_invoice_list_print_selector.dart:232` | Popup edit nomor, tanggal KOP, lokasi KOP |
+| Filter row invoice | `lib/features/dashboard/presentation/dashboard_invoice_list_print_selector.dart:496` | Filter bulan, tahun, CV/PT/Pribadi, search |
+| Width popup selector | `lib/features/dashboard/presentation/dashboard_invoice_list_print_selector.dart:526` | Lebar popup Cetak Invoice |
+| Build selected groups | `lib/features/dashboard/presentation/dashboard_invoice_list_print_selector.dart:792` | Menggabungkan invoice yang dipilih |
+| Save fixed batch setelah print | `lib/features/dashboard/presentation/dashboard_invoice_list_print_selector.dart:872` | Simpan metadata fix invoice |
+| Print queue | `lib/features/dashboard/presentation/dashboard_invoice_list_print_selector.dart:807` sampai `lib/features/dashboard/presentation/dashboard_invoice_list_print_selector.dart:929` | Jalankan PDF print per group |
 | Support grouping | `lib/features/dashboard/presentation/dashboard_invoice_list_print_group_support.dart:163` | Group invoice by customer/entity |
 | Sort Tolakan pair | `lib/features/dashboard/presentation/dashboard_invoice_list_print_group_support.dart:33`, `lib/features/dashboard/presentation/dashboard_invoice_list_print_group_support.dart:59` | Urutan Tolakan dengan pasangan invoice |
 | Expand print details | `lib/features/dashboard/presentation/dashboard_invoice_list_print_group_support.dart:148` | Detail yang masuk PDF |
@@ -243,22 +246,22 @@ Dokumen ini adalah peta cepat untuk programmer saat ingin mengubah tampilan, fit
 
 | Bagian | File/line | Untuk mengubah |
 | --- | --- | --- |
-| Open report summary | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:2379` | Popup Cetak Laporan |
-| Fetch fixed invoice/report source | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:2379` sampai `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:2700` | Data income/expense untuk laporan |
-| Deteksi expense auto sangu | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:2827` | Klasifikasi sangu |
-| Deteksi expense gabungan | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:2833` | Klasifikasi gabungan |
-| Deteksi income gabungan | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:2920` | Armada manual/gabungan |
-| Harga gabungan laporan | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:3055` | Fallback harga/kg gabungan di laporan |
-| Laba gabungan laporan | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:3210` | Perhitungan laba gabungan |
-| Build rows laporan | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:3779` | Row final tabel laporan |
-| Add income detail row | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:3907` | Detail income per invoice |
-| Add expense row | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:4187` | Expense masuk laporan |
-| Print report PDF | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:4291` | Build PDF laporan |
-| Header laporan | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:5053` | Header PDF laporan |
-| Summary box laporan | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:5135` | Total income/expense/laba |
-| Preview rows popup | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:5428` | Table preview sebelum print |
-| All rows final | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:6154` | Rows final sebelum print |
-| Print action | `lib/features/dashboard/presentation/dashboard_invoice_list_view.dart:6223` | Trigger print PDF |
+| Open report summary | `lib/features/dashboard/presentation/dashboard_invoice_list_report_summary.dart:4` | Popup Cetak Laporan |
+| Fetch fixed invoice/report source | `lib/features/dashboard/presentation/dashboard_invoice_list_report_summary.dart:4` sampai `lib/features/dashboard/presentation/dashboard_invoice_list_report_summary.dart:300` | Data income/expense untuk laporan |
+| Deteksi expense auto sangu | `lib/features/dashboard/presentation/dashboard_invoice_list_report_summary.dart:310` | Klasifikasi sangu |
+| Deteksi expense gabungan | `lib/features/dashboard/presentation/dashboard_invoice_list_report_summary.dart:314` | Klasifikasi gabungan |
+| Deteksi income gabungan | `lib/features/dashboard/presentation/dashboard_invoice_list_report_summary.dart:355` | Armada manual/gabungan |
+| Harga gabungan laporan | `lib/features/dashboard/presentation/dashboard_invoice_list_report_summary.dart:504` | Fallback harga/kg gabungan di laporan |
+| Laba gabungan laporan | `lib/features/dashboard/presentation/dashboard_invoice_list_report_summary.dart:620` | Perhitungan laba gabungan |
+| Build rows laporan | `lib/features/dashboard/presentation/dashboard_invoice_list_report_summary.dart:1189` | Row final tabel laporan |
+| Add income detail row | `lib/features/dashboard/presentation/dashboard_invoice_list_report_summary.dart:1328` | Detail income per invoice |
+| Add expense row | `lib/features/dashboard/presentation/dashboard_invoice_list_report_summary.dart:1667` | Expense masuk laporan |
+| Print report PDF | `lib/features/dashboard/presentation/dashboard_invoice_list_report_summary.dart:1701` | Build PDF laporan |
+| Header laporan | `lib/features/dashboard/presentation/dashboard_invoice_list_report_summary.dart:1905` | Header PDF laporan |
+| Summary box laporan | `lib/features/dashboard/presentation/dashboard_invoice_list_report_summary.dart:1987` | Total income/expense/laba |
+| Preview rows popup | `lib/features/dashboard/presentation/dashboard_invoice_list_report_summary.dart:2249` | Table preview sebelum print |
+| All rows final | `lib/features/dashboard/presentation/dashboard_invoice_list_report_summary.dart:2980` | Rows final sebelum print |
+| Print action | `lib/features/dashboard/presentation/dashboard_invoice_list_report_summary.dart:3018` | Trigger print PDF |
 | Report grouping utils | `lib/features/dashboard/utils/report_grouping_logic.dart:17` | Sort/group invoice report |
 
 ## Add Income Page
@@ -543,13 +546,10 @@ Dokumen ini adalah peta cepat untuk programmer saat ingin mengubah tampilan, fit
 
 | Bagian | File/line | Untuk mengubah |
 | --- | --- | --- |
-| Patch harga/sangu ekstra | `supabase/patch_gabungan_sangu_extra_rules_20260603.sql:1` | Patch SQL harga/kg Gabungan dan sangu Betoyo-T. Langon |
-| Create table rule harga | `supabase/patch_gabungan_sangu_extra_rules_20260603.sql:6` | Schema `harga_per_ton_rules` |
-| Unique route/customer | `supabase/patch_gabungan_sangu_extra_rules_20260603.sql:30` | Unique index route |
-| Update rules gabungan | `supabase/patch_gabungan_sangu_extra_rules_20260603.sql:38` | List harga update |
-| Insert rules gabungan | `supabase/patch_gabungan_sangu_extra_rules_20260603.sql:62`, `supabase/patch_gabungan_sangu_extra_rules_20260603.sql:76` | Insert jika belum ada |
-| Upsert sangu Betoyo-T. Langon | `supabase/patch_gabungan_sangu_extra_rules_20260603.sql:123` | Sangu sopir Rp 500.000 |
-| Notify schema reload | `supabase/patch_gabungan_sangu_extra_rules_20260603.sql:176` | Reload PostgREST |
+| Rule harga/kg DB | `harga_per_ton_rules` di Supabase | Rule operasional live seperti Gabungan/SGM dikelola langsung di database |
+| Rule sangu sopir DB | `sangu_driver_rules` di Supabase | Nominal sangu live dikelola langsung di database |
+| Fallback harga/kg app | `lib/features/dashboard/utils/income_pricing_rule_logic.dart:99`, `lib/features/dashboard/utils/gabungan_pricing_rule_logic.dart:119` | Cadangan ketika rule DB belum tersedia di device |
+| Fallback sangu app | `lib/features/dashboard/utils/sangu_rule_logic.dart:1` | Cadangan ketika rule DB belum tersedia di device |
 | Finance reminder edge function | `supabase/functions/finance-reminder-push/index.ts` | Push mingguan/bulanan |
 | Send push edge function | `supabase/functions/send-push/index.ts` | Kirim FCM/notifikasi role/user |
 | Supabase config | `supabase/config.toml` | Local Supabase config |

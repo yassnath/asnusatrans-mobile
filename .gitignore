@@ -39,13 +39,13 @@ android/key.properties
 .flutter-plugins
 .flutter-plugins-dependencies
 .packages
+node_modules/
 build/
 ios/Pods/
 ios/.symlinks/
 android/.gradle/
 android/.kotlin/
 android/local.properties
-pubspec.lock
 
 ########################################
 # Backup / dump / zip besar
