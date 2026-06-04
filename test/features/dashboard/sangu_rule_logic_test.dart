@@ -160,6 +160,18 @@ void main() {
       expect(rule['lokasi_bongkar'], 'BATANG');
     });
 
+    test('prioritizes Betoyo to T. Langon route with fixed nominal', () {
+      final rule = resolvePrioritizedSanguRouteRule(
+        pickup: 'Betoyo',
+        destination: 'T. Langon',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule!['nominal'], 500000);
+      expect(rule['lokasi_muat'], 'BETOYO');
+      expect(rule['lokasi_bongkar'], 'T. LANGON');
+    });
+
     test('prioritizes Maspion to T. Langon route with fixed nominal', () {
       final rule = resolvePrioritizedSanguRouteRule(
         pickup: 'mAsPiOn',
@@ -182,6 +194,53 @@ void main() {
       expect(rule!['nominal'], 400000);
       expect(rule['lokasi_muat'], 'DEPO');
       expect(rule['lokasi_bongkar'], 'T. LANGON');
+    });
+
+    test('prioritizes non-Betoyo pickup to Singosari private sangu', () {
+      final langon = resolvePrioritizedSanguRouteRule(
+        pickup: 'T. Langon',
+        destination: 'Singosari',
+        customerName: 'Iwan',
+        invoiceEntity: 'personal',
+      );
+      final maspion = resolvePrioritizedSanguRouteRule(
+        pickup: 'Maspion',
+        destination: 'KSI Singosari',
+        customerName: 'Iwan',
+        invoiceEntity: 'pribadi',
+      );
+      final betoyo = resolvePrioritizedSanguRouteRule(
+        pickup: 'Betoyo',
+        destination: 'Singosari',
+        customerName: 'Iwan',
+        invoiceEntity: 'personal',
+      );
+      final unknownEntity = resolvePrioritizedSanguRouteRule(
+        pickup: 'T. Langon',
+        destination: 'Singosari',
+        customerName: 'PT Siapa Saja',
+      );
+
+      expect(langon, isNotNull);
+      expect(langon!['nominal'], 980000);
+      expect(langon['lokasi_muat'], 'Selain Betoyo');
+      expect(langon['lokasi_bongkar'], 'SINGOSARI');
+      expect(maspion?['nominal'], 980000);
+      expect(betoyo, isNull);
+      expect(unknownEntity, isNull);
+    });
+
+    test('keeps PT Tritunggal Singosari sangu at company nominal', () {
+      final rule = resolvePrioritizedSanguRouteRule(
+        pickup: 'T. Langon',
+        destination: 'Singosari',
+        customerName: 'PT TRITUNGGAL MAKMUR ABADHI SEJAHTERA',
+        invoiceEntity: 'pt_ant',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule!['nominal'], 1035000);
+      expect(rule['lokasi_bongkar'], 'SINGOSARI');
     });
 
     test('prioritizes T. Langon to Surya Warna Sukoharjo route', () {

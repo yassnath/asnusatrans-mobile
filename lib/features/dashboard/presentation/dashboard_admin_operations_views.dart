@@ -23,16 +23,11 @@ class _AdminFleetListViewState extends State<_AdminFleetListView> {
   String _t(String id, String en) => _isEn ? en : id;
 
   String _normalizePlate(String value) {
-    return value.toUpperCase().replaceAll(RegExp(r'\s+'), ' ').trim();
+    return normalizeArmadaPlateText(value);
   }
 
   String? _extractPlate(String value) {
-    final match = RegExp(
-      r'[A-Z]{1,2}\s?[0-9]{1,4}\s?[A-Z]{1,3}',
-    ).firstMatch(value.toUpperCase());
-    if (match == null) return null;
-    final plate = _normalizePlate(match.group(0) ?? '');
-    return plate.isEmpty ? null : plate;
+    return extractArmadaPlateFromText(value);
   }
 
   Map<String, int> _buildUsageMap({
@@ -148,7 +143,13 @@ class _AdminFleetListViewState extends State<_AdminFleetListView> {
     final capacity = TextEditingController(
       text: _toNum(item['kapasitas']).toStringAsFixed(0),
     );
+
     bool isActive = item['is_active'] != false;
+    var selectedStatus = normalizeFleetStatus(
+      item['status'],
+      active: isActive,
+    );
+    isActive = selectedStatus != fleetStatusInactive;
     bool saving = false;
     bool dialogClosed = false;
 
@@ -158,12 +159,19 @@ class _AdminFleetListViewState extends State<_AdminFleetListView> {
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
+            final dialogWidth =
+                min(420.0, max(300.0, MediaQuery.sizeOf(context).width - 64));
             return AlertDialog(
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 24,
+                vertical: 20,
+              ),
               title: Text(_t('Edit Armada', 'Edit Fleet')),
               content: SizedBox(
-                width: 420,
+                width: dialogWidth,
                 child: SingleChildScrollView(
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       TextField(
                         controller: name,
@@ -191,73 +199,131 @@ class _AdminFleetListViewState extends State<_AdminFleetListView> {
                         value: isActive,
                         title: Text(_t('Status Aktif', 'Active Status')),
                         onChanged: (value) {
-                          setDialogState(() => isActive = value);
+                          setDialogState(() {
+                            isActive = value;
+                            selectedStatus = nextFleetStatusForActiveToggle(
+                              active: value,
+                              currentStatus: selectedStatus,
+                            );
+                          });
                         },
+                      ),
+                      const SizedBox(height: 8),
+                      CvantDropdownField<String>(
+                        value: selectedStatus,
+                        decoration: InputDecoration(
+                          labelText: _t('Status Armada', 'Fleet Status'),
+                        ),
+                        items: fleetStatusOptions
+                            .map(
+                              (status) => DropdownMenuItem<String>(
+                                value: status,
+                                child: Text(status),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: saving
+                            ? null
+                            : (value) {
+                                if (value == null) return;
+                                setDialogState(() {
+                                  selectedStatus = value;
+                                  isActive = value != fleetStatusInactive;
+                                });
+                              },
+                      ),
+                      const SizedBox(height: 18),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: saving
+                                  ? null
+                                  : () {
+                                      dialogClosed = true;
+                                      Navigator.of(context).pop();
+                                    },
+                              style: CvantButtonStyles.outlined(
+                                context,
+                                color: AppColors.isLight(context)
+                                    ? AppColors.textSecondaryLight
+                                    : const Color(0xFFE2E8F0),
+                                borderColor: AppColors.neutralOutline,
+                              ).copyWith(
+                                minimumSize: const WidgetStatePropertyAll(
+                                  Size(0, 46),
+                                ),
+                              ),
+                              child: Text(_t('Batal', 'Cancel')),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: FilledButton(
+                              onPressed: saving
+                                  ? null
+                                  : () async {
+                                      if (name.text.trim().isEmpty ||
+                                          plate.text.trim().isEmpty) {
+                                        _snack(
+                                            _t('Nama dan plat nomor wajib diisi.',
+                                                'Truck name and plate number are required.'),
+                                            error: true);
+                                        return;
+                                      }
+                                      setDialogState(() => saving = true);
+                                      try {
+                                        final effectiveStatus = isActive
+                                            ? selectedStatus
+                                            : fleetStatusInactive;
+                                        await widget.repository.updateArmada(
+                                          id: '${item['id']}',
+                                          name: name.text,
+                                          plate: plate.text,
+                                          capacity: _toNum(capacity.text),
+                                          active: effectiveStatus !=
+                                              fleetStatusInactive,
+                                          status: effectiveStatus,
+                                        );
+                                        if (!mounted || !context.mounted) {
+                                          return;
+                                        }
+                                        dialogClosed = true;
+                                        Navigator.of(context).pop();
+                                        _snack(_t('Armada berhasil diperbarui.',
+                                            'Fleet updated successfully.'));
+                                        await _refresh();
+                                      } catch (e) {
+                                        if (!mounted) return;
+                                        _snack(
+                                            e.toString().replaceFirst(
+                                                'Exception: ', ''),
+                                            error: true);
+                                      } finally {
+                                        if (mounted && !dialogClosed) {
+                                          setDialogState(() => saving = false);
+                                        }
+                                      }
+                                    },
+                              style: CvantButtonStyles.filled(
+                                context,
+                                color: AppColors.blue,
+                              ).copyWith(
+                                minimumSize: const WidgetStatePropertyAll(
+                                  Size(0, 46),
+                                ),
+                              ),
+                              child: Text(saving
+                                  ? _t('Menyimpan...', 'Saving...')
+                                  : _t('Simpan', 'Save')),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ),
               ),
-              actions: [
-                TextButton(
-                  onPressed: saving
-                      ? null
-                      : () {
-                          dialogClosed = true;
-                          Navigator.of(context).pop();
-                        },
-                  style: CvantButtonStyles.outlined(
-                    context,
-                    color: AppColors.isLight(context)
-                        ? AppColors.textSecondaryLight
-                        : const Color(0xFFE2E8F0),
-                    borderColor: AppColors.neutralOutline,
-                  ),
-                  child: Text(_t('Batal', 'Cancel')),
-                ),
-                FilledButton(
-                  onPressed: saving
-                      ? null
-                      : () async {
-                          if (name.text.trim().isEmpty ||
-                              plate.text.trim().isEmpty) {
-                            _snack(
-                                _t('Nama dan plat nomor wajib diisi.',
-                                    'Truck name and plate number are required.'),
-                                error: true);
-                            return;
-                          }
-                          setDialogState(() => saving = true);
-                          try {
-                            await widget.repository.updateArmada(
-                              id: '${item['id']}',
-                              name: name.text,
-                              plate: plate.text,
-                              capacity: _toNum(capacity.text),
-                              active: isActive,
-                              status: isActive ? 'Ready' : 'Inactive',
-                            );
-                            if (!mounted || !context.mounted) return;
-                            dialogClosed = true;
-                            Navigator.of(context).pop();
-                            _snack(_t('Armada berhasil diperbarui.',
-                                'Fleet updated successfully.'));
-                            await _refresh();
-                          } catch (e) {
-                            if (!mounted) return;
-                            _snack(e.toString().replaceFirst('Exception: ', ''),
-                                error: true);
-                          } finally {
-                            if (mounted && !dialogClosed) {
-                              setDialogState(() => saving = false);
-                            }
-                          }
-                        },
-                  child: Text(saving
-                      ? _t('Menyimpan...', 'Saving...')
-                      : _t('Simpan', 'Save')),
-                ),
-              ],
             );
           },
         );
@@ -442,10 +508,10 @@ class _AdminFleetListViewState extends State<_AdminFleetListView> {
                       return const _DashboardContentFooter();
                     }
                     final item = data[index];
-                    final status = (item['is_active'] == false) ||
-                            '${item['status']}'.toLowerCase() == 'inactive'
-                        ? 'Inactive'
-                        : '${item['status'] ?? 'Ready'}';
+                    final status = normalizeFleetStatus(
+                      item['status'],
+                      active: item['is_active'] != false,
+                    );
                     final used = usage['${item['id']}'] ?? 0;
                     return _PanelCard(
                       child: Column(
@@ -946,8 +1012,7 @@ class _AdminOrderAcceptanceViewState extends State<_AdminOrderAcceptanceView> {
                 final statusLower = status.toLowerCase();
                 final isUpdating = _updatingItemId == 'order:${order['id']}';
                 final customer = customerMap['${order['customer_id']}'];
-                final isPaid = statusLower.contains('paid') &&
-                    !statusLower.contains('unpaid');
+                final isPaid = isPaidPaymentStatus(status);
                 final canCreateInvoice = statusLower.contains('accepted');
                 final customerName =
                     customer?['name'] ?? customer?['username'] ?? '-';

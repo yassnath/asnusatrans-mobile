@@ -13,6 +13,12 @@ Thumbs.db
 *.tmp
 ~$*
 ~$*.xlsx
+.codex/
+.codex_tmp/
+**/pasted-text.txt
+**/Pasted text.txt
+**/.gradle/
+supabase/.temp/
 
 ########################################
 # Environment files (JANGAN PERNAH UPLOAD)

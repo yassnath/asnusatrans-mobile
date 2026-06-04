@@ -66,12 +66,103 @@ String normalizeSanguPlace(String value) {
   return normalized;
 }
 
+bool sanguIsBetoyoPlace(String value) {
+  final key = normalizeSanguPlace(value);
+  return key == 'betoyo' || key.replaceAll(' ', '') == 'betoyo';
+}
+
+bool sanguIsNonBetoyoPickupRule(String value) {
+  final key = normalizeSanguPlace(value);
+  final compact = key.replaceAll(' ', '');
+  return key == 'selain betoyo' ||
+      key == 'non betoyo' ||
+      compact == 'selainbetoyo' ||
+      compact == 'nonbetoyo';
+}
+
+String normalizeSanguCustomerKey(String value) {
+  return value
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+}
+
+String normalizeSanguEntityKey(String value) {
+  return normalizeSanguCustomerKey(value).replaceAll(' ', '_');
+}
+
+bool sanguIsTritunggalMakmurCustomer(String value) {
+  final key = normalizeSanguCustomerKey(value);
+  if (key.isEmpty) return false;
+  return key.contains('tritunggal') &&
+      key.contains('makmur') &&
+      key.contains('sejahtera');
+}
+
+bool sanguIsPersonalContext({
+  required String customerName,
+  required String invoiceEntity,
+}) {
+  final entityKey = normalizeSanguEntityKey(invoiceEntity);
+  if (entityKey == 'personal' || entityKey == 'pribadi') return true;
+  if (entityKey == 'cv_ant' ||
+      entityKey == 'pt_ant' ||
+      entityKey == 'cv' ||
+      entityKey == 'pt') {
+    return false;
+  }
+
+  final customerKey = normalizeSanguCustomerKey(customerName);
+  if (customerKey.isEmpty) return false;
+  if (sanguIsTritunggalMakmurCustomer(customerName)) return false;
+  return !RegExp(r'(^|\s)(pt|cv|tbk|ud|pd)(\s|$)').hasMatch(customerKey);
+}
+
 Map<String, dynamic>? resolvePrioritizedSanguRouteRule({
   required String pickup,
   required String destination,
+  String customerName = '',
+  String invoiceEntity = '',
 }) {
   final pickupNorm = normalizeSanguPlace(pickup);
   final destinationNorm = normalizeSanguPlace(destination);
+  final isNonBetoyoToSingosari = pickupNorm.isNotEmpty &&
+      !sanguIsBetoyoPlace(pickupNorm) &&
+      destinationNorm == 'singosari';
+  if (isNonBetoyoToSingosari && sanguIsTritunggalMakmurCustomer(customerName)) {
+    return <String, dynamic>{
+      'tempat': 'PT TRITUNGGAL MAKMUR ABADHI SEJAHTERA - SINGOSARI',
+      'lokasi_muat': '',
+      'lokasi_bongkar': 'SINGOSARI',
+      'nominal': 1035000,
+      'customer_name': 'PT Tritunggal Makmur Abadhi Sejahtera',
+      '__customer_norm': 'pt tritunggal makmur abadhi sejahtera',
+      '__muat_norm': '',
+      '__bongkar_norm': 'singosari',
+    };
+  }
+
+  final nonBetoyoToSingosari = pickupNorm.isNotEmpty &&
+      !sanguIsBetoyoPlace(pickupNorm) &&
+      destinationNorm == 'singosari' &&
+      sanguIsPersonalContext(
+        customerName: customerName,
+        invoiceEntity: invoiceEntity,
+      );
+  if (nonBetoyoToSingosari) {
+    return <String, dynamic>{
+      'tempat': 'SELAIN BETOYO - SINGOSARI',
+      'lokasi_muat': 'Selain Betoyo',
+      'lokasi_bongkar': 'SINGOSARI',
+      'nominal': 980000,
+      'invoice_entity': 'personal',
+      '__entity_norm': 'personal',
+      '__muat_norm': 'selain betoyo',
+      '__bongkar_norm': 'singosari',
+    };
+  }
+
   final batangToLangon = pickupNorm == 'batang' && destinationNorm == 'langon';
   final langonToBatang = pickupNorm == 'langon' && destinationNorm == 'batang';
   if (batangToLangon || langonToBatang) {
@@ -166,6 +257,18 @@ Map<String, dynamic>? resolvePrioritizedSanguRouteRule({
       'nominal': 3400000,
       '__muat_norm': 'betoyo',
       '__bongkar_norm': 'batang',
+    };
+  }
+
+  final betoyoToLangon = pickupNorm == 'betoyo' && destinationNorm == 'langon';
+  if (betoyoToLangon) {
+    return <String, dynamic>{
+      'tempat': 'BETOYO - T. LANGON',
+      'lokasi_muat': 'BETOYO',
+      'lokasi_bongkar': 'T. LANGON',
+      'nominal': 500000,
+      '__muat_norm': 'betoyo',
+      '__bongkar_norm': 'langon',
     };
   }
 

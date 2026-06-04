@@ -181,7 +181,7 @@ class _CustomerOrderHistoryViewState extends State<_CustomerOrderHistoryView> {
               final canPay = (statusLower.contains('accepted') ||
                       statusLower.contains('pending payment') ||
                       statusLower == 'pending') &&
-                  !statusLower.contains('paid') &&
+                  !isPaidPaymentStatus(status) &&
                   !statusLower.contains('rejected');
 
               return _PanelCard(
@@ -233,7 +233,7 @@ class _CustomerOrderHistoryViewState extends State<_CustomerOrderHistoryView> {
                         label: Text(
                           canPay
                               ? _t('Bayar', 'Pay')
-                              : statusLower.contains('paid')
+                              : isPaidPaymentStatus(status)
                                   ? _t('Paid', 'Paid')
                                   : _t('Waiting', 'Waiting'),
                         ),

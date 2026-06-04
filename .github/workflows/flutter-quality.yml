@@ -6,9 +6,17 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: flutter-quality-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   quality:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -23,9 +31,11 @@ jobs:
       - name: Flutter pub get
         run: flutter pub get
 
+      - name: Dashboard logic format check
+        run: dart format --output=none --set-exit-if-changed lib/features/dashboard/utils test/features/dashboard
+
       - name: Flutter analyze
         run: flutter analyze
 
       - name: Flutter test
-        run: flutter test
-
+        run: flutter test --reporter github

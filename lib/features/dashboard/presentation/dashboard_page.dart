@@ -33,10 +33,23 @@ import '../../auth/data/biometric_login_service.dart';
 import '../../auth/models/auth_session.dart';
 import '../data/dashboard_repository.dart';
 import '../models/dashboard_models.dart';
+import '../utils/armada_identifier_logic.dart';
+import '../utils/expense_classifier_logic.dart';
+import '../utils/fleet_status_logic.dart';
+import '../utils/gabungan_pricing_rule_logic.dart';
 import '../utils/income_pricing_rule_logic.dart';
+import '../utils/invoice_detail_amount_logic.dart';
 import '../utils/invoice_pph_logic.dart';
+import '../utils/invoice_print_layout_logic.dart';
+import '../utils/manual_armada_logic.dart';
 import '../utils/payment_rounding_logic.dart';
+import '../utils/payment_status_logic.dart';
 import '../utils/report_grouping_logic.dart';
+import '../utils/report_label_logic.dart';
+import '../utils/report_payment_edit_logic.dart';
+import '../utils/report_period_logic.dart';
+import '../utils/report_print_selection_logic.dart';
+import '../utils/report_table_layout_logic.dart';
 import '../utils/tolakan_logic.dart';
 import 'widgets/armada_overview_card.dart';
 import 'widgets/customer_orders_card.dart';
@@ -2204,10 +2217,10 @@ class _StatusPill extends StatelessWidget {
         lower.contains('non-active');
     final isActive = lower.contains('active') && !isNonActive;
     final isCancelled = lower.contains('cancel') || lower.contains('reject');
-    final isUnpaid = lower.contains('unpaid');
-    final isPartial = lower.contains('partial');
+    final isUnpaid = isUnpaidPaymentStatus(label);
+    final isPartial = isPartialPaymentStatus(label);
     final isWaiting = lower.contains('waiting') || lower.contains('pending');
-    final isPaid = lower.contains('paid') && !isUnpaid;
+    final isPaid = isPaidPaymentStatus(label);
     final isRecorded = lower.contains('recorded');
     final color = lower.contains('ready')
         ? AppColors.success

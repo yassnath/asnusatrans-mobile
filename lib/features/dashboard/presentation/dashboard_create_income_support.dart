@@ -260,41 +260,21 @@ extension _AdminCreateIncomeViewStateSupport on _AdminCreateIncomeViewState {
   }
 
   bool _isManualArmadaRow(Map<String, dynamic> row) {
-    if (row['armada_is_manual'] == true) return true;
-    if ('${row['armada_manual'] ?? ''}'.trim().isNotEmpty) return true;
-    return _isManualArmadaText(row['armada_label']) ||
-        _isManualArmadaText(row['armada']) ||
-        _isManualArmadaText(row['plat_nomor']) ||
-        _isManualArmadaText(row['no_polisi']);
+    return rowUsesManualArmada(row);
   }
 
   bool _isManualArmadaText(dynamic value) {
-    final raw = '${value ?? ''}'.trim();
-    if (raw.isEmpty) return false;
-    final normalized =
-        raw.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
-    return normalized == 'gabungan' ||
-        normalized.contains('gabungan') ||
-        normalized == 'manual' ||
-        normalized.contains('input manual');
+    return isManualArmadaText(value);
   }
 
   void _clearDriverForManualArmadaIfNeeded(Map<String, dynamic> row) {
     if (!_isManualArmadaRow(row)) return;
     final manual = '${row['armada_manual'] ?? ''}'.trim();
     if (manual.isEmpty) {
-      for (final key in const [
-        'armada_label',
-        'armada',
-        'plat_nomor',
-        'no_polisi',
-      ]) {
-        final value = '${row[key] ?? ''}'.trim();
-        if (_isManualArmadaText(value)) {
-          row['armada_manual'] = value;
-          row['armada_label'] = value;
-          break;
-        }
+      final detectedManual = manualArmadaLabelFromRow(row);
+      if (detectedManual.isNotEmpty) {
+        row['armada_manual'] = detectedManual;
+        row['armada_label'] = detectedManual;
       }
     }
     row['armada_id'] = '';
@@ -871,41 +851,26 @@ extension _AdminCreateIncomeViewStateSupport on _AdminCreateIncomeViewState {
   }
 
   Color _armadaStatusColor(String status) {
-    final lower = status.toLowerCase();
-    if (lower.contains('full')) return AppColors.warning;
-    if (lower.contains('ready')) return AppColors.success;
-    if (lower.contains('inactive') ||
-        lower.contains('non active') ||
-        lower.contains('non-active')) {
+    if (isFullFleetStatus(status)) return AppColors.warning;
+    if (isReadyFleetStatus(status)) return AppColors.success;
+    if (isInactiveFleetStatus(status)) {
       return AppColors.neutralOutline;
     }
     return AppColors.textMutedFor(context);
   }
 
   String _normalizePlateText(String value) {
-    return value.toUpperCase().replaceAll(RegExp(r'\s+'), ' ').trim();
+    return normalizeArmadaPlateText(value);
   }
 
   String? _extractPlateFromText(String value) {
-    final match = RegExp(
-      r'[A-Z]{1,2}\s?[0-9]{1,4}\s?[A-Z]{1,3}',
-    ).firstMatch(value.toUpperCase());
-    if (match == null) return null;
-    final plate = _normalizePlateText(match.group(0) ?? '');
-    return plate.isEmpty ? null : plate;
+    return extractArmadaPlateFromText(value);
   }
 
   Map<String, String> _buildArmadaIdByPlate(
     List<Map<String, dynamic>> armadas,
   ) {
-    final map = <String, String>{};
-    for (final armada in armadas) {
-      final id = '${armada['id'] ?? ''}'.trim();
-      final plate = _normalizePlateText('${armada['plat_nomor'] ?? ''}');
-      if (id.isEmpty || plate.isEmpty) continue;
-      map[plate] = id;
-    }
-    return map;
+    return buildArmadaIdByPlate(armadas);
   }
 
   String _resolveArmadaIdFromInput({

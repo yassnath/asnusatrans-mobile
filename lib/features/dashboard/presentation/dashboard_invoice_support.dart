@@ -260,19 +260,7 @@ class _FixedInvoicePaymentSummary {
 }
 
 double _fixedInvoicePaymentNum(dynamic value) {
-  if (value == null) return 0;
-  if (value is num) return value.toDouble();
-  var cleaned = value.toString().replaceAll(RegExp(r'[^0-9,.-]'), '');
-  final dotCount = '.'.allMatches(cleaned).length;
-  final hasComma = cleaned.contains(',');
-  if (hasComma && dotCount >= 1) {
-    cleaned = cleaned.replaceAll('.', '').replaceAll(',', '.');
-  } else if (!hasComma && dotCount > 1) {
-    cleaned = cleaned.replaceAll('.', '');
-  } else if (hasComma) {
-    cleaned = cleaned.replaceAll(',', '.');
-  }
-  return double.tryParse(cleaned) ?? 0;
+  return parseInvoiceDetailAmount(value);
 }
 
 List<Map<String, dynamic>> _fixedInvoiceMapList(dynamic value) {
@@ -313,20 +301,16 @@ String _fixedInvoicePaymentDetailKey({
 }
 
 String _fixedInvoicePaymentExtractPlate(Map<String, dynamic> row) {
-  final direct =
-      '${row['plat_nomor'] ?? row['no_polisi'] ?? ''}'.toUpperCase().trim();
+  final direct = normalizeArmadaPlateText(
+    row['plat_nomor'] ?? row['no_polisi'],
+  );
   if (direct.isNotEmpty && direct != '-') return direct;
 
   for (final key in const ['armada_manual', 'armada_label', 'armada']) {
     final value = '${row[key] ?? ''}'.trim();
     if (value.isEmpty) continue;
-    final match = RegExp(
-      r'\b[A-Z]{1,2}\s?\d{1,4}\s?[A-Z]{1,3}\b',
-    ).firstMatch(value.toUpperCase());
-    if (match != null) {
-      final plate = (match.group(0) ?? '').trim();
-      if (plate.isNotEmpty) return plate;
-    }
+    final plate = extractArmadaPlateFromText(value);
+    if (plate != null && plate.isNotEmpty) return plate;
     if (key == 'armada_manual') return value;
   }
   return '-';
@@ -342,27 +326,20 @@ double _fixedInvoicePaymentDetailSubtotal(
   Map<String, dynamic> invoice,
   int detailCount,
 ) {
-  for (final key in const [
-    'manual_subtotal',
-    'subtotal_manual',
-    'subtotal',
-    'total',
-    'total_biaya',
-    'jumlah',
-  ]) {
-    final value = _fixedInvoicePaymentNum(row[key]);
-    if (value > 0) return value;
-  }
-  final tonase = _fixedInvoicePaymentNum(row['tonase'] ?? invoice['tonase']);
-  final harga = _fixedInvoicePaymentNum(row['harga'] ?? invoice['harga']);
-  final computed = tonase * harga;
-  if (computed > 0) return computed;
-  final fallback = _fixedInvoicePaymentNum(
-    invoice['total_bayar'] ?? invoice['total_biaya'],
+  final parentFallback = _fixedInvoicePaymentNum(
+    invoice['total_bayar'],
   );
-  if (fallback <= 0) return 0;
-  if (detailCount <= 1) return fallback;
-  return fallback / detailCount;
+  final fallback = parentFallback > 0
+      ? parentFallback
+      : _fixedInvoicePaymentNum(invoice['total_biaya']);
+  return resolveInvoiceDetailSubtotal(
+    row,
+    fallback: {
+      'tonase': invoice['tonase'],
+      'harga': invoice['harga'],
+    },
+    fallbackSubtotal: detailCount <= 1 ? fallback : fallback / detailCount,
+  );
 }
 
 double _roundInvoiceRupiah(num value) {
@@ -435,8 +412,7 @@ List<_FixedInvoicePaymentEntry> _buildFixedInvoicePaymentEntries({
       entry.detailKey: entry,
   };
   final fallbackPaidAt = (batch?.paidAt ?? '').trim();
-  final statusLower = (batch?.status ?? '').trim().toLowerCase();
-  final markAllPaidByBatch = statusLower == 'paid';
+  final markAllPaidByBatch = isPaidPaymentStatus(batch?.status);
   final entries = <_FixedInvoicePaymentEntry>[];
 
   for (final invoice in sourceInvoices) {
@@ -555,7 +531,6 @@ _FixedInvoicePaymentSummary _summarizeFixedInvoicePayments({
             paid: manualPaidAmount,
           ) ||
           (entries.isNotEmpty && entries.every((entry) => entry.paid)));
-  final explicitStatus = (batch?.status ?? '').trim().toLowerCase();
   final paidAtCandidates = <String>[
     _fixedInvoicePaymentDateOnly(batch?.paidAt),
     ...entries
@@ -565,15 +540,12 @@ _FixedInvoicePaymentSummary _summarizeFixedInvoicePayments({
     ..sort();
   final paidAt =
       anyPaid && paidAtCandidates.isNotEmpty ? paidAtCandidates.last : null;
-  final status = allPaid
-      ? 'Paid'
-      : anyPaid
-          ? 'Partial'
-          : explicitStatus.contains('partial')
-              ? 'Partial'
-              : (explicitStatus == 'paid' && entries.isEmpty
-                  ? 'Paid'
-                  : 'Unpaid');
+  final status = resolvePaymentStatusLabel(
+    total: totalAmount,
+    paid: allPaid ? totalAmount : paidAmount,
+    hasAnyPayment: anyPaid,
+    explicitStatus: batch?.status,
+  );
   return _FixedInvoicePaymentSummary(
     entries: entries,
     totalAmount: totalAmount,
@@ -921,32 +893,18 @@ String _formatEditableNumberShared(dynamic value) {
       .replaceFirst(RegExp(r'\.$'), '');
 }
 
-double _resolveInvoiceDetailSubtotalShared(Map<String, dynamic> row) {
-  final manual = _toNum(row['manual_subtotal'] ?? row['subtotal_manual']);
-  if (manual > 0) return manual;
-
-  final computed = _toNum(row['tonase']) * _toNum(row['harga']);
-  if (row['subtotal_auto'] == true && computed > 0) return computed;
-
-  final explicit = _toNum(row['subtotal'] ?? row['total'] ?? row['jumlah']);
-  if (explicit > 0) return explicit;
-  return computed;
-}
-
 double _resolveInvoiceDetailExcelSubtotalShared(Map<String, dynamic> row) {
-  return _roundInvoiceRupiah(_resolveInvoiceDetailSubtotalShared(row));
+  return resolveInvoiceDetailExcelSubtotal(row);
 }
 
 double _resolveInvoiceDetailsExcelSubtotalShared(
   Iterable<Map<String, dynamic>> rows, {
   num fallbackSubtotal = 0,
 }) {
-  final rowTotal = rows.fold<double>(
-    0,
-    (sum, row) => sum + _resolveInvoiceDetailExcelSubtotalShared(row),
+  return resolveInvoiceDetailsExcelSubtotal(
+    rows,
+    fallbackSubtotal: fallbackSubtotal,
   );
-  if (rowTotal > 0) return rowTotal;
-  return _roundInvoiceRupiah(fallbackSubtotal);
 }
 
 Map<String, dynamic>? _resolveHargaRuleShared({

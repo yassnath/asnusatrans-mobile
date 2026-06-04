@@ -5,8 +5,14 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/security/app_security.dart';
 import '../../../core/utils/formatters.dart';
 import '../models/dashboard_models.dart';
+import '../utils/armada_identifier_logic.dart';
+import '../utils/expense_classifier_logic.dart';
+import '../utils/fleet_status_logic.dart';
+import '../utils/gabungan_pricing_rule_logic.dart';
 import '../utils/income_pricing_rule_logic.dart';
+import '../utils/invoice_detail_amount_logic.dart';
 import '../utils/invoice_pph_logic.dart';
+import '../utils/manual_armada_logic.dart';
 import '../utils/sangu_rule_logic.dart';
 import '../utils/tolakan_logic.dart';
 
@@ -146,8 +152,6 @@ class _AutoSanguSyncResult {
 
 class DashboardRepository {
   DashboardRepository(this._supabase);
-
-  static const _gabunganHargaRuleCustomerName = 'Gabungan';
 
   final SupabaseClient _supabase;
   bool? _invoiceNumberColumnAvailable;
@@ -720,13 +724,16 @@ class DashboardRepository {
         final id = '${armada['id'] ?? ''}'.trim();
         if (!_isLikelyUuid(id)) continue;
 
-        final isInactive = (armada['is_active'] == false) ||
-            '${armada['status'] ?? ''}'.trim().toLowerCase() == 'inactive';
+        final isInactive = isInactiveFleetStatus(
+          armada['status'],
+          active: armada['is_active'] != false,
+        );
         if (isInactive) continue;
 
-        final nextStatus = fullArmadaIds.contains(id) ? 'Full' : 'Ready';
-        final currentStatus = '${armada['status'] ?? 'Ready'}'.trim();
-        if (currentStatus.toLowerCase() == nextStatus.toLowerCase()) continue;
+        final nextStatus =
+            fullArmadaIds.contains(id) ? fleetStatusFull : fleetStatusReady;
+        final currentStatus = normalizeFleetStatus(armada['status']);
+        if (currentStatus == nextStatus) continue;
 
         armada['status'] = nextStatus;
         updates.add(MapEntry(id, nextStatus));
@@ -754,9 +761,10 @@ class DashboardRepository {
     result['kapasitas'] = _num(row['kapasitas']);
 
     final isActive = row['is_active'] != false;
-    final rawStatus = '${row['status'] ?? ''}'.trim();
-    final normalizedStatus =
-        rawStatus.isEmpty ? (isActive ? 'Ready' : 'Inactive') : rawStatus;
+    final normalizedStatus = normalizeFleetStatus(
+      row['status'],
+      active: isActive,
+    );
 
     result['status'] = normalizedStatus;
     result['is_active'] = isActive;
@@ -1002,182 +1010,15 @@ class DashboardRepository {
   }
 
   double _resolveIncomeDetailTotal(Map<String, dynamic> detail) {
-    final manualSubtotal =
-        _num(detail['manual_subtotal'] ?? detail['subtotal_manual']);
-    if (manualSubtotal > 0) return roundInvoiceRupiah(manualSubtotal);
-
-    final tonase = _num(detail['tonase']);
-    final harga = _num(detail['harga']);
-    final computedTotal = max(0, tonase * harga).toDouble();
-    if (detail['subtotal_auto'] == true && computedTotal > 0) {
-      return roundInvoiceRupiah(computedTotal);
-    }
-
-    final explicitSubtotal = _num(
-      detail['subtotal'] ?? detail['total'] ?? detail['jumlah'],
-    );
-    if (explicitSubtotal > 0) return roundInvoiceRupiah(explicitSubtotal);
-    return roundInvoiceRupiah(computedTotal);
+    return resolveInvoiceDetailExcelSubtotal(detail);
   }
 
   bool _detailUsesManualArmada(Map<String, dynamic> detail) {
-    final isManual = detail['armada_is_manual'];
-    if (isManual is bool && isManual) return true;
-    final isManualText = '${isManual ?? ''}'.trim().toLowerCase();
-    if (isManualText == 'true' || isManualText == '1') return true;
-    final manual = '${detail['armada_manual'] ?? ''}'.trim();
-    if (manual.isNotEmpty) return true;
-    return _isManualArmadaText(detail['armada_label']) ||
-        _isManualArmadaText(detail['armada']) ||
-        _isManualArmadaText(detail['plat_nomor']) ||
-        _isManualArmadaText(detail['no_polisi']);
+    return rowUsesManualArmada(detail);
   }
 
   bool _isManualArmadaText(dynamic value) {
-    final raw = '${value ?? ''}'.trim();
-    if (raw.isEmpty) return false;
-    final normalized =
-        raw.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
-    return normalized == 'gabungan' ||
-        normalized.contains('gabungan') ||
-        normalized == 'manual' ||
-        normalized.contains('input manual');
-  }
-
-  String _normalizeGabunganExpenseRouteKey(dynamic value) {
-    final key = normalizeIncomePricingRuleKey('${value ?? ''}');
-    if (key.contains('bimoli')) return 'bimoli';
-    if (key.contains('kendal')) return 'kendal';
-    if (key.contains('kediri')) return 'kediri';
-    if (key.contains('semarang')) return 'semarang';
-    if (key.contains('kedawung') || key.contains('dawung')) {
-      return 'kedawung';
-    }
-    if (key.contains('royal')) return 'royal';
-    if (key.contains('pare')) return 'pare';
-    if (key.contains('gempol')) return 'gempol';
-    if (key.contains('mkp')) return 'mkp';
-    if (key.contains('kedamean')) return 'kedamean';
-    if (key.contains('temanggung')) return 'temanggung';
-    if (key.contains('kig')) return 'kig';
-    if (key.contains('sgm')) return 'sgm';
-    if (key.contains('rex') || key.contains('beji')) return 'rex_beji';
-    if (key == 't langon' || key == 'langon' || key == 'tlangon') {
-      return 'langon';
-    }
-    if (key.contains('maspion')) return 'maspion';
-    if (key == 'betoyo') return 'betoyo';
-    return key;
-  }
-
-  bool _isGabunganHargaRuleCustomer(dynamic value) {
-    final key = normalizeIncomePricingRuleKey('${value ?? ''}');
-    return key == normalizeIncomePricingRuleKey(_gabunganHargaRuleCustomerName);
-  }
-
-  double _resolveGabunganExpenseRuleHargaPerTon({
-    required List<Map<String, dynamic>> rules,
-    required String pickup,
-    required String destination,
-  }) {
-    if (rules.isEmpty) return 0.0;
-    final pickupKey = normalizeIncomePricingRuleKey(pickup);
-    final destinationKey = normalizeIncomePricingRuleKey(destination);
-    if (destinationKey.isEmpty) return 0.0;
-
-    int locationScore(String inputKey, String ruleKey) {
-      if (ruleKey.isEmpty) return 100;
-      if (inputKey.isEmpty) return 0;
-      if (!incomePricingLocationKeyMatches(inputKey, ruleKey)) return 0;
-      final inputCompact = inputKey.replaceAll(' ', '');
-      final ruleCompact = ruleKey.replaceAll(' ', '');
-      if (inputKey == ruleKey || inputCompact == ruleCompact) return 1000;
-      return 600;
-    }
-
-    Map<String, dynamic>? bestRule;
-    var bestScore = -1;
-    for (final rule in rules) {
-      if (rule['is_active'] == false) continue;
-      if (!_isGabunganHargaRuleCustomer(rule['customer_name'])) continue;
-      final harga = _num(rule['harga_per_ton'] ?? rule['harga']);
-      if (harga <= 0) continue;
-
-      final ruleBongkarKey =
-          normalizeIncomePricingRuleKey('${rule['lokasi_bongkar'] ?? ''}');
-      if (!incomePricingLocationKeyMatches(destinationKey, ruleBongkarKey)) {
-        continue;
-      }
-
-      final ruleMuatKey =
-          normalizeIncomePricingRuleKey('${rule['lokasi_muat'] ?? ''}');
-      if (ruleMuatKey.isNotEmpty &&
-          !incomePricingLocationKeyMatches(pickupKey, ruleMuatKey)) {
-        continue;
-      }
-
-      final priority = int.tryParse('${rule['priority'] ?? ''}') ??
-          _num(rule['priority']).toInt();
-      final score = priority +
-          locationScore(pickupKey, ruleMuatKey) +
-          locationScore(destinationKey, ruleBongkarKey);
-      if (score > bestScore) {
-        bestScore = score;
-        bestRule = rule;
-      }
-    }
-
-    return _num(bestRule?['harga_per_ton'] ?? bestRule?['harga']);
-  }
-
-  double _resolveGabunganExpenseHargaPerTon({
-    required String pickup,
-    required String destination,
-    String? customerName,
-    List<Map<String, dynamic>> hargaPerTonRules =
-        const <Map<String, dynamic>>[],
-  }) {
-    final ruleHarga = _resolveGabunganExpenseRuleHargaPerTon(
-      rules: hargaPerTonRules,
-      pickup: pickup,
-      destination: destination,
-    );
-    if (ruleHarga > 0) return ruleHarga;
-
-    final pickupKey = _normalizeGabunganExpenseRouteKey(pickup);
-    final destinationKey = _normalizeGabunganExpenseRouteKey(destination);
-    if (pickupKey == 'betoyo' && destinationKey == 'bimoli') return 33.0;
-    if (pickupKey == 'maspion' && destinationKey == 'langon') return 23.0;
-    switch (destinationKey) {
-      case 'kendal':
-        return 170.0;
-      case 'kediri':
-        return 80.0;
-      case 'semarang':
-        return 158.0;
-      case 'kedawung':
-        return 40.0;
-      case 'royal':
-        return 40.0;
-      case 'pare':
-        return 78.0;
-      case 'gempol':
-        return 50.0;
-      case 'mkp':
-        return 50.0;
-      case 'kedamean':
-        return 41.0;
-      case 'temanggung':
-        return 230.0;
-      case 'kig':
-        return 38.0;
-      case 'sgm':
-        return 40.0;
-      case 'rex_beji':
-        return 53.0;
-      default:
-        return 0.0;
-    }
+    return isManualArmadaText(value);
   }
 
   double _resolveGabunganExpenseTonase(Map<String, dynamic> detail) {
@@ -1203,6 +1044,7 @@ class DashboardRepository {
     String? fallbackArmadaId,
     String? fallbackCargo,
     String? fallbackCustomerName,
+    String? fallbackInvoiceEntity,
     List<Map<String, dynamic>>? preloadedRules,
     List<Map<String, dynamic>>? preloadedHargaPerTonRules,
     Map<String, String>? preloadedPlateById,
@@ -1404,15 +1246,10 @@ class DashboardRepository {
         }
         if (_detailUsesManualArmada(detail)) {
           final tonase = _resolveGabunganExpenseTonase(detail);
-          final gabunganHarga = _resolveGabunganExpenseHargaPerTon(
+          final gabunganHarga = resolveGabunganHargaPerKg(
             pickup: originalPickup,
             destination: originalDestination,
-            customerName: _firstNonEmptyText([
-              detail['nama_pelanggan'],
-              detail['customer_name'],
-              fallbackCustomerName,
-            ]),
-            hargaPerTonRules: hargaPerTonRules,
+            rules: hargaPerTonRules,
           );
           final gabunganTotal = tonase > 0 && gabunganHarga > 0
               ? roundInvoiceRupiah(tonase * gabunganHarga)
@@ -1460,12 +1297,30 @@ class DashboardRepository {
                 rules,
                 pickup: displayRoute.pickup,
                 destination: displayRoute.destination,
+                customerName: _firstNonEmptyText([
+                  detail['nama_pelanggan'],
+                  detail['customer_name'],
+                  fallbackCustomerName,
+                ]),
+                invoiceEntity: _firstNonEmptyText([
+                  detail['invoice_entity'],
+                  fallbackInvoiceEntity,
+                ]),
               )
             : null;
         final baseMatch = _findSanguRuleMatch(
           rules,
           pickup: baseRoute.pickup,
           destination: baseRoute.destination,
+          customerName: _firstNonEmptyText([
+            detail['nama_pelanggan'],
+            detail['customer_name'],
+            fallbackCustomerName,
+          ]),
+          invoiceEntity: _firstNonEmptyText([
+            detail['invoice_entity'],
+            fallbackInvoiceEntity,
+          ]),
         );
         final match = displayRouteMatch ?? baseMatch;
 
@@ -1665,6 +1520,7 @@ class DashboardRepository {
           fallbackArmadaId: '${invoice['armada_id'] ?? ''}',
           fallbackCargo: '${invoice['muatan'] ?? ''}',
           fallbackCustomerName: '${invoice['nama_pelanggan'] ?? ''}',
+          fallbackInvoiceEntity: '${invoice['invoice_entity'] ?? ''}',
           preloadedRules: rules,
           preloadedHargaPerTonRules: hargaPerTonRules,
           preloadedPlateById: plateById,
@@ -1917,11 +1773,30 @@ class DashboardRepository {
 
   Future<List<Map<String, dynamic>>> _fetchSanguRulesBestEffort() async {
     try {
-      final res = await _supabase
-          .from('sangu_driver_rules')
-          .select('tempat,lokasi_muat,lokasi_bongkar,nominal,is_active')
-          .eq('is_active', true);
-      return _toMapList(res)
+      Future<List<Map<String, dynamic>>> fetchRules(String columns) async {
+        final res = await _supabase
+            .from('sangu_driver_rules')
+            .select(columns)
+            .eq('is_active', true);
+        return _toMapList(res);
+      }
+
+      List<Map<String, dynamic>> rows;
+      try {
+        rows = await fetchRules(
+          'tempat,lokasi_muat,lokasi_bongkar,nominal,is_active,customer_name,invoice_entity',
+        );
+      } on PostgrestException catch (error) {
+        final missingFilterColumns = ['customer_name', 'invoice_entity'].any(
+          (column) => _isMissingColumnError(error, column),
+        );
+        if (!missingFilterColumns) rethrow;
+        rows = await fetchRules(
+          'tempat,lokasi_muat,lokasi_bongkar,nominal,is_active',
+        );
+      }
+
+      return rows
           .map((row) {
             final tempat = '${row['tempat'] ?? ''}'.trim();
             var muat = '${row['lokasi_muat'] ?? ''}'.trim();
@@ -1946,6 +1821,12 @@ class DashboardRepository {
               'lokasi_muat': muat,
               'lokasi_bongkar': bongkar,
               'nominal': nominal,
+              'customer_name': '${row['customer_name'] ?? ''}'.trim(),
+              'invoice_entity': '${row['invoice_entity'] ?? ''}'.trim(),
+              '__customer_norm':
+                  normalizeSanguCustomerKey('${row['customer_name'] ?? ''}'),
+              '__entity_norm':
+                  normalizeSanguEntityKey('${row['invoice_entity'] ?? ''}'),
               '__muat_norm': normalizeSanguPlace(muat),
               '__bongkar_norm': normalizeSanguPlace(bongkar),
             };
@@ -1963,6 +1844,8 @@ class DashboardRepository {
     List<Map<String, dynamic>> rules, {
     required String pickup,
     required String destination,
+    required String customerName,
+    required String invoiceEntity,
   }) {
     final pickupNorm = normalizeSanguPlace(pickup);
     final destinationNorm = normalizeSanguPlace(destination);
@@ -1971,10 +1854,20 @@ class DashboardRepository {
     final prioritizedRouteRule = resolvePrioritizedSanguRouteRule(
       pickup: pickup,
       destination: destination,
+      customerName: customerName,
+      invoiceEntity: invoiceEntity,
     );
     if (prioritizedRouteRule != null) {
       return prioritizedRouteRule;
     }
+
+    final customerNorm = normalizeSanguCustomerKey(customerName);
+    final entityNorm = normalizeSanguEntityKey(
+      Formatters.normalizeInvoiceEntity(
+        invoiceEntity,
+        customerName: customerName,
+      ),
+    );
 
     bool containsEither(String left, String right) {
       if (left.isEmpty || right.isEmpty) return false;
@@ -1982,26 +1875,52 @@ class DashboardRepository {
     }
 
     int scoreRule(Map<String, dynamic> rule) {
+      final ruleCustomerNorm = '${rule['__customer_norm'] ?? ''}'.trim();
+      if (ruleCustomerNorm.isNotEmpty &&
+          !containsEither(customerNorm, ruleCustomerNorm)) {
+        return 0;
+      }
+      final ruleEntityNorm = '${rule['__entity_norm'] ?? ''}'.trim();
+      if (ruleEntityNorm.isNotEmpty && ruleEntityNorm != entityNorm) {
+        return 0;
+      }
       final muatNorm = '${rule['__muat_norm'] ?? ''}';
       final bongkarNorm = '${rule['__bongkar_norm'] ?? ''}';
+      final contextBonus = (ruleCustomerNorm.isNotEmpty ? 120 : 0) +
+          (ruleEntityNorm.isNotEmpty ? 80 : 0);
       if (muatNorm.isNotEmpty && bongkarNorm.isNotEmpty) {
+        if (sanguIsNonBetoyoPickupRule(muatNorm)) {
+          if (pickupNorm.isEmpty || sanguIsBetoyoPlace(pickupNorm)) {
+            return 0;
+          }
+          if (destinationNorm == bongkarNorm) return 390 + contextBonus;
+          if (containsEither(destinationNorm, bongkarNorm)) {
+            return 290 + contextBonus;
+          }
+          return 0;
+        }
         if (pickupNorm == muatNorm && destinationNorm == bongkarNorm) {
-          return 400;
+          return 400 + contextBonus;
         }
         if (containsEither(pickupNorm, muatNorm) &&
             containsEither(destinationNorm, bongkarNorm)) {
-          return 300;
+          return 300 + contextBonus;
         }
         return 0;
       }
       if (muatNorm.isEmpty && bongkarNorm.isNotEmpty) {
-        if (destinationNorm == bongkarNorm) return 260;
-        if (containsEither(destinationNorm, bongkarNorm)) return 140;
+        if (bongkarNorm == 'singosari' && sanguIsBetoyoPlace(pickupNorm)) {
+          return 0;
+        }
+        if (destinationNorm == bongkarNorm) return 260 + contextBonus;
+        if (containsEither(destinationNorm, bongkarNorm)) {
+          return 140 + contextBonus;
+        }
         return 0;
       }
       if (bongkarNorm.isEmpty && muatNorm.isNotEmpty) {
-        if (pickupNorm == muatNorm) return 240;
-        if (containsEither(pickupNorm, muatNorm)) return 130;
+        if (pickupNorm == muatNorm) return 240 + contextBonus;
+        if (containsEither(pickupNorm, muatNorm)) return 130 + contextBonus;
         return 0;
       }
       return 0;

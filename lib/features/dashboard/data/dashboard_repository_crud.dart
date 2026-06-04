@@ -191,6 +191,7 @@ extension DashboardRepositoryCrudExtension on DashboardRepository {
             fallbackArmadaId: detailArmadaId,
             fallbackCargo: detailMuatan,
             fallbackCustomerName: customerName,
+            fallbackInvoiceEntity: invoiceEntity,
           );
         }
         if (effectiveSubmissionRole == 'pengurus' &&
@@ -264,6 +265,7 @@ extension DashboardRepositoryCrudExtension on DashboardRepository {
         fallbackArmadaId: armadaId,
         fallbackCargo: muatan,
         fallbackCustomerName: customerName,
+        fallbackInvoiceEntity: invoiceEntity,
       );
     }
     if (effectiveSubmissionRole == 'pengurus' &&
@@ -675,16 +677,17 @@ extension DashboardRepositoryCrudExtension on DashboardRepository {
     required String name,
     required String plate,
     double? capacity,
-    String status = 'Ready',
+    String status = fleetStatusReady,
     bool active = true,
   }) async {
+    final effectiveStatus = normalizeFleetStatus(status, active: active);
     try {
       await _supabase.from('armadas').insert({
         'nama_truk': name.trim(),
         'plat_nomor': plate.trim().toUpperCase(),
         'kapasitas': capacity ?? 0,
-        'status': status,
-        'is_active': active,
+        'status': effectiveStatus,
+        'is_active': effectiveStatus != fleetStatusInactive,
       });
     } on PostgrestException catch (e) {
       final message = e.message.toLowerCase();
@@ -875,6 +878,7 @@ extension DashboardRepositoryCrudExtension on DashboardRepository {
           fallbackArmadaId: armadaId,
           fallbackCargo: muatan,
           fallbackCustomerName: customerName,
+          fallbackInvoiceEntity: normalizedInvoiceEntity,
         );
       }
       await _syncArmadaStatusNowBestEffort();
@@ -1201,13 +1205,17 @@ extension DashboardRepositoryCrudExtension on DashboardRepository {
     String? status,
     bool? active,
   }) async {
+    final effectiveStatus = normalizeFleetStatus(
+      status,
+      active: active ?? true,
+    );
     try {
       await _supabase.from('armadas').update({
         'nama_truk': name.trim(),
         'plat_nomor': plate.trim().toUpperCase(),
         'kapasitas': capacity ?? 0,
-        'status': status ?? (active == false ? 'Inactive' : 'Ready'),
-        'is_active': active ?? true,
+        'status': effectiveStatus,
+        'is_active': effectiveStatus != fleetStatusInactive,
         'updated_at': DateTime.now().toIso8601String(),
       }).eq('id', id);
     } on PostgrestException catch (e) {

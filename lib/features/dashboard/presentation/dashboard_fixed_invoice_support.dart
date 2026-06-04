@@ -28,11 +28,7 @@ extension _AdminFixedInvoiceSupport on _AdminFixedInvoiceViewState {
   }
 
   String? _extractPlateFromText(String value) {
-    final match = RegExp(
-      r'\b[A-Z]{1,2}\s?\d{1,4}\s?[A-Z]{1,3}\b',
-    ).firstMatch(value.toUpperCase());
-    final plate = (match?.group(0) ?? '').trim();
-    return plate.isEmpty ? null : plate;
+    return extractArmadaPlateFromText(value);
   }
 
   String _normalizeTextKey(dynamic value) {

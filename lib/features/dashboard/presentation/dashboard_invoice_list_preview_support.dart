@@ -21,16 +21,8 @@ extension _AdminInvoiceListViewStatePreviewSupport
     final shouldRefreshAfterPreview =
         displayedTotal > 0 && (displayedTotal - latestDisplayTotal).abs() > 0.5;
     final armadas = await widget.repository.fetchArmadas();
-    final armadaPlateById = <String, String>{
-      for (final armada in armadas)
-        '${armada['id'] ?? ''}'.trim():
-            '${armada['plat_nomor'] ?? ''}'.trim().toUpperCase(),
-    };
-    final armadaPlateByName = <String, String>{
-      for (final armada in armadas)
-        _normalizeArmadaNameKey('${armada['nama_truk'] ?? ''}'):
-            '${armada['plat_nomor'] ?? ''}'.trim().toUpperCase(),
-    };
+    final armadaPlateById = buildArmadaPlateById(armadas);
+    final armadaPlateByName = buildArmadaPlateByName(armadas);
     if (!mounted) return;
 
     await showDialog<void>(
@@ -448,16 +440,8 @@ extension _AdminInvoiceListViewStatePreviewSupport
         companyKopImage = null;
       }
       final armadas = await widget.repository.fetchArmadas();
-      final armadaPlateById = <String, String>{
-        for (final armada in armadas)
-          '${armada['id'] ?? ''}':
-              '${armada['plat_nomor'] ?? ''}'.trim().toUpperCase(),
-      };
-      final armadaPlateByName = <String, String>{
-        for (final armada in armadas)
-          _normalizeArmadaNameKey('${armada['nama_truk'] ?? ''}'):
-              '${armada['plat_nomor'] ?? ''}'.trim().toUpperCase(),
-      };
+      final armadaPlateById = buildArmadaPlateById(armadas);
+      final armadaPlateByName = buildArmadaPlateByName(armadas);
 
       String resolveNoPolisi(Map<String, dynamic> row) {
         return _resolveDetailPlateText(
@@ -479,8 +463,10 @@ extension _AdminInvoiceListViewStatePreviewSupport
       int baseRowsPerSheet({
         required bool compact,
       }) {
-        final halfSheetRows = isCompanyInvoice ? 18 : 21;
-        return compact ? halfSheetRows : (halfSheetRows * 2) + 14;
+        return invoiceRowsPerSheet(
+          compact: compact,
+          isCompanyInvoice: isCompanyInvoice,
+        );
       }
 
       List<Map<String, dynamic>> buildPrintableRows({

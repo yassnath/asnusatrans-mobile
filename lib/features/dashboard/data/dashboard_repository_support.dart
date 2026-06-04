@@ -7,28 +7,16 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
   ) {
     final counts = <String, int>{};
     var otherCount = 0;
-    final armadaByPlate = <String, String>{};
-    String normalizePlate(String value) {
-      return value.toUpperCase().replaceAll(RegExp(r'\s+'), ' ').trim();
-    }
-
-    for (final armada in armadas) {
-      final id = '${armada['id'] ?? ''}'.trim();
-      final plate = normalizePlate('${armada['plat_nomor'] ?? ''}');
-      if (id.isEmpty || plate.isEmpty) continue;
-      armadaByPlate[plate] = id;
-    }
+    final armadaByPlate = buildArmadaIdByPlate(armadas);
 
     String? resolveArmadaId(Map<String, dynamic> row) {
       final direct = '${row['armada_id'] ?? ''}'.trim();
       if (direct.isNotEmpty) return direct;
       final label = '${row['armada_label'] ?? row['armada'] ?? ''}'.trim();
       if (label.isEmpty) return null;
-      final match = RegExp(
-        r'[A-Z]{1,2}\s?[0-9]{1,4}\s?[A-Z]{1,3}',
-      ).firstMatch(label.toUpperCase());
-      if (match == null) return null;
-      return armadaByPlate[normalizePlate(match.group(0) ?? '')];
+      final plate = extractArmadaPlateFromText(label);
+      if (plate == null) return null;
+      return armadaByPlate[plate];
     }
 
     for (final invoice in invoices) {
@@ -164,20 +152,6 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
     DateTime resolveCreatedAt(dynamic value) {
       return Formatters.parseDate(value) ??
           DateTime.fromMillisecondsSinceEpoch(0);
-    }
-
-    bool isAutoSanguExpense(Map<String, dynamic> expense) {
-      final note = '${expense['note'] ?? ''}'.trim().toUpperCase();
-      if (note.startsWith('AUTO_SANGU:')) return true;
-      final description = '${expense['keterangan'] ?? ''}'.trim().toLowerCase();
-      return description.startsWith('auto sangu sopir -');
-    }
-
-    bool isAutoGabunganExpense(Map<String, dynamic> expense) {
-      final note = '${expense['note'] ?? ''}'.trim().toUpperCase();
-      if (note.startsWith('AUTO_GABUNGAN:')) return true;
-      final description = '${expense['keterangan'] ?? ''}'.trim().toLowerCase();
-      return description.startsWith('auto gabungan -');
     }
 
     String expenseDashboardLabel(Map<String, dynamic> expense) {

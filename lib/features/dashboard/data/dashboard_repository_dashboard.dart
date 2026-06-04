@@ -107,27 +107,6 @@ extension DashboardRepositoryDashboardExtension on DashboardRepository {
         }
       }
 
-      bool isAutoSanguExpense(Map<String, dynamic> expense) {
-        final note = '${expense['note'] ?? ''}'.trim().toUpperCase();
-        if (note.startsWith('AUTO_SANGU:')) return true;
-        final description =
-            '${expense['keterangan'] ?? ''}'.trim().toLowerCase();
-        return description.startsWith('auto sangu sopir -');
-      }
-
-      String autoSanguMarker(Map<String, dynamic> expense) {
-        final note = '${expense['note'] ?? ''}'.trim();
-        if (note.toUpperCase().startsWith('AUTO_SANGU:')) {
-          return note.substring('AUTO_SANGU:'.length).trim();
-        }
-        final description = '${expense['keterangan'] ?? ''}'.trim();
-        final match = RegExp(
-          r'auto\s+sangu\s+sopir\s*-\s*(.+)$',
-          caseSensitive: false,
-        ).firstMatch(description);
-        return match?.group(1)?.trim() ?? '';
-      }
-
       final cvIncome = invoices.fold<double>(0, (sum, invoice) {
         final date = _invoiceReferenceDate(invoice);
         if (!isWithinPeriod(date) || !isCvInvoice(invoice)) {
@@ -152,7 +131,7 @@ extension DashboardRepositoryDashboardExtension on DashboardRepository {
         if (!isWithinPeriod(date)) continue;
 
         final linkedInvoice =
-            invoiceByMarker[normalizeMarker(autoSanguMarker(expense))];
+            invoiceByMarker[normalizeMarker(extractAutoExpenseMarker(expense))];
         if (linkedInvoice == null) continue;
 
         final expenseTotal = _expenseTotal(expense);

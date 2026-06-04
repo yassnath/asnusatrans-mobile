@@ -180,36 +180,24 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
   }
 
   Color _armadaStatusColor(String status) {
-    final lower = status.toLowerCase();
-    if (lower.contains('full')) return AppColors.warning;
-    if (lower.contains('ready')) return AppColors.success;
-    if (lower.contains('inactive') ||
-        lower.contains('non active') ||
-        lower.contains('non-active')) {
+    if (isFullFleetStatus(status)) return AppColors.warning;
+    if (isReadyFleetStatus(status)) return AppColors.success;
+    if (isInactiveFleetStatus(status)) {
       return AppColors.neutralOutline;
     }
     return AppColors.textMutedFor(context);
   }
 
   String _normalizePlateText(String value) {
-    return value.toUpperCase().replaceAll(RegExp(r'\s+'), ' ').trim();
+    return normalizeArmadaPlateText(value);
   }
 
   String _normalizeArmadaNameKey(String value) {
-    return value
-        .toLowerCase()
-        .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
+    return normalizeArmadaNameKey(value);
   }
 
   String? _extractPlateFromText(String value) {
-    final match = RegExp(
-      r'[A-Z]{1,2}\s?[0-9]{1,4}\s?[A-Z]{1,3}',
-    ).firstMatch(value.toUpperCase());
-    if (match == null) return null;
-    final plate = _normalizePlateText(match.group(0) ?? '');
-    return plate.isEmpty ? null : plate;
+    return extractArmadaPlateFromText(value);
   }
 
   void _normalizeDetailPlateFields(Map<String, dynamic> row) {
@@ -333,14 +321,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
   Map<String, String> _buildArmadaIdByPlate(
     List<Map<String, dynamic>> armadas,
   ) {
-    final map = <String, String>{};
-    for (final armada in armadas) {
-      final id = '${armada['id'] ?? ''}'.trim();
-      final plate = _normalizePlateText('${armada['plat_nomor'] ?? ''}');
-      if (id.isEmpty || plate.isEmpty) continue;
-      map[plate] = id;
-    }
-    return map;
+    return buildArmadaIdByPlate(armadas);
   }
 
   String _resolveArmadaIdFromInput({
@@ -419,41 +400,21 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
   }
 
   bool _isManualArmadaRow(Map<String, dynamic> row) {
-    if (row['armada_is_manual'] == true) return true;
-    if ('${row['armada_manual'] ?? ''}'.trim().isNotEmpty) return true;
-    return _isManualArmadaText(row['armada_label']) ||
-        _isManualArmadaText(row['armada']) ||
-        _isManualArmadaText(row['plat_nomor']) ||
-        _isManualArmadaText(row['no_polisi']);
+    return rowUsesManualArmada(row);
   }
 
   bool _isManualArmadaText(dynamic value) {
-    final raw = '${value ?? ''}'.trim();
-    if (raw.isEmpty) return false;
-    final normalized =
-        raw.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
-    return normalized == 'gabungan' ||
-        normalized.contains('gabungan') ||
-        normalized == 'manual' ||
-        normalized.contains('input manual');
+    return isManualArmadaText(value);
   }
 
   void _clearDriverForManualArmadaIfNeeded(Map<String, dynamic> row) {
     if (!_isManualArmadaRow(row)) return;
     final manual = '${row['armada_manual'] ?? ''}'.trim();
     if (manual.isEmpty) {
-      for (final key in const [
-        'armada_label',
-        'armada',
-        'plat_nomor',
-        'no_polisi',
-      ]) {
-        final value = '${row[key] ?? ''}'.trim();
-        if (_isManualArmadaText(value)) {
-          row['armada_manual'] = value;
-          row['armada_label'] = value;
-          break;
-        }
+      final detectedManual = manualArmadaLabelFromRow(row);
+      if (detectedManual.isNotEmpty) {
+        row['armada_manual'] = detectedManual;
+        row['armada_label'] = detectedManual;
       }
     }
     row['armada_id'] = '';
@@ -974,8 +935,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
 
       final orderId = '${item['order_id'] ?? ''}'.trim();
       final invoiceStatus =
-          '${item['status'] ?? item['__status'] ?? ''}'.trim().toLowerCase();
-      if (orderId.isNotEmpty && !invoiceStatus.contains('paid')) {
+          '${item['status'] ?? item['__status'] ?? ''}'.trim();
+      if (orderId.isNotEmpty && !isPaidPaymentStatus(invoiceStatus)) {
         await widget.repository.updateOrderStatus(
           orderId: orderId,
           status: 'Pending Payment',
@@ -1975,35 +1936,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                                 (index) => DropdownMenuItem<int>(
                                   value: index + 1,
                                   child: Text(
-                                    _t(
-                                      [
-                                        'Januari',
-                                        'Februari',
-                                        'Maret',
-                                        'April',
-                                        'Mei',
-                                        'Juni',
-                                        'Juli',
-                                        'Agustus',
-                                        'September',
-                                        'Oktober',
-                                        'November',
-                                        'Desember'
-                                      ][index],
-                                      [
-                                        'January',
-                                        'February',
-                                        'March',
-                                        'April',
-                                        'May',
-                                        'June',
-                                        'July',
-                                        'August',
-                                        'September',
-                                        'October',
-                                        'November',
-                                        'December'
-                                      ][index],
+                                    reportMonthName(
+                                      index + 1,
+                                      isEnglish: _isEn,
                                     ),
                                   ),
                                 ),
@@ -2497,27 +2432,11 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     }
 
     bool isIncomeReportPaid(Map<String, dynamic> invoice) {
-      final status = resolveIncomeReportStatus(invoice).trim().toLowerCase();
-      if (status.contains('partial')) return false;
-      if (status.contains('paid') && !status.contains('unpaid')) return true;
+      final status = resolveIncomeReportStatus(invoice);
+      if (isPartialPaymentStatus(status)) return false;
+      if (isPaidPaymentStatus(status)) return true;
       final paidAt = resolveIncomeReportPaidAt(invoice);
-      return paidAt.isNotEmpty && !status.contains('unpaid');
-    }
-
-    double parseEditableReportAmount(dynamic value) {
-      final raw = '${value ?? ''}'.trim();
-      if (raw.isEmpty) return 0;
-      final cleaned = raw
-          .replaceAll(RegExp(r'[^0-9,.-]'), '')
-          .replaceAll('.', '')
-          .replaceAll(',', '.');
-      return double.tryParse(cleaned) ?? 0;
-    }
-
-    String formatEditableReportAmount(num value) {
-      final number = value.toDouble();
-      if (!number.isFinite || number <= 0) return '';
-      return Formatters.decimal(number, useGrouping: true);
+      return paidAt.isNotEmpty && !isUnpaidPaymentStatus(status);
     }
 
     double resolveSingleInvoiceJumlah(Map<String, dynamic> invoice) {
@@ -2591,7 +2510,6 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       required double total,
     }) {
       final batchStatus = batch.status.trim();
-      final statusLower = batchStatus.toLowerCase();
       final storedPaidEntries =
           batch.paymentDetails.where((entry) => entry.paid).toList();
       final storedBaseTotal = batch.paymentDetails.fold<double>(
@@ -2639,16 +2557,12 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         );
       }
 
-      final isExplicitPaid = statusLower == 'paid' ||
-          (statusLower.contains('paid') &&
-              !statusLower.contains('unpaid') &&
-              !statusLower.contains('partial'));
-      if (isExplicitPaid || paymentSummary.allPaid) {
+      if (isPaidPaymentStatus(batchStatus) || paymentSummary.allPaid) {
         return (
           paidAmount: total,
           remainingAmount: 0.0,
           paidAt: latestPaidAt,
-          status: 'Paid',
+          status: paymentStatusPaid,
           paidLocked: true,
         );
       }
@@ -2667,10 +2581,10 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       final paidByRounding = paidAmount > 0 && remainingAmount <= 0;
       final hasPartialPayment = paidAmount > 0 || paymentSummary.anyPaid;
       final status = paidByRounding
-          ? 'Paid'
-          : hasPartialPayment || statusLower.contains('partial')
-              ? 'Partial'
-              : (batchStatus.isEmpty ? 'Unpaid' : batchStatus);
+          ? paymentStatusPaid
+          : hasPartialPayment || isPartialPaymentStatus(batchStatus)
+              ? paymentStatusPartial
+              : (batchStatus.isEmpty ? paymentStatusUnpaid : batchStatus);
 
       return (
         paidAmount: paidAmount,
@@ -2700,82 +2614,27 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     }
 
     String normalizeReportClassifierText(dynamic value) {
-      return '${value ?? ''}'
-          .toLowerCase()
-          .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
-          .replaceAll(RegExp(r'\s+'), ' ')
-          .trim();
-    }
-
-    String reportExpenseClassifierText(Map<String, dynamic> expense) {
-      final detailText = _toDetailList(expense['rincian']).map((detail) {
-        return [
-          detail['nama'],
-          detail['name'],
-          detail['kategori'],
-          detail['keterangan'],
-          detail['note'],
-        ].map((value) => '${value ?? ''}').join(' ');
-      }).join(' ');
-      return normalizeReportClassifierText([
-        expense['kategori'],
-        expense['keterangan'],
-        expense['note'],
-        detailText,
-      ].map((value) => '${value ?? ''}').join(' '));
+      return normalizeExpenseClassifierText(value);
     }
 
     bool isReportAutoSanguExpense(Map<String, dynamic> expense) {
-      final note = '${expense['note'] ?? ''}'.trim().toUpperCase();
-      if (note.startsWith('AUTO_SANGU:')) return true;
-      final text = reportExpenseClassifierText(expense);
-      return text.startsWith('auto sangu sopir') ||
-          text.contains('auto sangu sopir');
+      return isAutoSanguExpense(expense);
     }
 
     bool isReportGabunganExpense(Map<String, dynamic> expense) {
-      final text = reportExpenseClassifierText(expense);
-      return text.contains('gabungan') ||
-          text.contains('armada manual') ||
-          text.contains('manual armada') ||
-          text.contains('other gabungan');
+      return isGabunganExpense(expense);
     }
 
     bool isReportSanguExpense(Map<String, dynamic> expense) {
-      if (isReportAutoSanguExpense(expense)) return true;
-      final text = reportExpenseClassifierText(expense);
-      return text.contains('sangu') ||
-          text.contains('uang jalan') ||
-          text.contains('sopir') ||
-          text.contains('supir');
+      return isSanguExpense(expense);
     }
 
     String reportLinkToken(dynamic value) {
-      return '${value ?? ''}'
-          .toUpperCase()
-          .replaceAll(RegExp(r'[^A-Z0-9]+'), '')
-          .trim();
+      return expenseLinkToken(value);
     }
 
     String extractReportExpenseMarker(Map<String, dynamic> expense) {
-      final note = '${expense['note'] ?? ''}'.trim();
-      if (note.toUpperCase().startsWith('AUTO_SANGU:')) {
-        return note.substring('AUTO_SANGU:'.length).trim();
-      }
-      if (note.toUpperCase().startsWith('AUTO_GABUNGAN:')) {
-        return note.substring('AUTO_GABUNGAN:'.length).trim();
-      }
-      final ket = '${expense['keterangan'] ?? ''}'.trim();
-      final lowerKet = ket.toLowerCase();
-      const autoPrefix = 'auto sangu sopir -';
-      if (lowerKet.startsWith(autoPrefix)) {
-        return ket.substring(autoPrefix.length).trim();
-      }
-      const autoGabunganPrefix = 'auto gabungan -';
-      if (lowerKet.startsWith(autoGabunganPrefix)) {
-        return ket.substring(autoGabunganPrefix.length).trim();
-      }
-      return '';
+      return extractAutoExpenseMarker(expense);
     }
 
     bool isAntokTongkangMaspionLangonReportRow(
@@ -2851,23 +2710,11 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       Map<String, dynamic> detail,
       Map<String, dynamic> invoice,
     ) {
-      for (final key in const [
-        'manual_subtotal',
-        'subtotal_manual',
-      ]) {
-        final explicit = _toNum(detail[key]);
-        if (explicit > 0) return explicit;
-      }
-      final tonase = _toNum(detail['tonase'] ?? invoice['tonase']);
-      final harga = _toNum(detail['harga'] ?? invoice['harga']);
-      final computed = tonase * harga;
-      if (detail['subtotal_auto'] == true && computed > 0) return computed;
-      for (final key in const ['subtotal', 'total', 'total_biaya', 'jumlah']) {
-        final explicit = _toNum(detail[key]);
-        if (explicit > 0) return explicit;
-      }
-      if (computed > 0) return computed;
-      return resolveSingleInvoiceJumlah(invoice);
+      return resolveInvoiceDetailSubtotal(
+        detail,
+        fallback: invoice,
+        fallbackSubtotal: resolveSingleInvoiceJumlah(invoice),
+      );
     }
 
     String reportDestinationFromPaymentRoute(String routeLabel) {
@@ -2961,143 +2808,25 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     }
 
     String normalizeGabunganReportRouteKey(dynamic value) {
-      final key = normalizeIncomePricingRuleKey('${value ?? ''}');
-      if (key.contains('bimoli')) return 'bimoli';
-      if (key.contains('kendal')) return 'kendal';
-      if (key.contains('kediri')) return 'kediri';
-      if (key.contains('semarang')) return 'semarang';
-      if (key.contains('kedawung') || key.contains('dawung')) {
-        return 'kedawung';
-      }
-      if (key.contains('royal')) return 'royal';
-      if (key.contains('pare')) return 'pare';
-      if (key.contains('gempol')) return 'gempol';
-      if (key.contains('mkp')) return 'mkp';
-      if (key.contains('kedamean')) return 'kedamean';
-      if (key.contains('temanggung')) return 'temanggung';
-      if (key.contains('kig')) return 'kig';
-      if (key.contains('sgm')) return 'sgm';
-      if (key.contains('rex') || key.contains('beji')) return 'rex_beji';
-      if (key == 't langon' || key == 'langon' || key == 'tlangon') {
-        return 'langon';
-      }
-      if (key.contains('maspion')) return 'maspion';
-      if (key == 'betoyo') return 'betoyo';
-      return key;
-    }
-
-    bool isGabunganReportHargaRuleCustomer(dynamic value) {
-      final key = normalizeIncomePricingRuleKey('${value ?? ''}');
-      return key == normalizeIncomePricingRuleKey('Gabungan');
-    }
-
-    double resolveGabunganReportRuleHargaPerTon({
-      required String muat,
-      required String bongkar,
-    }) {
-      final muatKey = normalizeIncomePricingRuleKey(muat);
-      final bongkarKey = normalizeIncomePricingRuleKey(bongkar);
-      if (bongkarKey.isEmpty) return 0.0;
-
-      int locationScore(String inputKey, String ruleKey) {
-        if (ruleKey.isEmpty) return 100;
-        if (inputKey.isEmpty) return 0;
-        if (!incomePricingLocationKeyMatches(inputKey, ruleKey)) return 0;
-        final inputCompact = inputKey.replaceAll(' ', '');
-        final ruleCompact = ruleKey.replaceAll(' ', '');
-        if (inputKey == ruleKey || inputCompact == ruleCompact) return 1000;
-        return 600;
-      }
-
-      Map<String, dynamic>? bestRule;
-      var bestScore = -1;
-      for (final rule in reportHargaPerTonRules) {
-        if (rule['is_active'] == false) continue;
-        if (!isGabunganReportHargaRuleCustomer(rule['customer_name'])) {
-          continue;
-        }
-        final harga = _toNum(rule['harga_per_ton'] ?? rule['harga']);
-        if (harga <= 0) continue;
-
-        final ruleBongkarKey =
-            normalizeIncomePricingRuleKey('${rule['lokasi_bongkar'] ?? ''}');
-        if (!incomePricingLocationKeyMatches(bongkarKey, ruleBongkarKey)) {
-          continue;
-        }
-
-        final ruleMuatKey =
-            normalizeIncomePricingRuleKey('${rule['lokasi_muat'] ?? ''}');
-        if (ruleMuatKey.isNotEmpty &&
-            !incomePricingLocationKeyMatches(muatKey, ruleMuatKey)) {
-          continue;
-        }
-
-        final priority = int.tryParse('${rule['priority'] ?? ''}') ??
-            _toNum(rule['priority']).toInt();
-        final score = priority +
-            locationScore(muatKey, ruleMuatKey) +
-            locationScore(bongkarKey, ruleBongkarKey);
-        if (score > bestScore) {
-          bestScore = score;
-          bestRule = rule;
-        }
-      }
-
-      return _toNum(bestRule?['harga_per_ton'] ?? bestRule?['harga']);
+      return normalizeGabunganRouteKey(value);
     }
 
     double resolveGabunganReportHargaPerTon({
       required String muat,
       required String bongkar,
-      String? customerName,
     }) {
-      final ruleHarga = resolveGabunganReportRuleHargaPerTon(
-        muat: muat,
-        bongkar: bongkar,
+      return resolveGabunganHargaPerKg(
+        pickup: muat,
+        destination: bongkar,
+        rules: reportHargaPerTonRules,
       );
-      if (ruleHarga > 0) return ruleHarga;
-
-      final muatKey = normalizeGabunganReportRouteKey(muat);
-      final bongkarKey = normalizeGabunganReportRouteKey(bongkar);
-      if (muatKey == 'betoyo' && bongkarKey == 'bimoli') return 33.0;
-      if (muatKey == 'maspion' && bongkarKey == 'langon') return 23.0;
-      switch (bongkarKey) {
-        case 'kendal':
-          return 170.0;
-        case 'kediri':
-          return 80.0;
-        case 'semarang':
-          return 158.0;
-        case 'kedawung':
-          return 40.0;
-        case 'royal':
-          return 40.0;
-        case 'pare':
-          return 78.0;
-        case 'gempol':
-          return 50.0;
-        case 'mkp':
-          return 50.0;
-        case 'kedamean':
-          return 41.0;
-        case 'temanggung':
-          return 230.0;
-        case 'kig':
-          return 38.0;
-        case 'sgm':
-          return 40.0;
-        case 'rex_beji':
-          return 53.0;
-        default:
-          return 0.0;
-      }
     }
 
     String gabunganReportRouteKey({
       required String muat,
       required String bongkar,
     }) {
-      return '${normalizeGabunganReportRouteKey(muat)}|${normalizeGabunganReportRouteKey(bongkar)}';
+      return gabunganRouteKey(pickup: muat, destination: bongkar);
     }
 
     final observedCompanyHargaByRoute = <String, double>{};
@@ -3207,7 +2936,6 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       final gabunganHarga = resolveGabunganReportHargaPerTon(
         muat: muat,
         bongkar: bongkar,
-        customerName: '${invoice['nama_pelanggan'] ?? ''}',
       );
       final tonase = _toNum(detail['tonase'] ?? invoice['tonase']);
       if (gabunganHarga <= 0 || tonase <= 0) return 0.0;
@@ -4292,155 +4020,49 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       required String orientation,
     }) async {
       final incomeInvoiceReport = includeIncome && !includeExpense;
-
-      String monthName(int month) {
-        const id = [
-          'Januari',
-          'Februari',
-          'Maret',
-          'April',
-          'Mei',
-          'Juni',
-          'Juli',
-          'Agustus',
-          'September',
-          'Oktober',
-          'November',
-          'Desember',
-        ];
-        const en = [
-          'January',
-          'February',
-          'March',
-          'April',
-          'May',
-          'June',
-          'July',
-          'August',
-          'September',
-          'October',
-          'November',
-          'December',
-        ];
-        return _t(id[month - 1], en[month - 1]);
-      }
-
-      final isYearPeriod = start.month == 1 &&
-          start.day == 1 &&
-          end.year == start.year + 1 &&
-          end.month == 1 &&
-          end.day == 1;
-      final periodLabel = isYearPeriod
-          ? '${start.year}'
-          : '${monthName(start.month)} ${start.year}';
-
-      final reportHeader = () {
-        if (includeIncome && includeExpense) {
-          return _t(
-            'Laporan (Pemasukkan Fix Invoice dan Pengeluaran)',
-            'Report (Fixed Invoice Income and Expense)',
-          );
-        }
-        if (includeIncome) {
-          if (incomeInvoiceReport) {
-            if (customerKind == Formatters.invoiceEntityCvAnt) {
-              return _t(
-                'Laporan Pemasukkan Fix Invoice per Invoice (CV. ANT)',
-                'Fixed Invoice Income Report by Invoice (CV. ANT)',
-              );
-            }
-            if (customerKind == Formatters.invoiceEntityPtAnt) {
-              return _t(
-                'Laporan Pemasukkan Fix Invoice per Invoice (PT. ANT)',
-                'Fixed Invoice Income Report by Invoice (PT. ANT)',
-              );
-            }
-            if (customerKind == Formatters.invoiceEntityPersonal) {
-              return _t(
-                'Laporan Pemasukkan Fix Invoice per Invoice (Pribadi)',
-                'Fixed Invoice Income Report by Invoice (Personal)',
-              );
-            }
-            return _t(
-              'Laporan Pemasukkan Fix Invoice per Invoice',
-              'Fixed Invoice Income Report by Invoice',
-            );
-          }
-          if (customerKind == Formatters.invoiceEntityCvAnt) {
-            return _t(
-              'Laporan Pemasukkan Fix Invoice (CV. ANT)',
-              'Fixed Invoice Income Report (CV. ANT)',
-            );
-          }
-          if (customerKind == Formatters.invoiceEntityPtAnt) {
-            return _t(
-              'Laporan Pemasukkan Fix Invoice (PT. ANT)',
-              'Fixed Invoice Income Report (PT. ANT)',
-            );
-          }
-          if (customerKind == Formatters.invoiceEntityPersonal) {
-            return _t(
-              'Laporan Pemasukkan Fix Invoice (Pribadi)',
-              'Fixed Invoice Income Report (Personal)',
-            );
-          }
-          return _t(
-              'Laporan Pemasukkan Fix Invoice', 'Fixed Invoice Income Report');
-        }
-        if (customerKind == Formatters.invoiceEntityCvAnt) {
-          return _t(
-            'Laporan Pengeluaran (CV. ANT)',
-            'Expense Report (CV. ANT)',
-          );
-        }
-        if (customerKind == Formatters.invoiceEntityPtAnt) {
-          return _t(
-            'Laporan Pengeluaran (PT. ANT)',
-            'Expense Report (PT. ANT)',
-          );
-        }
-        if (customerKind == Formatters.invoiceEntityPersonal) {
-          return _t(
-            'Laporan Pengeluaran (Pribadi)',
-            'Expense Report (Personal)',
-          );
-        }
-        return _t('Laporan Pengeluaran', 'Expense Report');
-      }();
-
-      final reportScopeLabel = includeIncome && includeExpense
-          ? _t('Income Fix Invoice + Expense', 'Fixed Invoice Income + Expense')
-          : includeIncome
-              ? incomeInvoiceReport
-                  ? _t(
-                      'Income Fix Invoice per Invoice',
-                      'Fixed Invoice Income by Invoice',
-                    )
-                  : _t('Income Fix Invoice', 'Fixed Invoice Income')
-              : _t('Expense', 'Expense');
-      final orientationLabel = _t('Portrait', 'Portrait');
-      final driverCostColumnInfo =
-          includeIncome && includeExpense && includeDriverCostColumns
-              ? ' • ${_t('Detail: Fix Invoice', 'Detail: Fixed Invoice')}'
-              : '';
-      final previewInfo =
-          '$reportScopeLabel • ${_t('Periode', 'Period')}: $periodLabel • ${_t('Orientasi', 'Orientation')}: $orientationLabel$driverCostColumnInfo • ${rows.length} ${_t(incomeInvoiceReport ? 'invoice' : 'data', incomeInvoiceReport ? 'invoices' : 'rows')}';
+      final periodLabel = reportPeriodLabel(
+        start: start,
+        end: end,
+        isEnglish: _isEn,
+      );
+      final reportHeader = buildReportHeaderLabel(
+        includeIncome: includeIncome,
+        includeExpense: includeExpense,
+        customerKind: customerKind,
+        incomeByInvoice: incomeInvoiceReport,
+        isEnglish: _isEn,
+      );
+      final reportScopeLabel = buildReportScopeLabel(
+        includeIncome: includeIncome,
+        includeExpense: includeExpense,
+        incomeByInvoice: incomeInvoiceReport,
+        isEnglish: _isEn,
+      );
+      final previewInfo = buildReportPreviewInfo(
+        scopeLabel: reportScopeLabel,
+        periodLabel: periodLabel,
+        includeIncome: includeIncome,
+        includeExpense: includeExpense,
+        includeDriverCostColumns: includeDriverCostColumns,
+        incomeByInvoice: incomeInvoiceReport,
+        rowCount: rows.length,
+        isEnglish: _isEn,
+      );
 
       Future<Uint8List> buildReportPdfBytes(PdfPageFormat format) async {
-        final useIncomeInvoiceTable = includeIncome && !includeExpense;
+        final tableMode = resolveReportTableMode(
+          includeIncome: includeIncome,
+          includeExpense: includeExpense,
+          includeDriverCostColumns: includeDriverCostColumns,
+          customerKind: customerKind,
+          rows: rows,
+        );
+        final useIncomeInvoiceTable = tableMode.incomeInvoiceTable;
         final useCombinedDriverCostColumns =
-            includeIncome && includeExpense && includeDriverCostColumns;
-        final showCombinedPphColumn = useCombinedDriverCostColumns &&
-            customerKind != Formatters.invoiceEntityPersonal;
-        final companyMode = customerKind == Formatters.invoiceEntityCvAnt ||
-            customerKind == Formatters.invoiceEntityPtAnt ||
-            rows.any((row) => _toNum(row['__pph']) > 0);
-        final showIncomePphColumn = useIncomeInvoiceTable
-            ? customerKind == Formatters.invoiceEntityCvAnt ||
-                customerKind == Formatters.invoiceEntityPtAnt ||
-                (customerKind != Formatters.invoiceEntityPersonal &&
-                    rows.any((row) => _toNum(row['__pph']) > 0))
-            : companyMode;
+            tableMode.combinedDriverCostColumns;
+        final showCombinedPphColumn = tableMode.showCombinedPphColumn;
+        final companyMode = tableMode.companyMode;
+        final showIncomePphColumn = tableMode.showIncomePphColumn;
         String formatReportDate(dynamic value) => Formatters.dMyShort(value);
         String formatReportAmount(num value) => _formatRupiahNoPrefix(value);
         String formatPaidAtOrDestination(Map<String, dynamic> row) {
@@ -4452,140 +4074,14 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
               : formatReportDate(value);
         }
 
-        String formatOptionalReportAmount(num value) {
-          final number = value.toDouble();
-          if (!number.isFinite || number <= 0) return '';
-          return formatReportAmount(number);
-        }
-
-        bool isCombinedExpenseCategoryRow(Map<String, dynamic> row) {
-          return useCombinedDriverCostColumns &&
-              '${row['__type']}' == 'Expense' &&
-              (_toNum(row['__sangu_sopir']) > 0 ||
-                  _toNum(row['__gabungan']) > 0);
-        }
-
-        String formatOptionalEditableAmount(
-          Map<String, dynamic> row,
-          String textKey,
-          String valueKey,
-        ) {
-          final explicit = '${row[textKey] ?? ''}'.trim();
-          final value = _toNum(row[valueKey]);
-          if (explicit.isEmpty && value <= 0) return '';
-          return formatReportAmount(value);
-        }
-
-        bool shouldHighlightPaidIncomeNumber(Map<String, dynamic> row) {
-          if (!useIncomeInvoiceTable || '${row['__type']}' != 'Income') {
-            return false;
-          }
-          final status =
-              '${row['__status'] ?? row['status'] ?? ''}'.toLowerCase().trim();
-          final hasPaidStatus = status.contains('partial') ||
-              (status.contains('paid') && !status.contains('unpaid'));
-          if (row['__paid_locked'] == true || hasPaidStatus) return true;
-
-          final total = _toNum(row['__total']);
-          final paid = max(
-            _toNum(row['__bayar']),
-            _toNum(row['__bayar_default']),
-          );
-          return total > 0 && paid > 0;
-        }
-
-        int textMeasure(String value) {
-          final normalized = value.replaceAll('\r', '');
-          return normalized
-              .split('\n')
-              .map((line) => line.trim().length)
-              .fold<int>(0, (longest, len) => max(longest, len));
-        }
-
-        Map<int, pw.TableColumnWidth> buildDynamicColumnWidths({
-          required List<String> headers,
-          required List<List<String>> data,
-          required Set<int> dateColumns,
-          required Set<int> numericColumns,
-          required Set<int> priorityTextColumns,
-        }) {
-          final widths = <int, pw.TableColumnWidth>{};
-          for (var index = 0; index < headers.length; index++) {
-            var longest = textMeasure(headers[index]).toDouble();
-            for (final row in data) {
-              if (index >= row.length) continue;
-              longest = max(longest, textMeasure(row[index]).toDouble());
-            }
-
-            if (index == 0) {
-              longest = max(longest, 3);
-            } else if (dateColumns.contains(index)) {
-              longest = max(longest, 9);
-            } else if (numericColumns.contains(index)) {
-              longest = max(longest, 9);
-            } else {
-              longest = max(longest, 7);
-            }
-
-            if (priorityTextColumns.contains(index)) {
-              longest *= 1.2;
-            } else if (!numericColumns.contains(index) &&
-                !dateColumns.contains(index) &&
-                index != 0) {
-              longest *= 1.08;
-            }
-
-            final minWeight = index == 0
-                ? 3.2
-                : dateColumns.contains(index)
-                    ? 8.5
-                    : numericColumns.contains(index)
-                        ? 8.5
-                        : 7.0;
-            final maxWeight = priorityTextColumns.contains(index)
-                ? 34.0
-                : numericColumns.contains(index)
-                    ? 16.0
-                    : dateColumns.contains(index)
-                        ? 11.5
-                        : 20.0;
-            widths[index] = pw.FlexColumnWidth(
-              longest.clamp(minWeight, maxWeight).toDouble(),
-            );
-          }
-          return widths;
-        }
-
-        final maxNumberLen = rows
-            .map((row) => '${row['__number'] ?? '-'}'.length)
-            .fold<int>(0, (maxLen, len) => max(maxLen, len));
-        final maxCustomerLen = rows
-            .map((row) => '${row['__customer'] ?? row['__name'] ?? '-'}'.length)
-            .fold<int>(0, (maxLen, len) => max(maxLen, len));
-        final maxPaidAtLen = rows.map((row) {
-          return formatPaidAtOrDestination(row).length;
-        }).fold<int>(0, (maxLen, len) => max(maxLen, len));
-
-        double headerFont = 8.0;
-        double cellFont = 7.0;
-        if (maxNumberLen > 28 || maxCustomerLen > 24 || rows.length > 24) {
-          headerFont -= 0.5;
-          cellFont -= 0.5;
-        }
-        if (maxNumberLen > 40 || maxPaidAtLen > 12 || rows.length > 36) {
-          headerFont -= 0.5;
-          cellFont -= 0.5;
-        }
-        if (useIncomeInvoiceTable) {
-          headerFont -= 0.4;
-          cellFont -= 0.4;
-        }
-        if (useCombinedDriverCostColumns) {
-          headerFont -= 0.75;
-          cellFont -= 0.75;
-        }
-        headerFont = headerFont.clamp(7.0, 8.5).toDouble();
-        cellFont = cellFont.clamp(6.2, 7.5).toDouble();
+        final reportFontSizing = buildReportTableFontSizing(
+          rows: rows,
+          paidAtDisplay: formatPaidAtOrDestination,
+          incomeInvoiceTable: useIncomeInvoiceTable,
+          combinedDriverCostColumns: useCombinedDriverCostColumns,
+        );
+        final headerFont = reportFontSizing.headerFont;
+        final cellFont = reportFontSizing.cellFont;
 
         bool reportDecorationsEnabled() => false;
 
@@ -4610,391 +4106,63 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
           }
         }
 
-        final headers = useIncomeInvoiceTable
-            ? showIncomePphColumn
-                ? const [
-                    'NO',
-                    'TANGGAL',
-                    'CUSTOMER',
-                    'JUMLAH',
-                    'PPH',
-                    'TOTAL',
-                    'BAYAR',
-                    'SISA',
-                    'TGL BAYAR',
-                  ]
-                : const [
-                    'NO',
-                    'TANGGAL',
-                    'CUSTOMER',
-                    'JUMLAH',
-                    'TOTAL',
-                    'BAYAR',
-                    'SISA',
-                    'TGL BAYAR',
-                  ]
-            : useCombinedDriverCostColumns
-                ? [
-                    'NO',
-                    'TGL',
-                    'CUSTOMER',
-                    'PLAT NOMOR',
-                    'MUAT',
-                    'BONGKAR',
-                    'JUMLAH',
-                    'SOPIR',
-                    'GABUNGAN',
-                    if (showCombinedPphColumn) 'PPH',
-                    'TOTAL',
-                    'LABA',
-                  ]
-                : companyMode
-                    ? const [
-                        'NO',
-                        'TANGGAL',
-                        'CUSTOMER',
-                        'JUMLAH',
-                        'PPH',
-                        'TOTAL',
-                        'TUJUAN'
-                      ]
-                    : const [
-                        'NO',
-                        'TANGGAL',
-                        'CUSTOMER',
-                        'JUMLAH',
-                        'TOTAL',
-                        'TUJUAN'
-                      ];
+        final tableLayout = buildReportTableLayout(
+          incomeInvoiceTable: useIncomeInvoiceTable,
+          showIncomePphColumn: showIncomePphColumn,
+          combinedDriverCostColumns: useCombinedDriverCostColumns,
+          showCombinedPphColumn: showCombinedPphColumn,
+          companyMode: companyMode,
+        );
+        final headers = tableLayout.headers;
         final tableData = List<List<String>>.generate(rows.length, (index) {
           final row = rows[index];
-          if (useIncomeInvoiceTable) {
-            final paidAtDisplay = formatPaidAtOrDestination(row);
-            if (showIncomePphColumn) {
-              return [
-                '${index + 1}',
-                formatReportDate(row['__date']),
-                '${row['__customer'] ?? row['__name'] ?? '-'}'.trim(),
-                formatReportAmount(_toNum(row['__jumlah'])),
-                formatReportAmount(_toNum(row['__pph'])),
-                formatReportAmount(_toNum(row['__total'])),
-                formatOptionalEditableAmount(row, '__bayar_text', '__bayar'),
-                formatOptionalEditableAmount(row, '__sisa_text', '__sisa'),
-                paidAtDisplay,
-              ];
-            }
-            return [
-              '${index + 1}',
-              formatReportDate(row['__date']),
-              '${row['__customer'] ?? row['__name'] ?? '-'}'.trim(),
-              formatReportAmount(_toNum(row['__jumlah'])),
-              formatReportAmount(_toNum(row['__total'])),
-              formatOptionalEditableAmount(row, '__bayar_text', '__bayar'),
-              formatOptionalEditableAmount(row, '__sisa_text', '__sisa'),
-              paidAtDisplay,
-            ];
-          }
-          if (useCombinedDriverCostColumns) {
-            final isExpense = '${row['__type']}' == 'Expense';
-            final jumlah = _toNum(row['__jumlah']);
-            final sangu = _toNum(row['__sangu_sopir']);
-            final gabungan = _toNum(row['__gabungan']);
-            final pph = _toNum(row['__pph']);
-            final total = _toNum(row['__total']);
-            final laba = _toNum(row['__laba']);
-            return [
-              '${index + 1}',
-              formatReportDate(row['__date']),
-              '${row['__customer'] ?? row['__name'] ?? '-'}'.trim(),
-              '${row['__plat_nomor'] ?? '-'}'.trim().isEmpty
-                  ? '-'
-                  : '${row['__plat_nomor'] ?? '-'}'.trim(),
-              '${row['__muat'] ?? '-'}'.trim().isEmpty
-                  ? '-'
-                  : '${row['__muat'] ?? '-'}'.trim(),
-              '${row['__bongkar'] ?? row['__tujuan'] ?? '-'}'.trim().isEmpty
-                  ? '-'
-                  : '${row['__bongkar'] ?? row['__tujuan'] ?? '-'}'.trim(),
-              isExpense ? '' : formatReportAmount(jumlah),
-              formatOptionalReportAmount(sangu),
-              formatOptionalReportAmount(gabungan),
-              if (showCombinedPphColumn)
-                isExpense ? '' : formatReportAmount(pph),
-              isExpense ? '' : formatReportAmount(total),
-              formatReportAmount(laba),
-            ];
-          }
-          if (companyMode) {
-            final categoryExpense = isCombinedExpenseCategoryRow(row);
-            return [
-              '${index + 1}',
-              formatReportDate(row['__date']),
-              '${row['__customer'] ?? row['__name'] ?? '-'}'.trim(),
-              categoryExpense
-                  ? ''
-                  : formatReportAmount(_toNum(row['__jumlah'])),
-              categoryExpense ? '' : formatReportAmount(_toNum(row['__pph'])),
-              categoryExpense ? '' : formatReportAmount(_toNum(row['__total'])),
-              if (useCombinedDriverCostColumns) ...[
-                formatOptionalReportAmount(_toNum(row['__sangu_sopir'])),
-                formatOptionalReportAmount(_toNum(row['__gabungan'])),
-              ],
-              '${row['__tujuan'] ?? '-'}'.trim(),
-            ];
-          }
-          final categoryExpense = isCombinedExpenseCategoryRow(row);
-          return [
-            '${index + 1}',
-            formatReportDate(row['__date']),
-            '${row['__customer'] ?? row['__name'] ?? '-'}'.trim(),
-            categoryExpense ? '' : formatReportAmount(_toNum(row['__jumlah'])),
-            categoryExpense ? '' : formatReportAmount(_toNum(row['__total'])),
-            if (useCombinedDriverCostColumns) ...[
-              formatOptionalReportAmount(_toNum(row['__sangu_sopir'])),
-              formatOptionalReportAmount(_toNum(row['__gabungan'])),
-            ],
-            '${row['__tujuan'] ?? '-'}'.trim(),
-          ];
+          return buildReportTableDataRow(
+            row: row,
+            rowNumber: index + 1,
+            incomeInvoiceTable: useIncomeInvoiceTable,
+            showIncomePphColumn: showIncomePphColumn,
+            combinedDriverCostColumns: useCombinedDriverCostColumns,
+            showCombinedPphColumn: showCombinedPphColumn,
+            companyMode: companyMode,
+            formatDate: formatReportDate,
+            formatAmount: formatReportAmount,
+            paidAtDisplay: formatPaidAtOrDestination(row),
+          );
         });
         final reportTableData = <List<String>>[...tableData];
-        if (useIncomeInvoiceTable) {
-          final totalJumlah =
-              rows.fold<double>(0, (sum, row) => sum + _toNum(row['__jumlah']));
-          final totalPph =
-              rows.fold<double>(0, (sum, row) => sum + _toNum(row['__pph']));
-          final totalNilai =
-              rows.fold<double>(0, (sum, row) => sum + _toNum(row['__total']));
-          final totalBayar =
-              rows.fold<double>(0, (sum, row) => sum + _toNum(row['__bayar']));
-          final totalSisa =
-              rows.fold<double>(0, (sum, row) => sum + _toNum(row['__sisa']));
-          reportTableData.add(
-            showIncomePphColumn
-                ? [
-                    '',
-                    '',
-                    'TOTAL',
-                    formatReportAmount(totalJumlah),
-                    formatReportAmount(totalPph),
-                    formatReportAmount(totalNilai),
-                    formatReportAmount(totalBayar),
-                    formatReportAmount(totalSisa),
-                    '',
-                  ]
-                : [
-                    '',
-                    '',
-                    'TOTAL',
-                    formatReportAmount(totalJumlah),
-                    formatReportAmount(totalNilai),
-                    formatReportAmount(totalBayar),
-                    formatReportAmount(totalSisa),
-                    '',
-                  ],
-          );
-        } else {
-          if (useCombinedDriverCostColumns) {
-            final incomeRows =
-                rows.where((row) => '${row['__type']}' == 'Income');
-            final totalJumlah = incomeRows.fold<double>(
-              0,
-              (sum, row) => sum + _toNum(row['__jumlah']),
-            );
-            final totalPph = incomeRows.fold<double>(
-              0,
-              (sum, row) => sum + _toNum(row['__pph']),
-            );
-            final totalNilai = incomeRows.fold<double>(
-              0,
-              (sum, row) => sum + _toNum(row['__total']),
-            );
-            final totalSangu = rows.fold<double>(
-              0,
-              (sum, row) => sum + _toNum(row['__sangu_sopir']),
-            );
-            final totalGabungan = rows.fold<double>(
-              0,
-              (sum, row) => sum + _toNum(row['__gabungan']),
-            );
-            final totalLaba = rows.fold<double>(
-              0,
-              (sum, row) => sum + _toNum(row['__laba']),
-            );
-            reportTableData.add([
-              '',
-              '',
-              '',
-              '',
-              '',
-              'TOTAL',
-              formatReportAmount(totalJumlah),
-              formatReportAmount(totalSangu),
-              formatReportAmount(totalGabungan),
-              if (showCombinedPphColumn) formatReportAmount(totalPph),
-              formatReportAmount(totalNilai),
-              formatReportAmount(totalLaba),
-            ]);
-          } else {
-            final totalJumlah = rows.fold<double>(0, (sum, row) {
-              if (isCombinedExpenseCategoryRow(row)) return sum;
-              return sum + _toNum(row['__jumlah']);
-            });
-            final totalPph = companyMode
-                ? rows.fold<double>(0, (sum, row) {
-                    if (isCombinedExpenseCategoryRow(row)) return sum;
-                    return sum + _toNum(row['__pph']);
-                  })
-                : 0.0;
-            final totalNilai = rows.fold<double>(0, (sum, row) {
-              if (isCombinedExpenseCategoryRow(row)) return sum;
-              return sum + _toNum(row['__total']);
-            });
-            reportTableData.add(
-              companyMode
-                  ? [
-                      '',
-                      '',
-                      'TOTAL',
-                      formatReportAmount(totalJumlah),
-                      formatReportAmount(totalPph),
-                      formatReportAmount(totalNilai),
-                      '',
-                    ]
-                  : [
-                      '',
-                      '',
-                      'TOTAL',
-                      formatReportAmount(totalJumlah),
-                      formatReportAmount(totalNilai),
-                      '',
-                    ],
-            );
-          }
-        }
-        final numericColumns = useIncomeInvoiceTable
-            ? showIncomePphColumn
-                ? <int>{3, 4, 5, 6, 7}
-                : <int>{3, 4, 5, 6}
-            : useCombinedDriverCostColumns
-                ? showCombinedPphColumn
-                    ? <int>{6, 7, 8, 9, 10, 11}
-                    : <int>{6, 7, 8, 9, 10}
-                : companyMode
-                    ? <int>{3, 4, 5}
-                    : <int>{3, 4};
-        final dateColumns = useIncomeInvoiceTable
-            ? showIncomePphColumn
-                ? <int>{1, 8}
-                : <int>{1, 7}
-            : <int>{1};
-        final priorityTextColumns = useIncomeInvoiceTable
-            ? <int>{2}
-            : useCombinedDriverCostColumns
-                ? <int>{2, 3, 4, 5}
-                : <int>{2, headers.length - 1};
-        final columnWidths = buildDynamicColumnWidths(
+        reportTableData.add(
+          buildReportTableTotalRow(
+            rows: rows,
+            incomeInvoiceTable: useIncomeInvoiceTable,
+            showIncomePphColumn: showIncomePphColumn,
+            combinedDriverCostColumns: useCombinedDriverCostColumns,
+            showCombinedPphColumn: showCombinedPphColumn,
+            companyMode: companyMode,
+            formatAmount: formatReportAmount,
+          ),
+        );
+        final numericColumns = tableLayout.numericColumns;
+        final dateColumns = tableLayout.dateColumns;
+        final priorityTextColumns = tableLayout.priorityTextColumns;
+        final columnFlexes = buildReportColumnWidthFlexes(
           headers: headers,
           data: reportTableData,
           dateColumns: dateColumns,
           numericColumns: numericColumns,
           priorityTextColumns: priorityTextColumns,
+          incomeInvoiceTable: useIncomeInvoiceTable,
+          showIncomePphColumn: showIncomePphColumn,
+          combinedDriverCostColumns: useCombinedDriverCostColumns,
+          showCombinedPphColumn: showCombinedPphColumn,
+          companyMode: companyMode,
         );
-        double flexValue(pw.TableColumnWidth? width, double fallback) {
-          if (width is pw.FlexColumnWidth) return width.flex;
-          if (width is pw.FixedColumnWidth) return width.width;
-          return fallback;
-        }
-
-        if (useIncomeInvoiceTable) {
-          final customerIndex = 2;
-          if (showIncomePphColumn) {
-            columnWidths
-              ..[0] = const pw.FlexColumnWidth(3.0)
-              ..[1] = const pw.FlexColumnWidth(8.0)
-              ..[customerIndex] = const pw.FlexColumnWidth(32.0)
-              ..[3] = const pw.FlexColumnWidth(9.0)
-              ..[4] = const pw.FlexColumnWidth(7.0)
-              ..[5] = const pw.FlexColumnWidth(9.0)
-              ..[6] = const pw.FlexColumnWidth(8.5)
-              ..[7] = const pw.FlexColumnWidth(8.5)
-              ..[8] = const pw.FlexColumnWidth(8.5);
-          } else {
-            columnWidths
-              ..[0] = const pw.FlexColumnWidth(3.0)
-              ..[1] = const pw.FlexColumnWidth(8.2)
-              ..[customerIndex] = const pw.FlexColumnWidth(34.0)
-              ..[3] = const pw.FlexColumnWidth(9.4)
-              ..[4] = const pw.FlexColumnWidth(9.4)
-              ..[5] = const pw.FlexColumnWidth(8.7)
-              ..[6] = const pw.FlexColumnWidth(8.7)
-              ..[7] = const pw.FlexColumnWidth(8.7);
-          }
-        } else {
-          final customerIndex = 2;
-          if (useCombinedDriverCostColumns) {
-            if (showCombinedPphColumn) {
-              columnWidths
-                ..[0] = const pw.FlexColumnWidth(2.6)
-                ..[1] = const pw.FlexColumnWidth(6.8)
-                ..[customerIndex] = const pw.FlexColumnWidth(15.5)
-                ..[3] = const pw.FlexColumnWidth(8.2)
-                ..[4] = const pw.FlexColumnWidth(7.4)
-                ..[5] = const pw.FlexColumnWidth(8.0)
-                ..[6] = const pw.FlexColumnWidth(7.3)
-                ..[7] = const pw.FlexColumnWidth(7.3)
-                ..[8] = const pw.FlexColumnWidth(7.3)
-                ..[9] = const pw.FlexColumnWidth(5.8)
-                ..[10] = const pw.FlexColumnWidth(7.3)
-                ..[11] = const pw.FlexColumnWidth(7.3);
-            } else {
-              columnWidths
-                ..[0] = const pw.FlexColumnWidth(2.8)
-                ..[1] = const pw.FlexColumnWidth(7.2)
-                ..[customerIndex] = const pw.FlexColumnWidth(17.0)
-                ..[3] = const pw.FlexColumnWidth(8.8)
-                ..[4] = const pw.FlexColumnWidth(8.2)
-                ..[5] = const pw.FlexColumnWidth(8.8)
-                ..[6] = const pw.FlexColumnWidth(8.0)
-                ..[7] = const pw.FlexColumnWidth(8.0)
-                ..[8] = const pw.FlexColumnWidth(8.0)
-                ..[9] = const pw.FlexColumnWidth(8.0)
-                ..[10] = const pw.FlexColumnWidth(8.0);
-            }
-          } else {
-            final currentCustomerFlex =
-                flexValue(columnWidths[customerIndex], 16.0);
-            columnWidths[customerIndex] = pw.FlexColumnWidth(
-              max(currentCustomerFlex, companyMode ? 26.0 : 24.0),
-            );
-          }
-        }
+        final columnWidths = columnFlexes.map(
+          (index, flex) => MapEntry(index, pw.FlexColumnWidth(flex)),
+        );
         final cellAlignments = <int, pw.Alignment>{
           for (int i = 0; i < headers.length; i++) i: pw.Alignment.center,
         };
         final totalRowNumber = reportTableData.length;
-        double oneLineReportFontSize({
-          required int index,
-          required String text,
-          required bool header,
-          required bool totalRow,
-        }) {
-          var size = header ? headerFont : cellFont;
-          if (totalRow) size = max(5.7, size - 0.2);
-          if (index == 2) {
-            final len = text.replaceAll(RegExp(r'\s+'), ' ').trim().length;
-            if (len > 30) {
-              size -= min(1.25, (len - 30) * 0.055);
-            }
-            if (len > 44) {
-              size -= min(0.75, (len - 44) * 0.045);
-            }
-            return size.clamp(4.8, header ? headerFont : cellFont).toDouble();
-          }
-          if (numericColumns.contains(index)) {
-            return size.clamp(5.4, header ? headerFont : cellFont).toDouble();
-          }
-          return size.clamp(5.2, header ? headerFont : cellFont).toDouble();
-        }
 
         pw.Widget buildOneLineReportText(
           String value, {
@@ -5003,11 +4171,13 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
           bool totalRow = false,
         }) {
           final text = value.replaceAll('\n', ' ').replaceAll('\r', ' ').trim();
-          final fontSize = oneLineReportFontSize(
+          final fontSize = resolveReportOneLineFontSize(
             index: index,
             text: text,
             header: header,
             totalRow: totalRow,
+            numericColumn: numericColumns.contains(index),
+            sizing: reportFontSizing,
           );
           final bold = header || totalRow;
           if (text.isEmpty) {
@@ -5227,7 +4397,10 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                       index == 0 &&
                       rowNum > 0 &&
                       rowNum <= rows.length &&
-                      shouldHighlightPaidIncomeNumber(rows[rowNum - 1])) {
+                      shouldHighlightPaidIncomeNumber(
+                        row: rows[rowNum - 1],
+                        incomeInvoiceTable: useIncomeInvoiceTable,
+                      )) {
                     return const pw.BoxDecoration(
                       color: PdfColors.yellow100,
                     );
@@ -5312,38 +4485,6 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     final reportSisaControllers = <String, TextEditingController>{};
     final reportSisaEdited = <String, bool>{};
 
-    String monthLabel(int month) {
-      const id = [
-        'Januari',
-        'Februari',
-        'Maret',
-        'April',
-        'Mei',
-        'Juni',
-        'Juli',
-        'Agustus',
-        'September',
-        'Oktober',
-        'November',
-        'Desember',
-      ];
-      const en = [
-        'January',
-        'February',
-        'March',
-        'April',
-        'May',
-        'June',
-        'July',
-        'August',
-        'September',
-        'October',
-        'November',
-        'December',
-      ];
-      return _t(id[month - 1], en[month - 1]);
-    }
-
     void syncReportPaymentControllers(
       List<Map<String, dynamic>> previewRows,
       bool incomeInvoiceReport,
@@ -5362,17 +4503,14 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
 
       for (final row in previewRows) {
         final key = '${row['__key']}';
-        final paidLocked = row['__paid_locked'] == true;
-        final total = _toNum(row['__total']);
-        final lockedPaidAmount = _toNum(row['__bayar_default']) > 0
-            ? _toNum(row['__bayar_default'])
-            : total;
+        final paymentDefaults = resolveReportPaymentDefaults(row);
+        final paidLocked = paymentDefaults.paidLocked;
         final defaultBayar = formatEditableReportAmount(
-          paidLocked ? lockedPaidAmount : _toNum(row['__bayar_default']),
+          paymentDefaults.defaultBayar,
         );
         final defaultSisa = paidLocked
             ? ''
-            : formatEditableReportAmount(_toNum(row['__sisa_default']));
+            : formatEditableReportAmount(paymentDefaults.defaultSisa);
         final bayarController = reportBayarControllers.putIfAbsent(
           key,
           () => TextEditingController(text: defaultBayar),
@@ -5410,12 +4548,13 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         builder: (context) {
           return StatefulBuilder(
             builder: (context, setDialogState) {
-              final start = range == 'year'
-                  ? DateTime(selectedYear, 1, 1)
-                  : DateTime(selectedYear, selectedMonth, 1);
-              final end = range == 'year'
-                  ? DateTime(selectedYear + 1, 1, 1)
-                  : DateTime(selectedYear, selectedMonth + 1, 1);
+              final period = buildReportPeriodRange(
+                year: selectedYear,
+                month: selectedMonth,
+                fullYear: range == 'year',
+              );
+              final start = period.start;
+              final end = period.end;
               final previewRows = buildRows(
                 start: start,
                 end: end,
@@ -5618,7 +4757,12 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                                     12,
                                     (index) => DropdownMenuItem<int>(
                                       value: index + 1,
-                                      child: Text(monthLabel(index + 1)),
+                                      child: Text(
+                                        reportMonthName(
+                                          index + 1,
+                                          isEnglish: _isEn,
+                                        ),
+                                      ),
                                     ),
                                   ),
                                   onChanged: (value) {
@@ -6154,38 +5298,17 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       allowedStatuses: statusFilters,
       keyword: keyword,
     );
-    final rows = selectedKeys.isEmpty
-        ? <Map<String, dynamic>>[]
-        : allRows
-            .where((row) => selectedKeys.contains('${row['__key']}'))
-            .map((row) {
-            if (!(includeIncomeSelected && !includeExpenseSelected) ||
-                '${row['__type']}' != 'Income') {
-              return row;
-            }
-            final key = '${row['__key']}';
-            final total = _toNum(row['__total']);
-            final paidLocked = row['__paid_locked'] == true;
-            final lockedPaidAmount = _toNum(row['__bayar_default']) > 0
-                ? _toNum(row['__bayar_default'])
-                : total;
-            final bayarText = paidLocked
-                ? formatEditableReportAmount(lockedPaidAmount)
-                : (bayarInputs[key] ?? '').toString().trim();
-            final sisaText =
-                paidLocked ? '' : (sisaInputs[key] ?? '').toString().trim();
-            final bayar = paidLocked
-                ? lockedPaidAmount
-                : parseEditableReportAmount(bayarText);
-            final sisa = paidLocked ? 0.0 : parseEditableReportAmount(sisaText);
-            return {
-              ...row,
-              '__bayar': bayar,
-              '__sisa': sisa,
-              '__bayar_text': bayarText,
-              '__sisa_text': sisaText,
-            };
-          }).toList();
+    final incomeInvoiceReport =
+        includeIncomeSelected && !includeExpenseSelected;
+    final rows = buildSelectedReportRowsForPrint(
+      allRows: allRows,
+      selectedKeys: selectedKeys,
+      incomeInvoiceReport: incomeInvoiceReport,
+      bayarInputs: bayarInputs,
+      sisaInputs: sisaInputs,
+      formatAmount: formatEditableReportAmount,
+      parseAmount: parseEditableReportAmount,
+    );
 
     if (rows.isEmpty) {
       _snack(
@@ -6198,25 +5321,15 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       return;
     }
 
-    final totalIncome = rows
-        .where((row) => '${row['__type']}' == 'Income')
-        .fold<double>(0, (sum, row) => sum + _toNum(row['__income']));
-    final totalExpense = rows.fold<double>(0, (sum, row) {
-      if ('${row['__type']}' == 'Expense') {
-        return sum + _toNum(row['__expense']);
-      }
-      return sum + _toNum(row['__sangu_sopir']);
-    });
+    final reportTotals = calculateReportPrintTotals(rows);
 
     try {
-      final incomeInvoiceReport =
-          includeIncomeSelected && !includeExpenseSelected;
       final printed = await printReportPdf(
         start: start,
         end: end,
         rows: rows,
-        totalIncome: totalIncome,
-        totalExpense: totalExpense,
+        totalIncome: reportTotals.income,
+        totalExpense: reportTotals.expense,
         includeIncome: includeIncomeSelected,
         includeExpense: includeExpenseSelected,
         includeDriverCostColumns: includeDriverCostColumnsSelected,
@@ -6347,20 +5460,6 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         'plates': plates.join(' | '),
         'routes': routes.join(' | '),
       };
-    }
-
-    bool isAutoSanguExpense(Map<String, dynamic> expense) {
-      final note = '${expense['note'] ?? ''}'.trim().toUpperCase();
-      if (note.startsWith('AUTO_SANGU:')) return true;
-      final ket = '${expense['keterangan'] ?? ''}'.trim().toLowerCase();
-      return ket.startsWith('auto sangu sopir -');
-    }
-
-    bool isAutoGabunganExpense(Map<String, dynamic> expense) {
-      final note = '${expense['note'] ?? ''}'.trim().toUpperCase();
-      if (note.startsWith('AUTO_GABUNGAN:')) return true;
-      final ket = '${expense['keterangan'] ?? ''}'.trim().toLowerCase();
-      return ket.startsWith('auto gabungan -');
     }
 
     bool incomeUsesManualArmada(Map<String, dynamic>? income) {
@@ -6594,27 +5693,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
 
     final expenseByIncomeId = <String, List<Map<String, dynamic>>>{};
     for (final item in expenses) {
-      var marker = '';
       final autoSangu = isAutoSanguExpense(item);
       final autoGabungan = isAutoGabunganExpense(item);
-      final note = '${item['note'] ?? ''}'.trim();
-      if (note.toUpperCase().startsWith('AUTO_SANGU:')) {
-        marker = note.substring('AUTO_SANGU:'.length).trim();
-      } else if (note.toUpperCase().startsWith('AUTO_GABUNGAN:')) {
-        marker = note.substring('AUTO_GABUNGAN:'.length).trim();
-      }
-      if (marker.isEmpty) {
-        final ket = '${item['keterangan'] ?? ''}'.trim();
-        final lowerKet = ket.toLowerCase();
-        const prefix = 'auto sangu sopir -';
-        if (lowerKet.startsWith(prefix)) {
-          marker = ket.substring(prefix.length).trim();
-        }
-        const gabunganPrefix = 'auto gabungan -';
-        if (marker.isEmpty && lowerKet.startsWith(gabunganPrefix)) {
-          marker = ket.substring(gabunganPrefix.length).trim();
-        }
-      }
+      final marker = extractAutoExpenseMarker(item);
 
       final markerKey = normalizeToken(marker);
       if (markerKey.isEmpty) continue;

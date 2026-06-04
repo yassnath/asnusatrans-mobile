@@ -217,20 +217,6 @@ class _AdminCalendarViewState extends State<_AdminCalendarView> {
       return const <Map<String, dynamic>>[];
     }
 
-    bool isAutoSanguExpense(Map<String, dynamic> expense) {
-      final note = '${expense['note'] ?? ''}'.trim().toUpperCase();
-      if (note.startsWith('AUTO_SANGU:')) return true;
-      final ket = '${expense['keterangan'] ?? ''}'.trim().toLowerCase();
-      return ket.startsWith('auto sangu sopir -');
-    }
-
-    bool isAutoGabunganExpense(Map<String, dynamic> expense) {
-      final note = '${expense['note'] ?? ''}'.trim().toUpperCase();
-      if (note.startsWith('AUTO_GABUNGAN:')) return true;
-      final ket = '${expense['keterangan'] ?? ''}'.trim().toLowerCase();
-      return ket.startsWith('auto gabungan -');
-    }
-
     String normalizeToken(String value) {
       return value
           .trim()
@@ -296,29 +282,6 @@ class _AdminCalendarViewState extends State<_AdminCalendarView> {
     bool isSameDay(DateTime? a, DateTime? b) {
       if (a == null || b == null) return false;
       return a.year == b.year && a.month == b.month && a.day == b.day;
-    }
-
-    String extractExpenseMarker(Map<String, dynamic> expense) {
-      final note = '${expense['note'] ?? ''}'.trim();
-      if (note.toUpperCase().startsWith('AUTO_SANGU:')) {
-        return note.substring('AUTO_SANGU:'.length).trim();
-      }
-      if (note.toUpperCase().startsWith('AUTO_GABUNGAN:')) {
-        return note.substring('AUTO_GABUNGAN:'.length).trim();
-      }
-
-      final ket = '${expense['keterangan'] ?? ''}'.trim();
-      final lowerKet = ket.toLowerCase();
-      const prefix = 'auto sangu sopir -';
-      if (lowerKet.startsWith(prefix)) {
-        return ket.substring(prefix.length).trim();
-      }
-      const gabunganPrefix = 'auto gabungan -';
-      if (lowerKet.startsWith(gabunganPrefix)) {
-        return ket.substring(gabunganPrefix.length).trim();
-      }
-
-      return '';
     }
 
     ({String driver, String route}) extractAutoSanguEntry(
@@ -454,7 +417,7 @@ class _AdminCalendarViewState extends State<_AdminCalendarView> {
 
     final linkedExpensesByIncomeId = <String, List<Map<String, dynamic>>>{};
     for (final expense in sortedExpenses) {
-      final markerKey = normalizeToken(extractExpenseMarker(expense));
+      final markerKey = normalizeToken(extractAutoExpenseMarker(expense));
       if (markerKey.isEmpty) continue;
       final linkedIncomeId = incomeIdByToken[markerKey];
       if (linkedIncomeId == null || linkedIncomeId.isEmpty) continue;
@@ -1094,7 +1057,7 @@ class _CustomerNotificationsViewState
       IconData icon = Icons.hourglass_bottom_outlined;
       Color color = AppColors.warning;
 
-      if (statusLower.contains('paid')) {
+      if (isPaidPaymentStatus(status)) {
         title = _t('Pembayaran dikonfirmasi', 'Payment confirmed');
         message = _t('Order $code sudah dibayar. Terima kasih.',
             'Order $code has been paid. Thank you.');

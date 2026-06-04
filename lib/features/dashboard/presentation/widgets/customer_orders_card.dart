@@ -4,6 +4,7 @@ import '../../../../core/i18n/language_controller.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../models/dashboard_models.dart';
+import '../../utils/payment_status_logic.dart';
 import 'status_badge.dart';
 
 class CustomerOrdersCard extends StatelessWidget {
@@ -70,7 +71,7 @@ class CustomerOrdersCard extends StatelessWidget {
               )
             else
               ...orders.map((order) {
-                final isPaid = order.status.toLowerCase().contains('paid');
+                final isPaid = isPaidPaymentStatus(order.status);
                 return Container(
                   margin: const EdgeInsets.only(bottom: 10),
                   padding: const EdgeInsets.all(12),
@@ -132,7 +133,11 @@ class CustomerOrdersCard extends StatelessWidget {
     if (s.contains('pending')) return isEn ? 'Pending' : 'Menunggu';
     if (s.contains('accepted')) return isEn ? 'Accepted' : 'Diterima';
     if (s.contains('rejected')) return isEn ? 'Rejected' : 'Ditolak';
-    if (s.contains('paid')) return isEn ? 'Paid' : 'Lunas';
+    if (isPaidPaymentStatus(raw)) return isEn ? 'Paid' : 'Lunas';
+    if (isUnpaidPaymentStatus(raw)) return isEn ? 'Unpaid' : 'Belum Lunas';
+    if (isPartialPaymentStatus(raw)) {
+      return isEn ? 'Partial' : 'Sebagian';
+    }
     return raw;
   }
 }

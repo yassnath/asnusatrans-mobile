@@ -17,7 +17,7 @@ class _AdminCreateFleetViewState extends State<_AdminCreateFleetView> {
   final _name = TextEditingController();
   final _plate = TextEditingController();
   final _capacity = TextEditingController();
-  String _status = 'Ready';
+  String _status = fleetStatusReady;
   bool _loading = false;
   bool get _isEn => LanguageController.language.value == AppLanguage.en;
   String _t(String id, String en) => _isEn ? en : id;
@@ -49,13 +49,13 @@ class _AdminCreateFleetViewState extends State<_AdminCreateFleetView> {
         plate: plate,
         capacity: capacity,
         status: _status,
-        active: _status != 'Inactive',
+        active: _status != fleetStatusInactive,
       );
       if (!mounted) return;
       _name.clear();
       _plate.clear();
       _capacity.clear();
-      _status = 'Ready';
+      _status = fleetStatusReady;
       widget.onCreated();
       _snack(
           _t('Armada berhasil ditambahkan.', 'Fleet was added successfully.'));
@@ -115,7 +115,7 @@ class _AdminCreateFleetViewState extends State<_AdminCreateFleetView> {
                 decoration: InputDecoration(
                   labelText: _t('Status', 'Status'),
                 ),
-                items: const ['Ready', 'Full', 'Inactive']
+                items: fleetStatusOptions
                     .map((item) => DropdownMenuItem(
                           value: item,
                           child: Text(item),
@@ -492,14 +492,15 @@ class _CustomerCreateOrderViewState extends State<_CustomerCreateOrderView> {
                               ...armadas.map(
                                 (item) {
                                   final status = '${item['status'] ?? 'Ready'}';
-                                  final isFull =
-                                      status.toLowerCase().contains('full');
                                   final label = item['kapasitas'] == null
                                       ? '${item['nama_truk'] ?? 'Armada'} - $status'
                                       : '${item['nama_truk'] ?? 'Armada'} (${item['kapasitas']} ton) - $status';
                                   return DropdownMenuItem<String>(
                                     value: '${item['id']}',
-                                    enabled: !isFull,
+                                    enabled: isFleetSelectable(
+                                      status,
+                                      active: item['is_active'] != false,
+                                    ),
                                     child: Text(label),
                                   );
                                 },

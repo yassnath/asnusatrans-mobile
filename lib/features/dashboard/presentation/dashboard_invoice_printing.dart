@@ -28,22 +28,11 @@ String _exactMobileInvoiceRendererRequiredMessage() {
 }
 
 String _normalizeDashboardArmadaNameKey(String value) {
-  return value
-      .toLowerCase()
-      .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
-      .replaceAll(RegExp(r'\s+'), ' ')
-      .trim();
+  return normalizeArmadaNameKey(value);
 }
 
 String? _extractDashboardPlateFromText(String value) {
-  final match = RegExp(
-    r'[A-Z]{1,2}\s?[0-9]{1,4}\s?[A-Z]{1,3}',
-  ).firstMatch(value.toUpperCase());
-  if (match == null) return null;
-  final plate =
-      match.group(0)?.toUpperCase().replaceAll(RegExp(r'\s+'), ' ').trim() ??
-          '';
-  return plate.isEmpty ? null : plate;
+  return extractArmadaPlateFromText(value);
 }
 
 List<Map<String, dynamic>> _dashboardToDetailList(dynamic value) {
@@ -385,9 +374,6 @@ Future<bool> _printDashboardInvoicePdf(
     final invoiceDetailList = detailList.isNotEmpty
         ? detailList
         : _dashboardToDetailList(item['rincian']);
-    // <= 16 detail rows: print in half-sheet layout (50:50 on portrait paper).
-    // > 16 detail rows: switch to full-sheet portrait layout.
-    final usePortrait = invoiceDetailList.length > 16;
     final invoiceRawNumber = '${item['no_invoice'] ?? '-'}';
     final customerName = '${item['nama_pelanggan'] ?? ''}';
     final resolvedInvoiceEntity = _resolveInvoiceEntityShared(
@@ -399,6 +385,10 @@ Future<bool> _printDashboardInvoicePdf(
       invoiceEntity: item['invoice_entity'],
       invoiceNumber: invoiceRawNumber,
       customerName: customerName,
+    );
+    final usePortrait = invoiceShouldUsePortraitLayout(
+      detailRowCount: invoiceDetailList.length,
+      isCompanyInvoice: isCompanyInvoice,
     );
     final subtotal = _resolveInvoiceDetailsExcelSubtotalShared(
       invoiceDetailList,
@@ -444,16 +434,8 @@ Future<bool> _printDashboardInvoicePdf(
       companyKopImage = null;
     }
     final armadas = await host.invoicePrintRepository.fetchArmadas();
-    final armadaPlateById = <String, String>{
-      for (final armada in armadas)
-        '${armada['id'] ?? ''}':
-            '${armada['plat_nomor'] ?? ''}'.trim().toUpperCase(),
-    };
-    final armadaPlateByName = <String, String>{
-      for (final armada in armadas)
-        _normalizeDashboardArmadaNameKey('${armada['nama_truk'] ?? ''}'):
-            '${armada['plat_nomor'] ?? ''}'.trim().toUpperCase(),
-    };
+    final armadaPlateById = buildArmadaPlateById(armadas);
+    final armadaPlateByName = buildArmadaPlateByName(armadas);
 
     String resolveNoPolisi(Map<String, dynamic> row) {
       final rowArmadaId = '${row['armada_id'] ?? ''}'.trim();
@@ -462,20 +444,17 @@ Future<bool> _printDashboardInvoicePdf(
       if (byArmada != null && byArmada.isNotEmpty && byArmada != '-') {
         return byArmada;
       }
-      final direct =
-          '${row['plat_nomor'] ?? row['no_polisi'] ?? ''}'.trim().toUpperCase();
+      final direct = normalizeArmadaPlateText(
+        row['plat_nomor'] ?? row['no_polisi'],
+      );
       if (direct.isNotEmpty && direct != '-') return direct;
       for (final candidate in [
         '${row['armada_manual'] ?? ''}'.trim(),
         '${row['armada_label'] ?? row['armada'] ?? ''}'.trim(),
       ]) {
         if (candidate.isEmpty) continue;
-        final match = RegExp(
-          r'\b[A-Z]{1,2}\s?\d{1,4}\s?[A-Z]{1,3}\b',
-        ).firstMatch(candidate.toUpperCase());
-        if (match != null) {
-          return (match.group(0) ?? '-').trim();
-        }
+        final parsedPlate = extractArmadaPlateFromText(candidate);
+        if (parsedPlate != null) return parsedPlate;
         final byName =
             armadaPlateByName[_normalizeDashboardArmadaNameKey(candidate)];
         if (byName != null && byName.isNotEmpty && byName != '-') {
@@ -504,8 +483,10 @@ Future<bool> _printDashboardInvoicePdf(
     int baseRowsPerSheet({
       required bool compact,
     }) {
-      final halfSheetRows = isCompanyInvoice ? 18 : 21;
-      return compact ? halfSheetRows : (halfSheetRows * 2) + 14;
+      return invoiceRowsPerSheet(
+        compact: compact,
+        isCompanyInvoice: isCompanyInvoice,
+      );
     }
 
     List<Map<String, dynamic>> buildPrintableRows({

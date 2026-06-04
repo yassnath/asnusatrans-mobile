@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_colors.dart';
+import '../../utils/fleet_status_logic.dart';
+import '../../utils/payment_status_logic.dart';
 
 class StatusBadge extends StatelessWidget {
   const StatusBadge({super.key, required this.status});
@@ -15,16 +17,22 @@ class StatusBadge extends StatelessWidget {
     final isCancelled = normalized.contains('cancel') ||
         normalized.contains('rejected') ||
         normalized.contains('failed');
-    final isUnpaid = normalized.contains('unpaid');
+    final isUnpaid = isUnpaidPaymentStatus(status);
+    final isPartial = isPartialPaymentStatus(status);
     final isWaiting =
         normalized.contains('waiting') || normalized.contains('pending');
-    final isFull = normalized.contains('full');
-    final isInactive = normalized.contains('inactive') ||
-        normalized.contains('non active') ||
-        normalized.contains('non-active');
-    final isReady = normalized.contains('ready') ||
-        (normalized.contains('active') && !isInactive);
-    final isPaid = normalized.contains('paid') && !isUnpaid;
+    final fleetStatusText = normalizeFleetStatusText(status);
+    final isFleetLike = fleetStatusText.contains('ready') ||
+        fleetStatusText.contains('full') ||
+        fleetStatusText.contains('inactive') ||
+        fleetStatusText.contains('non active') ||
+        fleetStatusText.contains('active');
+    final isFull = isFleetLike && isFullFleetStatus(status);
+    final isInactive = isFleetLike && isInactiveFleetStatus(status);
+    final isReady = isFleetLike &&
+        (fleetStatusText.contains('ready') ||
+            (fleetStatusText.contains('active') && !isInactive));
+    final isPaid = isPaidPaymentStatus(status);
     final isRecorded = normalized.contains('recorded');
 
     if (isCancelled) {
@@ -36,6 +44,9 @@ class StatusBadge extends StatelessWidget {
     } else if (isUnpaid || isWaiting || isFull) {
       bg = const Color(0x22F59E0B);
       fg = AppColors.warning;
+    } else if (isPartial) {
+      bg = const Color(0x223B82F6);
+      fg = AppColors.blue;
     } else if (isPaid ||
         isReady ||
         isRecorded ||

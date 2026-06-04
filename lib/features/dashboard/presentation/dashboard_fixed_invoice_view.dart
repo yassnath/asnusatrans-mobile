@@ -531,23 +531,7 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
   }
 
   double _previewDetailSubtotal(Map<String, dynamic> row) {
-    for (final key in const [
-      'manual_subtotal',
-      'subtotal_manual',
-    ]) {
-      final value = fixedInvoiceNum(row[key]);
-      if (value > 0) return _roundInvoiceRupiah(value);
-    }
-    final computed =
-        fixedInvoiceNum(row['tonase']) * fixedInvoiceNum(row['harga']);
-    if (row['subtotal_auto'] == true && computed > 0) {
-      return _roundInvoiceRupiah(computed);
-    }
-    for (final key in const ['subtotal', 'total', 'total_biaya', 'jumlah']) {
-      final value = fixedInvoiceNum(row[key]);
-      if (value > 0) return _roundInvoiceRupiah(value);
-    }
-    return _roundInvoiceRupiah(computed);
+    return resolveInvoiceDetailExcelSubtotal(row);
   }
 
   String _resolveDisplayNumber(Map<String, dynamic> item) {
@@ -722,11 +706,11 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
               final allPaid = manualPaid >= initialSummary.totalAmount - 0.01 ||
                   (paymentEntries.isNotEmpty &&
                       paymentEntries.every((entry) => entry.paid));
-              selectedStatus = allPaid
-                  ? 'Paid'
-                  : anyPaid
-                      ? 'Partial'
-                      : 'Unpaid';
+              selectedStatus = resolvePaymentStatusLabel(
+                total: initialSummary.totalAmount,
+                paid: allPaid ? initialSummary.totalAmount : manualPaid,
+                hasAnyPayment: anyPaid,
+              );
               if (!anyPaid) {
                 selectedPaidDate = null;
               } else {

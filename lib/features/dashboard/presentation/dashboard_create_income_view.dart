@@ -430,8 +430,10 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
     for (final armada in armadas) {
       final id = '${armada['id']}'.trim();
       if (!selectedArmadaIds.contains(id)) continue;
-      final status = '${armada['status'] ?? 'Ready'}'.trim().toLowerCase();
-      if (status != 'ready') {
+      if (!isFleetSelectable(
+        armada['status'],
+        active: armada['is_active'] != false,
+      )) {
         busyArmada = armada;
         break;
       }
