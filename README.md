@@ -4,6 +4,8 @@
 
 Built for real daily operations, the app helps transport teams move faster, reduce repeated manual work, and keep business data consistent from field activity to financial reporting.
 
+Powered by Supabase and Firebase, the platform combines structured operational data with timely notifications, so teams can act on approvals, customer updates, payment reminders, and finance signals without waiting for manual follow-up.
+
 ## Product Overview
 
 Transport operations often depend on scattered chats, spreadsheets, handwritten notes, and manual follow-up. AS Nusa Trans Mobile brings those moving parts into a focused operational command center where income, expenses, fleet usage, customer invoices, and owner visibility stay connected.
@@ -26,6 +28,9 @@ The result is a cleaner workflow for teams that need speed, accountability, and 
 
 - **Cleaner business control**
   Helps owners monitor revenue, expenses, fleet movement, and unpaid activity without waiting for manual recaps.
+
+- **Notification-powered coordination**
+  Firebase-powered push notifications and in-app alerts help teams respond faster to finance reminders, customer activity, approvals, and operational updates.
 
 ## Core Features
 
@@ -72,6 +77,15 @@ The result is a cleaner workflow for teams that need speed, accountability, and 
 - Calendar timeline for income, expense, and fleet activity
 - Role-specific dashboard content for faster decision-making
 
+### Smart Notifications
+
+- Firebase Cloud Messaging integration for push-ready operational alerts
+- Foreground and background notification handling for important updates
+- Role-based notification routing for staff, owner, admin, pengurus, and customer flows
+- In-app customer notifications for invoice and order activity
+- Finance reminder notifications for recurring weekly and monthly visibility
+- Local notification support for a smoother cross-platform user experience
+
 ## Business Impact
 
 AS Nusa Trans Mobile helps transport teams:
@@ -82,10 +96,11 @@ AS Nusa Trans Mobile helps transport teams:
 - improve owner visibility into cash flow
 - connect field operations with finance records
 - keep route, driver, armada, and payment data easier to audit
+- reduce missed follow-ups through timely operational notifications
 
 ## Enterprise Readiness
 
-The codebase is being shaped toward a cleaner enterprise foundation with extracted business logic, automated quality checks, focused regression tests, and clearer documentation for future development.
+The codebase is being shaped toward a cleaner enterprise foundation with extracted business logic, automated quality checks, focused regression tests, integration smoke coverage, and clearer documentation for future development.
 
 Recent improvements strengthen the reporting and invoice areas by separating core logic from presentation code, making critical calculations easier to test, maintain, and evolve.
 
@@ -93,9 +108,11 @@ Recent improvements strengthen the reporting and invoice areas by separating cor
 
 - **Flutter** for cross-platform mobile and desktop delivery
 - **Supabase** for authentication and data services
+- **Firebase Cloud Messaging** for push notification delivery
+- **Local notifications** for on-device reminders and foreground alerts
 - **PDF and printing workflows** for business-ready documents
 - **Protected session state handling** for safer operational continuity
-- **Automated analysis and regression testing** to protect key business flows
+- **Automated analysis, regression testing, and integration smoke checks** to protect key business flows
 
 ## Positioning
 
@@ -106,6 +123,7 @@ AS Nusa Trans Mobile is more than a simple invoice app. It is a logistics operat
 - readable fleet monitoring
 - practical print output
 - route-based operational rules
+- push-enabled operational coordination
 - business visibility for owners and admins
 
 For transport teams that care about speed, clarity, and financial control, AS Nusa Trans Mobile gives the operation a stronger digital backbone.
