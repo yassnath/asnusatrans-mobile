@@ -40,6 +40,11 @@ String normalizeSanguPlace(String value) {
   if (normalized.contains('kediri')) return 'kediri';
   if (normalized.contains('sragen')) return 'sragen';
   if (normalized.contains('bimoli')) return 'bimoli';
+  if (normalized.contains('manyar') ||
+      normalized.contains('mie sedaap') ||
+      normalized.contains('mie sedap')) {
+    return 'manyar_mie_sedap';
+  }
   if (normalized.contains('bumindo')) return 'bumindo';
   if (normalized.contains('batang')) return 'batang';
   if (normalized.contains('kig')) return 'kig';
@@ -55,6 +60,7 @@ String normalizeSanguPlace(String value) {
   if (normalized.contains('temanggung')) return 'temanggung';
   if (normalized.contains('danliris')) return 'danliris';
   if (normalized.contains('jaskin')) return 'jaskin';
+  if (normalized.contains('wings')) return 'wings';
   if (normalized.contains('sukoharjo') ||
       (normalized.contains('surya') && normalized.contains('warna'))) {
     return 'surya warna sukoharjo';
@@ -78,6 +84,23 @@ bool sanguIsNonBetoyoPickupRule(String value) {
       key == 'non betoyo' ||
       compact == 'selainbetoyo' ||
       compact == 'nonbetoyo';
+}
+
+bool manualArmadaRouteUsesSanguExpense({
+  required String pickup,
+  required String destination,
+}) {
+  final pickupNorm = normalizeSanguPlace(pickup);
+  final destinationNorm = normalizeSanguPlace(destination);
+  if (pickupNorm.isEmpty || destinationNorm.isEmpty) return false;
+  if (pickupNorm == 'driyo' && destinationNorm == 'langon') return true;
+  if (!sanguIsBetoyoPlace(pickupNorm) && destinationNorm == 'driyo') {
+    return true;
+  }
+  if (!sanguIsBetoyoPlace(pickupNorm) && destinationNorm == 'benowo') {
+    return true;
+  }
+  return false;
 }
 
 String normalizeSanguCustomerKey(String value) {
@@ -340,6 +363,25 @@ Map<String, dynamic>? resolvePrioritizedSanguRouteRule({
     };
   }
 
+  final manyarMieSedapToLangon =
+      pickupNorm == 'manyar_mie_sedap' && destinationNorm == 'langon';
+  final langonToManyarMieSedap =
+      pickupNorm == 'langon' && destinationNorm == 'manyar_mie_sedap';
+  if (manyarMieSedapToLangon || langonToManyarMieSedap) {
+    return <String, dynamic>{
+      'tempat': manyarMieSedapToLangon
+          ? 'MANYAR / MIE SEDAP - T. LANGON'
+          : 'T. LANGON - MANYAR / MIE SEDAP',
+      'lokasi_muat':
+          manyarMieSedapToLangon ? 'MANYAR / MIE SEDAP' : 'T. LANGON',
+      'lokasi_bongkar':
+          manyarMieSedapToLangon ? 'T. LANGON' : 'MANYAR / MIE SEDAP',
+      'nominal': 450000,
+      '__muat_norm': manyarMieSedapToLangon ? 'manyar_mie_sedap' : 'langon',
+      '__bongkar_norm': manyarMieSedapToLangon ? 'langon' : 'manyar_mie_sedap',
+    };
+  }
+
   final langonToSuryaWarna =
       pickupNorm == 'langon' && destinationNorm == 'surya warna sukoharjo';
   if (langonToSuryaWarna) {
@@ -362,6 +404,72 @@ Map<String, dynamic>? resolvePrioritizedSanguRouteRule({
       'nominal': 700000,
       '__muat_norm': 'nganjuk',
       '__bongkar_norm': 'driyo',
+    };
+  }
+
+  final wingsToLangon = pickupNorm == 'wings' && destinationNorm == 'langon';
+  if (wingsToLangon) {
+    return <String, dynamic>{
+      'tempat': 'WINGS - T. LANGON',
+      'lokasi_muat': 'WINGS',
+      'lokasi_bongkar': 'T. LANGON',
+      'nominal': 520000,
+      '__muat_norm': 'wings',
+      '__bongkar_norm': 'langon',
+    };
+  }
+
+  final driyoToLangon = pickupNorm == 'driyo' && destinationNorm == 'langon';
+  if (driyoToLangon) {
+    return <String, dynamic>{
+      'tempat': 'DRIYO - T. LANGON',
+      'lokasi_muat': 'DRIYO',
+      'lokasi_bongkar': 'T. LANGON',
+      'nominal': 520000,
+      '__muat_norm': 'driyo',
+      '__bongkar_norm': 'langon',
+    };
+  }
+
+  final nonBetoyoToDriyo = pickupNorm.isNotEmpty &&
+      !sanguIsBetoyoPlace(pickupNorm) &&
+      destinationNorm == 'driyo';
+  if (nonBetoyoToDriyo) {
+    return <String, dynamic>{
+      'tempat': 'SELAIN BETOYO - DRIYO',
+      'lokasi_muat': 'Selain Betoyo',
+      'lokasi_bongkar': 'DRIYO',
+      'nominal': 520000,
+      '__muat_norm': 'selain betoyo',
+      '__bongkar_norm': 'driyo',
+    };
+  }
+
+  final nonBetoyoToWings = pickupNorm.isNotEmpty &&
+      !sanguIsBetoyoPlace(pickupNorm) &&
+      destinationNorm == 'wings';
+  if (nonBetoyoToWings) {
+    return <String, dynamic>{
+      'tempat': 'SELAIN BETOYO - WINGS',
+      'lokasi_muat': 'Selain Betoyo',
+      'lokasi_bongkar': 'WINGS',
+      'nominal': 520000,
+      '__muat_norm': 'selain betoyo',
+      '__bongkar_norm': 'wings',
+    };
+  }
+
+  final nonBetoyoToBenowo = pickupNorm.isNotEmpty &&
+      !sanguIsBetoyoPlace(pickupNorm) &&
+      destinationNorm == 'benowo';
+  if (nonBetoyoToBenowo) {
+    return <String, dynamic>{
+      'tempat': 'SELAIN BETOYO - BENOWO',
+      'lokasi_muat': 'Selain Betoyo',
+      'lokasi_bongkar': 'BENOWO',
+      'nominal': 400000,
+      '__muat_norm': 'selain betoyo',
+      '__bongkar_norm': 'benowo',
     };
   }
 

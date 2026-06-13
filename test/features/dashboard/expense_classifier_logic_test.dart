@@ -13,12 +13,20 @@ void main() {
         isTrue,
       );
       expect(
+        isAutoSanguExpense({'keterangan': 'Auto sangu - INV-003'}),
+        isTrue,
+      );
+      expect(
         extractAutoExpenseMarker({'note': 'AUTO_SANGU:INV-001'}),
         'INV-001',
       );
       expect(
         extractAutoExpenseMarker({'keterangan': 'Auto sangu sopir - INV-002'}),
         'INV-002',
+      );
+      expect(
+        extractAutoExpenseMarker({'keterangan': 'Auto sangu - INV-003'}),
+        'INV-003',
       );
     });
 

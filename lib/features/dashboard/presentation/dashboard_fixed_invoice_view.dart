@@ -1438,7 +1438,6 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
         await widget.repository.deleteFixedInvoiceBatch(batchId);
       }
       final ids = await _loadFixedIds();
-      if (idsToReturn.every((id) => !ids.contains(id))) return;
       ids.removeAll(idsToReturn);
       await _saveFixedIds(ids);
       final batches = await _loadFixedBatches();

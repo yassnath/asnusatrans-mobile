@@ -7,6 +7,7 @@ import '../../../core/utils/formatters.dart';
 import '../models/dashboard_models.dart';
 import '../utils/armada_identifier_logic.dart';
 import '../utils/expense_classifier_logic.dart';
+import '../utils/expense_number_logic.dart';
 import '../utils/fleet_status_logic.dart';
 import '../utils/gabungan_pricing_rule_logic.dart';
 import '../utils/income_pricing_rule_logic.dart';
@@ -1034,6 +1035,57 @@ class DashboardRepository {
     return 0.0;
   }
 
+  String _normalizeAutoExpenseMarker(dynamic value) {
+    return '${value ?? ''}'
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .replaceAll(' /', '/')
+        .replaceAll('/ ', '/');
+  }
+
+  bool _autoExpenseDetailsEquivalent(
+    dynamic currentValue,
+    List<Map<String, dynamic>> nextRows,
+  ) {
+    final currentRows = _toMapList(currentValue);
+    if (currentRows.length != nextRows.length) return false;
+
+    String normalizedText(dynamic value) {
+      return '${value ?? ''}'
+          .trim()
+          .toLowerCase()
+          .replaceAll(RegExp(r'\s+'), ' ');
+    }
+
+    for (var index = 0; index < nextRows.length; index++) {
+      final current = currentRows[index];
+      final next = nextRows[index];
+      for (final key in const <String>[
+        'nama',
+        'name',
+        'nama_supir',
+        'lokasi_muat',
+        'lokasi_bongkar',
+        'muatan',
+      ]) {
+        if (normalizedText(current[key]) != normalizedText(next[key])) {
+          return false;
+        }
+      }
+      for (final key in const <String>[
+        'tonase',
+        'harga',
+        'jumlah',
+      ]) {
+        if ((_num(current[key]) - _num(next[key])).abs() > 0.01) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
   Future<_AutoSanguSyncResult> _createSanguExpenseFromIncomeBestEffort({
     String? invoiceId,
     required String invoiceNumber,
@@ -1048,6 +1100,8 @@ class DashboardRepository {
     List<Map<String, dynamic>>? preloadedRules,
     List<Map<String, dynamic>>? preloadedHargaPerTonRules,
     Map<String, String>? preloadedPlateById,
+    Map<String, List<Map<String, dynamic>>>? preloadedSanguRowsByMarker,
+    Map<String, List<Map<String, dynamic>>>? preloadedGabunganRowsByMarker,
   }) async {
     if (details.isEmpty) {
       return const _AutoSanguSyncResult(skipped: 1);
@@ -1064,35 +1118,64 @@ class DashboardRepository {
         preferredMarker,
         if (invoiceId?.trim().isNotEmpty == true) invoiceId!.trim(),
         if (invoiceNumber.trim().isNotEmpty) invoiceNumber.trim(),
+        if (invoiceNumber.trim().isNotEmpty)
+          Formatters.invoiceNumber(
+            invoiceNumber,
+            expenseDate,
+            customerName: fallbackCustomerName,
+            invoiceEntity: fallbackInvoiceEntity,
+          ),
       };
+      markerCandidates.removeWhere(
+        (marker) => marker.trim().isEmpty || marker.trim() == '-',
+      );
 
-      final existingAutoRows = _toMapList(
-        await _supabase
-            .from('expenses')
-            .select(
-              'id,no_expense,tanggal,status,dicatat_oleh,note,kategori,keterangan,rincian',
-            )
-            .like('note', 'AUTO_SANGU:%'),
-      ).where((row) {
-        final note = '${row['note'] ?? ''}'.trim();
-        if (!note.startsWith('AUTO_SANGU:')) return false;
-        final marker = note.substring('AUTO_SANGU:'.length).trim();
-        return markerCandidates.contains(marker);
-      }).toList();
+      Future<List<Map<String, dynamic>>> resolveExistingRows({
+        required String notePrefix,
+        required Map<String, List<Map<String, dynamic>>>? preloadedRows,
+      }) async {
+        final markerKeys = markerCandidates
+            .map(_normalizeAutoExpenseMarker)
+            .where((marker) => marker.isNotEmpty)
+            .toSet();
+        if (preloadedRows != null) {
+          final resolved = <Map<String, dynamic>>[];
+          final seenIds = <String>{};
+          for (final markerKey in markerKeys) {
+            for (final row
+                in preloadedRows[markerKey] ?? const <Map<String, dynamic>>[]) {
+              final id = '${row['id'] ?? ''}'.trim();
+              if (id.isEmpty || seenIds.add(id)) {
+                resolved.add(row);
+              }
+            }
+          }
+          return resolved;
+        }
 
-      final existingGabunganRows = _toMapList(
-        await _supabase
-            .from('expenses')
-            .select(
-              'id,no_expense,tanggal,status,dicatat_oleh,note,kategori,keterangan,rincian',
-            )
-            .like('note', 'AUTO_GABUNGAN:%'),
-      ).where((row) {
-        final note = '${row['note'] ?? ''}'.trim();
-        if (!note.startsWith('AUTO_GABUNGAN:')) return false;
-        final marker = note.substring('AUTO_GABUNGAN:'.length).trim();
-        return markerCandidates.contains(marker);
-      }).toList();
+        final notes = markerCandidates
+            .map((marker) => '$notePrefix:$marker')
+            .toList(growable: false);
+        if (notes.isEmpty) return const <Map<String, dynamic>>[];
+        return _toMapList(
+          await _supabase
+              .from('expenses')
+              .select(
+                'id,no_expense,tanggal,status,dicatat_oleh,note,kategori,'
+                'keterangan,total_pengeluaran,rincian',
+              )
+              .inFilter('note', notes),
+        );
+      }
+
+      final existingAutoRows = await resolveExistingRows(
+        notePrefix: 'AUTO_SANGU',
+        preloadedRows: preloadedSanguRowsByMarker,
+      );
+      final existingGabunganRows = await resolveExistingRows(
+        notePrefix: 'AUTO_GABUNGAN',
+        preloadedRows: preloadedGabunganRowsByMarker,
+      );
 
       Future<_AutoSanguSyncResult> syncAutoExpenseRows({
         required List<Map<String, dynamic>> existingRows,
@@ -1140,6 +1223,25 @@ class DashboardRepository {
         if (primaryId.isEmpty) {
           return const _AutoSanguSyncResult(skipped: 1);
         }
+        final expectedNote = '$notePrefix:$preferredMarker';
+        final currentDate = Formatters.parseDate(primary['tanggal']);
+        final hasExpectedDate = currentDate != null &&
+            currentDate.year == expenseDate.year &&
+            currentDate.month == expenseDate.month &&
+            currentDate.day == expenseDate.day;
+        final alreadySynchronized = hasExpectedDate &&
+            '${primary['status'] ?? ''}'.trim().toLowerCase() == 'paid' &&
+            '${primary['kategori'] ?? ''}'.trim() == kategori &&
+            '${primary['keterangan'] ?? ''}'.trim() == keterangan &&
+            '${primary['note'] ?? ''}'.trim() == expectedNote &&
+            (_num(primary['total_pengeluaran']) - totalExpense).abs() <= 0.01 &&
+            _autoExpenseDetailsEquivalent(
+              primary['rincian'],
+              nextDetails,
+            );
+        if (alreadySynchronized && existingRows.length == 1) {
+          return const _AutoSanguSyncResult(skipped: 1);
+        }
         await updateExpense(
           id: primaryId,
           date: _dateOnly(expenseDate),
@@ -1147,7 +1249,7 @@ class DashboardRepository {
           total: totalExpense,
           kategori: kategori,
           keterangan: keterangan,
-          note: '$notePrefix:$preferredMarker',
+          note: expectedNote,
           recordedBy: '${primary['dicatat_oleh'] ?? 'Admin'}'.trim(),
           details: nextDetails,
         );
@@ -1206,6 +1308,7 @@ class DashboardRepository {
               '${armada['id'] ?? ''}'.trim():
                   '${armada['plat_nomor'] ?? ''}'.trim().toUpperCase(),
           };
+      final listedArmadaPlates = plateById.values.toSet();
 
       final expenseDetails = <Map<String, dynamic>>[];
       final gabunganExpenseDetails = <Map<String, dynamic>>[];
@@ -1244,12 +1347,22 @@ class DashboardRepository {
         if (isOngkosKuliCargo(effectiveCargo)) {
           continue;
         }
-        if (_detailUsesManualArmada(detail)) {
+        final usesManualArmada = _detailUsesManualArmada(detail) &&
+            !rowMatchesListedArmadaPlate(
+              detail,
+              listedPlates: listedArmadaPlates,
+            ) &&
+            !manualArmadaRouteUsesSanguExpense(
+              pickup: originalPickup,
+              destination: originalDestination,
+            );
+        if (usesManualArmada) {
           final tonase = _resolveGabunganExpenseTonase(detail);
-          final gabunganHarga = resolveGabunganHargaPerKg(
+          final gabunganHarga = resolveGabunganExpenseHargaPerKg(
+            storedHarga: _num(detail['harga']),
             pickup: originalPickup,
             destination: originalDestination,
-            rules: hargaPerTonRules,
+            gabunganRules: hargaPerTonRules,
           );
           final gabunganTotal = tonase > 0 && gabunganHarga > 0
               ? roundInvoiceRupiah(tonase * gabunganHarga)
@@ -1391,14 +1504,20 @@ class DashboardRepository {
         );
       }
       return combined;
-    } catch (_) {
+    } catch (error, stackTrace) {
       // Best effort: invoice income tetap sukses walau auto-expense gagal.
+      AppSecurity.debugLog(
+        'Failed to synchronize automatic invoice expenses',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return const _AutoSanguSyncResult(failed: 1);
     }
   }
 
-  Future<AutoSanguBackfillReport>
-      backfillAutoSanguExpensesForExistingInvoices() async {
+  Future<AutoSanguBackfillReport> backfillAutoSanguExpensesForExistingInvoices({
+    Iterable<String>? invoiceIds,
+  }) async {
     var processedInvoices = 0;
     var createdExpenses = 0;
     var updatedExpenses = 0;
@@ -1406,25 +1525,59 @@ class DashboardRepository {
     var skippedInvoices = 0;
     var failedInvoices = 0;
     try {
-      final invoices = _toMapList(
-        await _runInvoiceSelectWithFallback(
-          'id,no_invoice,invoice_entity,tanggal,tanggal_kop,lokasi_muat,'
-          'lokasi_bongkar,armada_id,armada_start_date,muatan,rincian,'
-          'nama_pelanggan,submission_role,approval_status',
-          (columns) => _supabase.from('invoices').select(columns),
-        ),
-      ).where(_isApprovedForBackoffice).toList();
-
-      String normalizeMarker(String value) {
-        return value
-            .trim()
-            .toLowerCase()
-            .replaceAll(RegExp(r'\s+'), ' ')
-            .replaceAll(' /', '/')
-            .replaceAll('/ ', '/');
+      final hasInvoiceScope = invoiceIds != null;
+      final scopedInvoiceIds = (invoiceIds ?? const <String>[])
+          .map((id) => id.trim())
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList(growable: false);
+      if (hasInvoiceScope && scopedInvoiceIds.isEmpty) {
+        return const AutoSanguBackfillReport(
+          processedInvoices: 0,
+          createdExpenses: 0,
+          updatedExpenses: 0,
+          deletedExpenses: 0,
+          skippedInvoices: 0,
+          failedInvoices: 0,
+        );
+      }
+      Future<List<Map<String, dynamic>>> fetchInvoiceRows(
+        List<String>? scopedIds,
+      ) async {
+        return _toMapList(
+          await _runInvoiceSelectWithFallback(
+            'id,no_invoice,invoice_entity,tanggal,tanggal_kop,lokasi_muat,'
+            'lokasi_bongkar,armada_id,armada_start_date,muatan,rincian,'
+            'nama_pelanggan,submission_role,approval_status',
+            (columns) {
+              dynamic query = _supabase.from('invoices').select(columns);
+              if (scopedIds != null) {
+                query = query.inFilter('id', scopedIds);
+              }
+              return query;
+            },
+          ),
+        );
       }
 
+      final invoiceRows = <Map<String, dynamic>>[];
+      if (hasInvoiceScope) {
+        const chunkSize = 80;
+        for (var start = 0;
+            start < scopedInvoiceIds.length;
+            start += chunkSize) {
+          final end = min(start + chunkSize, scopedInvoiceIds.length);
+          invoiceRows.addAll(
+            await fetchInvoiceRows(scopedInvoiceIds.sublist(start, end)),
+          );
+        }
+      } else {
+        invoiceRows.addAll(await fetchInvoiceRows(null));
+      }
+      final invoices = invoiceRows.where(_isApprovedForBackoffice).toList();
+
       final validMarkers = <String>{};
+      final sourceMarkers = <String>{};
       for (final invoice in invoices) {
         final invoiceId = '${invoice['id'] ?? ''}'.trim();
         final noInvoice = '${invoice['no_invoice'] ?? ''}'.trim();
@@ -1434,49 +1587,108 @@ class DashboardRepository {
           customerName: invoice['nama_pelanggan'],
         );
 
-        if (invoiceId.isNotEmpty) {
-          validMarkers.add(normalizeMarker(invoiceId));
+        void addMarker(String marker) {
+          if (marker.isEmpty || marker == '-') return;
+          sourceMarkers.add(marker);
+          validMarkers.add(_normalizeAutoExpenseMarker(marker));
         }
-        if (noInvoice.isNotEmpty) {
-          validMarkers.add(normalizeMarker(noInvoice));
+
+        addMarker(invoiceId);
+        addMarker(noInvoice);
+        addMarker(normalizedNoInvoice);
+      }
+
+      const autoExpenseColumns =
+          'id,no_expense,tanggal,status,dicatat_oleh,note,kategori,'
+          'keterangan,total_pengeluaran,rincian';
+      Future<List<Map<String, dynamic>>> fetchAutoExpenseRows(
+        String prefix,
+      ) async {
+        if (!hasInvoiceScope) {
+          return _toMapList(
+            await _supabase
+                .from('expenses')
+                .select(autoExpenseColumns)
+                .like('note', '$prefix:%'),
+          );
         }
-        if (normalizedNoInvoice.isNotEmpty && normalizedNoInvoice != '-') {
-          validMarkers.add(normalizeMarker(normalizedNoInvoice));
+
+        final notes = sourceMarkers
+            .map((marker) => '$prefix:$marker')
+            .toList(growable: false);
+        final rows = <Map<String, dynamic>>[];
+        const chunkSize = 80;
+        for (var start = 0; start < notes.length; start += chunkSize) {
+          final end = min(start + chunkSize, notes.length);
+          rows.addAll(
+            _toMapList(
+              await _supabase
+                  .from('expenses')
+                  .select(autoExpenseColumns)
+                  .inFilter('note', notes.sublist(start, end)),
+            ),
+          );
+        }
+        return rows;
+      }
+
+      final existingSanguRows = await fetchAutoExpenseRows('AUTO_SANGU');
+      final existingGabunganRows = await fetchAutoExpenseRows('AUTO_GABUNGAN');
+      final sanguRowsByMarker = <String, List<Map<String, dynamic>>>{};
+      final gabunganRowsByMarker = <String, List<Map<String, dynamic>>>{};
+
+      void indexExistingRows({
+        required List<Map<String, dynamic>> rows,
+        required String notePrefix,
+        required Map<String, List<Map<String, dynamic>>> target,
+      }) {
+        for (final row in rows) {
+          final note = '${row['note'] ?? ''}'.trim();
+          final expectedPrefix = '$notePrefix:';
+          if (!note.toUpperCase().startsWith(expectedPrefix)) continue;
+          final marker = note.substring(expectedPrefix.length).trim();
+          final markerKey = _normalizeAutoExpenseMarker(marker);
+          if (markerKey.isEmpty) continue;
+          target
+              .putIfAbsent(markerKey, () => <Map<String, dynamic>>[])
+              .add(row);
         }
       }
 
-      final existingAutoRows = [
-        ..._toMapList(
-          await _supabase.from('expenses').select('id,note').like(
-                'note',
-                'AUTO_SANGU:%',
-              ),
-        ),
-        ..._toMapList(
-          await _supabase.from('expenses').select('id,note').like(
-                'note',
-                'AUTO_GABUNGAN:%',
-              ),
-        ),
-      ];
-      for (final row in existingAutoRows) {
-        final id = '${row['id'] ?? ''}'.trim();
-        final note = '${row['note'] ?? ''}'.trim();
-        if (id.isEmpty) continue;
-        final upperNote = note.toUpperCase();
-        final marker = upperNote.startsWith('AUTO_SANGU:')
-            ? note.substring('AUTO_SANGU:'.length).trim()
-            : upperNote.startsWith('AUTO_GABUNGAN:')
-                ? note.substring('AUTO_GABUNGAN:'.length).trim()
-                : '';
-        final markerKey = normalizeMarker(marker);
-        if (markerKey.isEmpty) continue;
-        if (!validMarkers.contains(markerKey)) {
-          try {
-            await deleteExpense(id);
-            deletedExpenses++;
-          } catch (_) {
-            failedInvoices++;
+      indexExistingRows(
+        rows: existingSanguRows,
+        notePrefix: 'AUTO_SANGU',
+        target: sanguRowsByMarker,
+      );
+      indexExistingRows(
+        rows: existingGabunganRows,
+        notePrefix: 'AUTO_GABUNGAN',
+        target: gabunganRowsByMarker,
+      );
+
+      if (!hasInvoiceScope) {
+        for (final row in <Map<String, dynamic>>[
+          ...existingSanguRows,
+          ...existingGabunganRows,
+        ]) {
+          final id = '${row['id'] ?? ''}'.trim();
+          final note = '${row['note'] ?? ''}'.trim();
+          if (id.isEmpty) continue;
+          final upperNote = note.toUpperCase();
+          final marker = upperNote.startsWith('AUTO_SANGU:')
+              ? note.substring('AUTO_SANGU:'.length).trim()
+              : upperNote.startsWith('AUTO_GABUNGAN:')
+                  ? note.substring('AUTO_GABUNGAN:'.length).trim()
+                  : '';
+          final markerKey = _normalizeAutoExpenseMarker(marker);
+          if (markerKey.isEmpty) continue;
+          if (!validMarkers.contains(markerKey)) {
+            try {
+              await deleteExpense(id);
+              deletedExpenses++;
+            } catch (_) {
+              failedInvoices++;
+            }
           }
         }
       }
@@ -1524,6 +1736,8 @@ class DashboardRepository {
           preloadedRules: rules,
           preloadedHargaPerTonRules: hargaPerTonRules,
           preloadedPlateById: plateById,
+          preloadedSanguRowsByMarker: sanguRowsByMarker,
+          preloadedGabunganRowsByMarker: gabunganRowsByMarker,
         );
         createdExpenses += result.created;
         updatedExpenses += result.updated;

@@ -26,6 +26,20 @@ bool isOngkosKuliCargo(String value) {
   return normalizeIncomePricingRuleKey(value) == 'ongkos kuli';
 }
 
+bool incomePricingMatchesManyarMieSedapLocation(String value) {
+  final key = normalizeIncomePricingRuleKey(value);
+  return incomePricingLocationKeyMatches(key, 'manyar') ||
+      incomePricingLocationKeyMatches(key, 'mie sedaap') ||
+      incomePricingLocationKeyMatches(key, 'mie sedap');
+}
+
+bool incomePricingMatchesWingsLocation(String value) {
+  return incomePricingLocationKeyMatches(
+    normalizeIncomePricingRuleKey(value),
+    'wings',
+  );
+}
+
 bool isForcedBatangIncomePricingRule(Map<String, dynamic>? rule) {
   if (rule == null) return false;
   return incomePricingLocationKeyMatches(
@@ -200,6 +214,7 @@ Map<String, dynamic>? resolveBuiltInIncomePricingRule({
   if (betoyoRexRule != null) return betoyoRexRule;
 
   final betoyoGenericRules = <({String lokasiBongkar, double baseHarga})>[
+    (lokasiBongkar: 'Bimoli', baseHarga: 28.0),
     (lokasiBongkar: 'Pare', baseHarga: 80.0),
     (lokasiBongkar: 'Sudali', baseHarga: 58.0),
     (lokasiBongkar: 'MKP', baseHarga: 50.0),
@@ -243,6 +258,90 @@ Map<String, dynamic>? resolveBuiltInIncomePricingRule({
       'harga_per_ton': isBornava ? 225.0 : 235.0,
       'flat_total': null,
       'priority': isBornava ? 220 : 120,
+      'is_active': true,
+    };
+  }
+
+  if (incomePricingLocationKeyMatches(pickupKey, 'driyo') &&
+      incomePricingLocationKeyMatches(destinationKey, 't langon')) {
+    return <String, dynamic>{
+      'customer_name': null,
+      'lokasi_muat': 'Driyo',
+      'lokasi_bongkar': 'T. Langon',
+      'harga_per_ton': 45.0,
+      'flat_total': null,
+      'priority': 160,
+      'is_active': true,
+    };
+  }
+
+  final manyarMieSedapToLangon =
+      incomePricingMatchesManyarMieSedapLocation(pickupKey) &&
+          incomePricingLocationKeyMatches(destinationKey, 't langon');
+  final langonToManyarMieSedap =
+      incomePricingLocationKeyMatches(pickupKey, 't langon') &&
+          incomePricingMatchesManyarMieSedapLocation(destinationKey);
+  if (manyarMieSedapToLangon || langonToManyarMieSedap) {
+    return <String, dynamic>{
+      'customer_name': null,
+      'lokasi_muat':
+          manyarMieSedapToLangon ? 'Manyar / Mie Sedap' : 'T. Langon',
+      'lokasi_bongkar':
+          manyarMieSedapToLangon ? 'T. Langon' : 'Manyar / Mie Sedap',
+      'harga_per_ton': 30.0,
+      'flat_total': null,
+      'priority': 170,
+      'is_active': true,
+    };
+  }
+
+  if (incomePricingMatchesWingsLocation(pickupKey) &&
+      incomePricingLocationKeyMatches(destinationKey, 't langon')) {
+    return <String, dynamic>{
+      'customer_name': null,
+      'lokasi_muat': 'Wings',
+      'lokasi_bongkar': 'T. Langon',
+      'harga_per_ton': 45.0,
+      'flat_total': null,
+      'priority': 160,
+      'is_active': true,
+    };
+  }
+
+  if (!pickupIsBetoyo &&
+      incomePricingLocationKeyMatches(destinationKey, 'driyo')) {
+    return <String, dynamic>{
+      'customer_name': null,
+      'lokasi_muat': 'Selain Betoyo',
+      'lokasi_bongkar': 'Driyo',
+      'harga_per_ton': 45.0,
+      'flat_total': null,
+      'priority': 150,
+      'is_active': true,
+    };
+  }
+
+  if (!pickupIsBetoyo && incomePricingMatchesWingsLocation(destinationKey)) {
+    return <String, dynamic>{
+      'customer_name': null,
+      'lokasi_muat': 'Selain Betoyo',
+      'lokasi_bongkar': 'Wings',
+      'harga_per_ton': 45.0,
+      'flat_total': null,
+      'priority': 150,
+      'is_active': true,
+    };
+  }
+
+  if (!pickupIsBetoyo &&
+      incomePricingLocationKeyMatches(destinationKey, 'benowo')) {
+    return <String, dynamic>{
+      'customer_name': null,
+      'lokasi_muat': 'Selain Betoyo',
+      'lokasi_bongkar': 'Benowo',
+      'harga_per_ton': 35.0,
+      'flat_total': null,
+      'priority': 150,
       'is_active': true,
     };
   }
@@ -339,6 +438,32 @@ Map<String, dynamic>? resolveBuiltInIncomePricingRule({
       'harga_per_ton': 26.0,
       'flat_total': null,
       'priority': 125,
+      'is_active': true,
+    };
+  }
+
+  if (!pickupIsBetoyo &&
+      incomePricingLocationKeyMatches(destinationKey, 'bimoli')) {
+    return <String, dynamic>{
+      'customer_name': null,
+      'lokasi_muat': 'Selain Betoyo',
+      'lokasi_bongkar': 'Bimoli',
+      'harga_per_ton': 28.0,
+      'flat_total': null,
+      'priority': 150,
+      'is_active': true,
+    };
+  }
+
+  if (!pickupIsBetoyo &&
+      incomePricingLocationKeyMatches(destinationKey, 'pare')) {
+    return <String, dynamic>{
+      'customer_name': null,
+      'lokasi_muat': 'Selain Betoyo',
+      'lokasi_bongkar': 'Pare',
+      'harga_per_ton': 80.0,
+      'flat_total': null,
+      'priority': 150,
       'is_active': true,
     };
   }

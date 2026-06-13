@@ -1498,6 +1498,7 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
       Map<String, dynamic>? bestRule;
       var bestScore = -1;
       for (final rule in rules) {
+        if (!isRegularIncomeHargaRule(rule)) continue;
         final ruleBongkarKey =
             _normalizeIncomePricingText('${rule['lokasi_bongkar'] ?? ''}');
         if (!_incomePricingLocationMatches(destinationKey, ruleBongkarKey)) {
@@ -1648,6 +1649,7 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
     String? fallbackPickup,
     String? fallbackDestination,
   }) {
+    if (_detailUsesManualArmada(detail)) return null;
     final pickup = '${detail['lokasi_muat'] ?? fallbackPickup ?? ''}'.trim();
     final destination =
         '${detail['lokasi_bongkar'] ?? fallbackDestination ?? ''}'.trim();

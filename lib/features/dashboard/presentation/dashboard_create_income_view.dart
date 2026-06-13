@@ -86,6 +86,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
   bool _loading = false;
   late Future<List<dynamic>> _formFuture;
   final List<Map<String, dynamic>> _details = [];
+  List<Map<String, dynamic>> _loadedArmadas = const [];
   List<Map<String, dynamic>> _hargaPerTonRules = const [];
   bool _prefillApplied = false;
   bool _prefillArmadaResolved = false;
@@ -271,9 +272,10 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
           row['subtotal_auto'] = true;
         }
       }
+      _promoteManualPlateToListedArmada(row, armadas: armadas);
       final defaultDriver =
           _resolveDefaultDriverForRow(row, armadas: armadas)?.trim() ?? '';
-      if (_isManualArmadaRow(row)) {
+      if (_usesEffectiveManualArmada(row, armadas: armadas)) {
         _clearDriverForManualArmadaIfNeeded(row);
       } else if (!isDriverManual && defaultDriver.isNotEmpty) {
         if (driverText.isEmpty ||
@@ -375,7 +377,8 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
 
     final firstArmadaId = '${first['armada_id']}'.trim();
     final firstArmadaManual = manualArmadaInput(first);
-    final firstResolvedArmadaId = _isManualArmadaRow(first)
+    final firstUsesManual = _usesEffectiveManualArmada(first, armadas: armadas);
+    final firstResolvedArmadaId = firstUsesManual
         ? ''
         : _resolveArmadaIdFromInput(
             armadaId: firstArmadaId,
@@ -388,7 +391,8 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
       if (_isOngkosKuliIncomeRow(row)) continue;
       final armadaId = '${row['armada_id']}'.trim();
       final armadaManual = manualArmadaInput(row);
-      final resolvedArmadaId = _isManualArmadaRow(row)
+      final usesManual = _usesEffectiveManualArmada(row, armadas: armadas);
+      final resolvedArmadaId = usesManual
           ? ''
           : _resolveArmadaIdFromInput(
               armadaId: armadaId,
@@ -417,12 +421,15 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
 
     final selectedArmadaIds = _details
         .map(
-          (row) => _resolveArmadaIdFromInput(
-            armadaId:
-                _isManualArmadaRow(row) ? '' : '${row['armada_id']}'.trim(),
-            armadaManual: _isManualArmadaRow(row) ? '' : manualArmadaInput(row),
-            armadaIdByPlate: armadaIdByPlate,
-          ),
+          (row) {
+            final usesManual =
+                _usesEffectiveManualArmada(row, armadas: armadas);
+            return _resolveArmadaIdFromInput(
+              armadaId: usesManual ? '' : '${row['armada_id']}'.trim(),
+              armadaManual: usesManual ? '' : manualArmadaInput(row),
+              armadaIdByPlate: armadaIdByPlate,
+            );
+          },
         )
         .where((id) => id.isNotEmpty)
         .toSet();
@@ -459,7 +466,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
     final detailsPayload = _details.map((row) {
       final armadaId = '${row['armada_id']}'.trim();
       final armadaManualRaw = manualArmadaInput(row);
-      final useManual = _isManualArmadaRow(row);
+      final useManual = _usesEffectiveManualArmada(row, armadas: armadas);
       final resolvedArmadaId = useManual
           ? ''
           : _resolveArmadaIdFromInput(
@@ -719,6 +726,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                     .toList()
                 : const <Map<String, dynamic>>[])
             .cast<Map<String, dynamic>>();
+        _loadedArmadas = armadas;
         final customerOptions = (payload[1] is List
                 ? (payload[1] as List)
                     .whereType<Map>()
@@ -1114,23 +1122,30 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                             ],
                             onChanged: (value) {
                               setState(() {
+                                final selectedValue = value ?? '';
                                 if (value == _manualArmadaOptionId) {
                                   row['armada_id'] = '';
                                   row['armada_is_manual'] = true;
                                 } else {
-                                  row['armada_id'] = value ?? '';
-                                  row['armada_is_manual'] = false;
-                                  if ('${row['armada_id']}'.trim().isNotEmpty) {
-                                    row['armada_manual'] = '';
-                                  }
+                                  applyListedArmadaSelection(
+                                    row,
+                                    selectedValue,
+                                  );
+                                  row['harga_auto'] = true;
+                                  row['subtotal_auto'] = false;
                                 }
                                 _syncDriverWithArmadaSelection(
                                   row,
                                   armadas: armadas,
-                                  overrideManualDriver: value != null &&
-                                      value.isNotEmpty &&
-                                      value != _manualArmadaOptionId,
+                                  overrideManualDriver: selectedValue
+                                          .isNotEmpty &&
+                                      selectedValue != _manualArmadaOptionId,
                                 );
+                                final hargaChanged =
+                                    _applyAutoHargaPerTon(row, force: true);
+                                if (hargaChanged) {
+                                  _hargaFieldRefreshToken++;
+                                }
                                 _detailFieldRefreshToken++;
                               });
                             },
@@ -1143,7 +1158,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                             const SizedBox(height: 8),
                             TextFormField(
                               key: ValueKey(
-                                'armada_manual-$index-$_detailFieldRefreshToken',
+                                'armada_manual-$index-${row['__row_key'] ?? 'row'}',
                               ),
                               initialValue: '${row['armada_manual'] ?? ''}',
                               decoration: InputDecoration(
@@ -1152,13 +1167,54 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                                   'Manual Plate Number (Other/Combined)',
                                 ),
                               ),
-                              onChanged: (value) => setState(() {
+                              onChanged: (value) {
+                                final previousArmadaId =
+                                    '${row['armada_id'] ?? ''}'.trim();
+                                final previousIsManual =
+                                    row['armada_is_manual'] == true;
+                                final previousDriver =
+                                    '${row['nama_supir'] ?? ''}'.trim();
+                                final previousDriverManual =
+                                    '${row['nama_supir_manual'] ?? ''}'.trim();
+                                final previousDriverIsManual =
+                                    row['nama_supir_is_manual'] == true;
+                                final previousDriverIsAuto =
+                                    row['nama_supir_auto'] == true;
                                 row['armada_manual'] = value;
                                 _syncDriverWithArmadaSelection(
                                   row,
                                   armadas: armadas,
                                 );
-                              }),
+                                final hargaChanged =
+                                    _applyAutoHargaPerTon(row, force: true);
+                                final armadaOrDriverChanged =
+                                    previousArmadaId !=
+                                            '${row['armada_id'] ?? ''}'
+                                                .trim() ||
+                                        previousIsManual !=
+                                            (row['armada_is_manual'] == true) ||
+                                        previousDriver !=
+                                            '${row['nama_supir'] ?? ''}'
+                                                .trim() ||
+                                        previousDriverManual !=
+                                            '${row['nama_supir_manual'] ?? ''}'
+                                                .trim() ||
+                                        previousDriverIsManual !=
+                                            (row['nama_supir_is_manual'] ==
+                                                true) ||
+                                        previousDriverIsAuto !=
+                                            (row['nama_supir_auto'] == true);
+                                if (hargaChanged || armadaOrDriverChanged) {
+                                  setState(() {
+                                    if (hargaChanged) {
+                                      _hargaFieldRefreshToken++;
+                                    }
+                                    if (armadaOrDriverChanged) {
+                                      _detailFieldRefreshToken++;
+                                    }
+                                  });
+                                }
+                              },
                             ),
                           ],
                           const SizedBox(height: 8),

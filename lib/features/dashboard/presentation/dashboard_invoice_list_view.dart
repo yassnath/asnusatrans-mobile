@@ -75,7 +75,6 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
   final _search = TextEditingController();
   final Set<String> _locallyRemovedRowIds = <String>{};
   String _limit = '10';
-  bool _backfillRunning = false;
   bool _backgroundFixedInvoiceSyncRunning = false;
   bool _backgroundAutoSanguCleanupRunning = false;
   bool _backgroundIncomePricingBackfillRunning = false;
@@ -84,6 +83,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
   bool _manualArmadaAutoSanguCleanupDone = false;
   bool _incomePricingBackfillDone = false;
   bool _invoiceDetailDateSyncDone = false;
+  final Set<String> _loadedInvoiceIdsForAutoExpenseSync = <String>{};
 
   bool get _isEn => LanguageController.language.value == AppLanguage.en;
   bool get _isPengurus => widget.session.isPengurus;
@@ -329,14 +329,36 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     required String armadaManual,
     required Map<String, String> armadaIdByPlate,
   }) {
-    final direct = armadaId.trim();
-    if (direct.isNotEmpty) return direct;
-    final manual = armadaManual.trim();
-    if (manual.isEmpty) return '';
-    if (_isManualArmadaText(manual)) return '';
-    final extracted = _extractPlateFromText(manual);
-    final normalized = _normalizePlateText(manual);
-    return armadaIdByPlate[extracted ?? normalized] ?? '';
+    return resolveArmadaIdFromPlateInput(
+      armadaId: armadaId,
+      armadaInput: armadaManual,
+      armadaIdByPlate: armadaIdByPlate,
+    );
+  }
+
+  bool _usesEffectiveManualArmada(
+    Map<String, dynamic> row, {
+    required List<Map<String, dynamic>> armadas,
+  }) {
+    if (!_isManualArmadaRow(row)) return false;
+    return resolveListedArmadaIdFromRow(
+      row,
+      armadaIdByPlate: _buildArmadaIdByPlate(armadas),
+    ).isEmpty;
+  }
+
+  bool _promoteManualPlateToListedArmada(
+    Map<String, dynamic> row, {
+    required List<Map<String, dynamic>> armadas,
+  }) {
+    if (!_isManualArmadaRow(row) || armadas.isEmpty) return false;
+    final resolvedArmadaId = resolveListedArmadaIdFromRow(
+      row,
+      armadaIdByPlate: _buildArmadaIdByPlate(armadas),
+    );
+    if (resolvedArmadaId.isEmpty) return false;
+    applyListedArmadaSelection(row, resolvedArmadaId);
+    return true;
   }
 
   String _normalizeText(String value) {
@@ -354,9 +376,12 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     Map<String, dynamic> row, {
     required List<Map<String, dynamic>> armadas,
   }) {
-    if (_isManualArmadaRow(row)) return null;
+    if (_usesEffectiveManualArmada(row, armadas: armadas)) return null;
     var plate = '';
-    final armadaId = '${row['armada_id'] ?? ''}'.trim();
+    final armadaId = resolveListedArmadaIdFromRow(
+      row,
+      armadaIdByPlate: _buildArmadaIdByPlate(armadas),
+    );
     if (armadaId.isNotEmpty) {
       Map<String, dynamic>? selected;
       for (final armada in armadas) {
@@ -430,8 +455,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     required List<Map<String, dynamic>> armadas,
     bool overrideManualDriver = false,
   }) {
+    _promoteManualPlateToListedArmada(row, armadas: armadas);
     _clearDriverForManualArmadaIfNeeded(row);
-    if (_isManualArmadaRow(row)) return;
+    if (_usesEffectiveManualArmada(row, armadas: armadas)) return;
 
     final defaultDriver =
         _resolveDefaultDriverForRow(row, armadas: armadas)?.trim() ?? '';
@@ -613,7 +639,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         limit: fetchLimit == null ? null : max(80, fetchLimit * 2),
       ),
       _isAdminOrOwner
-          ? _loadFixedInvoiceIds()
+          ? _loadLocalFixedInvoiceIds()
           : Future<Set<String>>.value(<String>{}),
     ]);
 
@@ -628,6 +654,13 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       if (_isAdminOrOwner) return _isPengurusIncomeApproved(item);
       return true;
     }).toList();
+    _loadedInvoiceIdsForAutoExpenseSync
+      ..clear()
+      ..addAll(
+        scopedIncomes
+            .map((item) => '${item['id'] ?? ''}'.trim())
+            .where((id) => id.isNotEmpty),
+      );
     final expandedIncomes = _expandIncomeRowsForInvoiceList(scopedIncomes);
     final scopedExpenses = rawExpenses.where((item) {
       final id = '${item['id'] ?? ''}'.trim();
@@ -652,9 +685,25 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     return [filteredIncomes, scopedExpenses];
   }
 
-  Future<void> _runInvoiceListBackgroundMaintenanceAndReloadOnce() async {
-    final hasVisibleChanges = await _runInvoiceListBackgroundMaintenance();
-    if (!mounted || !hasVisibleChanges) return;
+  Future<void> _runInvoiceListBackgroundMaintenanceAndReloadOnce({
+    bool autoExpenseOnly = false,
+  }) async {
+    final autoExpenseChanges = await _cleanupManualArmadaAutoSanguInBackground(
+      force: autoExpenseOnly,
+    );
+    if (autoExpenseChanges) {
+      await _reloadAfterInvoiceListBackgroundChanges();
+    }
+    if (autoExpenseOnly) return;
+
+    final hasOtherVisibleChanges = await _runInvoiceListBackgroundMaintenance();
+    if (hasOtherVisibleChanges) {
+      await _reloadAfterInvoiceListBackgroundChanges();
+    }
+  }
+
+  Future<void> _reloadAfterInvoiceListBackgroundChanges() async {
+    if (!mounted) return;
     setState(() {
       _future = _load();
     });
@@ -673,8 +722,6 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         await _syncInvoiceDetailDatesInBackground() || hasVisibleChanges;
     hasVisibleChanges =
         await _backfillIncomePricingInBackground() || hasVisibleChanges;
-    hasVisibleChanges =
-        await _cleanupManualArmadaAutoSanguInBackground() || hasVisibleChanges;
     hasVisibleChanges =
         await _normalizeInvoiceNumbersInBackground() || hasVisibleChanges;
     return hasVisibleChanges;
@@ -775,16 +822,20 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     }
   }
 
-  Future<bool> _cleanupManualArmadaAutoSanguInBackground() async {
-    if (_manualArmadaAutoSanguCleanupDone ||
+  Future<bool> _cleanupManualArmadaAutoSanguInBackground({
+    bool force = false,
+  }) async {
+    if ((!force && _manualArmadaAutoSanguCleanupDone) ||
         _backgroundAutoSanguCleanupRunning) {
       return false;
     }
     _backgroundAutoSanguCleanupRunning = true;
     try {
-      final report = await widget.repository
-          .backfillAutoSanguExpensesForExistingInvoices();
-      _manualArmadaAutoSanguCleanupDone = true;
+      final report =
+          await widget.repository.backfillAutoSanguExpensesForExistingInvoices(
+        invoiceIds: _loadedInvoiceIdsForAutoExpenseSync,
+      );
+      _manualArmadaAutoSanguCleanupDone = !report.hasFailures;
       final hasVisibleChange = report.createdExpenses > 0 ||
           report.updatedExpenses > 0 ||
           report.deletedExpenses > 0;
@@ -798,35 +849,6 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
   }
 
   Future<void> _refresh({bool runBackfill = false}) async {
-    if (_isAdminOrOwner && runBackfill && !_backfillRunning) {
-      _backfillRunning = true;
-      try {
-        final dateSyncReport =
-            await widget.repository.syncSingleDetailInvoiceDepartureDates();
-        final pricingReport = await widget.repository
-            .backfillSpecialIncomePricingForExistingInvoices();
-        final report = await widget.repository
-            .backfillAutoSanguExpensesForExistingInvoices();
-        if (mounted &&
-            (dateSyncReport.hasFailures ||
-                pricingReport.hasFailures ||
-                report.hasFailures)) {
-          _snack(
-            _t(
-              'Sebagian sinkron tanggal invoice, pricing invoice lama, atau auto expense sangu/gabungan belum berhasil. Coba refresh sekali lagi.',
-              'Some invoice date syncs, legacy pricing updates, or driver/manual-fleet auto expenses could not be synced yet. Please refresh once more.',
-            ),
-            error: true,
-          );
-        }
-        _incomePricingBackfillDone = true;
-        _invoiceDetailDateSyncDone = true;
-      } catch (_) {
-        // Best effort: tetap lanjut reload data list.
-      } finally {
-        _backfillRunning = false;
-      }
-    }
     setState(() {
       _future = _load();
     });
@@ -836,7 +858,11 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
           PushNotificationService.instance.refreshMonthlyFinanceReminder());
     }
     if (_isAdminOrOwner && runBackfill) {
-      unawaited(_runInvoiceListBackgroundMaintenanceAndReloadOnce());
+      unawaited(
+        _runInvoiceListBackgroundMaintenanceAndReloadOnce(
+          autoExpenseOnly: true,
+        ),
+      );
     }
   }
 
@@ -1120,11 +1146,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     List<Map<String, dynamic>> expenses,
   ) {
     String normalizeToken(dynamic value) {
-      return (value ?? '')
-          .toString()
-          .toUpperCase()
-          .replaceAll(RegExp(r'\s+'), ' ')
-          .trim();
+      return expenseLinkToken(value);
     }
 
     String resolveRoute(Map<String, dynamic> source) {
@@ -1216,15 +1238,6 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         'plates': plates.join(' | '),
         'routes': routes.join(' | '),
       };
-    }
-
-    bool incomeUsesManualArmada(Map<String, dynamic>? income) {
-      if (income == null) return false;
-      final details = _toDetailList(income['rincian']);
-      if (details.isNotEmpty) {
-        return details.any(_isManualArmadaRow);
-      }
-      return _isManualArmadaRow(income);
     }
 
     ({String muat, String bongkar, String driver}) extractRouteDriverFromDetail(
@@ -1414,6 +1427,9 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         '__name': item['nama_pelanggan'],
         '__total': effectiveTotal,
         '__date': resolveIncomeDisplayDate(item),
+        '__sort_date': item['updated_at'] ??
+            item['created_at'] ??
+            resolveIncomeDisplayDate(item),
         '__status': item['status'],
         '__recorded_by': item['diterima_oleh'] ?? '-',
         '__route': resolveRoute(item),
@@ -1448,26 +1464,25 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     }
 
     final expenseByIncomeId = <String, List<Map<String, dynamic>>>{};
+    final standaloneExpenses = <Map<String, dynamic>>[];
     for (final item in expenses) {
       final autoSangu = isAutoSanguExpense(item);
       final autoGabungan = isAutoGabunganExpense(item);
       final marker = extractAutoExpenseMarker(item);
 
       final markerKey = normalizeToken(marker);
-      if (markerKey.isEmpty) continue;
-
       String? linkedIncomeId;
-      final incomeByMarkerId = incomeById[markerKey];
-      if (incomeByMarkerId != null) {
-        linkedIncomeId = '${incomeByMarkerId['id'] ?? ''}'.trim();
-      } else {
-        linkedIncomeId = incomeIdByInvoiceToken[markerKey];
+      if (markerKey.isNotEmpty) {
+        final incomeByMarkerId = incomeById[markerKey];
+        if (incomeByMarkerId != null) {
+          linkedIncomeId = '${incomeByMarkerId['id'] ?? ''}'.trim();
+        } else {
+          linkedIncomeId = incomeIdByInvoiceToken[markerKey];
+        }
       }
-      if (linkedIncomeId == null || linkedIncomeId.isEmpty) continue;
-      final linkedIncome = incomeById[normalizeToken(linkedIncomeId)];
-      if (autoSangu && incomeUsesManualArmada(linkedIncome)) {
-        continue;
-      }
+      final linkedIncome = linkedIncomeId == null
+          ? null
+          : incomeById[normalizeToken(linkedIncomeId)];
       final autoRouteLabel = (autoSangu || autoGabungan)
           ? buildAutoSanguRouteLabel(item, linkedIncome)
           : '';
@@ -1485,6 +1500,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                 : (item['kategori'] ?? item['keterangan'] ?? '-'),
         '__total': item['total_pengeluaran'],
         '__date': item['tanggal'] ?? item['created_at'],
+        '__sort_date':
+            item['updated_at'] ?? item['created_at'] ?? item['tanggal'],
         '__status': item['status'],
         '__recorded_by': item['dicatat_oleh'] ?? '-',
         '__route': (autoSangu || autoGabungan)
@@ -1493,9 +1510,13 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         '__is_auto_sangu': autoSangu,
         '__is_auto_gabungan': autoGabungan,
       };
-      expenseByIncomeId
-          .putIfAbsent(linkedIncomeId, () => <Map<String, dynamic>>[])
-          .add(mapped);
+      if (linkedIncomeId != null && linkedIncomeId.isNotEmpty) {
+        expenseByIncomeId
+            .putIfAbsent(linkedIncomeId, () => <Map<String, dynamic>>[])
+            .add(mapped);
+      } else if (shouldShowStandaloneInvoiceListExpense(mapped)) {
+        standaloneExpenses.add(mapped);
+      }
     }
 
     for (final rows in expenseByIncomeId.values) {
@@ -1508,20 +1529,26 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       });
     }
 
-    final rows = <Map<String, dynamic>>[];
-    final attachedExpenseIncomeIds = <String>{};
-    for (final income in incomeRows) {
-      rows.add(income);
-      final id = '${income['id'] ?? ''}'.trim();
-      final children = expenseByIncomeId[id];
-      if (id.isNotEmpty &&
-          attachedExpenseIncomeIds.add(id) &&
-          children != null &&
-          children.isNotEmpty) {
-        rows.addAll(children);
-      }
-    }
-    return rows;
+    final rowGroups = buildInvoiceListRowGroups(
+      incomeRows: incomeRows,
+      expenseByIncomeId: expenseByIncomeId,
+      standaloneExpenses: standaloneExpenses,
+    );
+    rowGroups.sort((a, b) {
+      final aDate = Formatters.parseDate(
+            a.first['__sort_date'] ?? a.first['__date'],
+          ) ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+      final bDate = Formatters.parseDate(
+            b.first['__sort_date'] ?? b.first['__date'],
+          ) ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+      final dateCompare = bDate.compareTo(aDate);
+      if (dateCompare != 0) return dateCompare;
+      return '${b.first['id'] ?? b.first['__number'] ?? ''}'
+          .compareTo('${a.first['id'] ?? a.first['__number'] ?? ''}');
+    });
+    return rowGroups.expand((group) => group).toList(growable: false);
   }
 
   List<Map<String, dynamic>> _applyFilterAndLimit(
@@ -1545,8 +1572,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       return filtered;
     }
     final maxRows = int.tryParse(_limit) ?? 10;
-    if (filtered.length <= maxRows) return filtered;
-    return filtered.take(maxRows).toList();
+    return limitInvoiceListRows(filtered, maxRows: maxRows);
   }
 
   String? _pengurusIncomeStatusMessage({

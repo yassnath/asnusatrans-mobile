@@ -33,6 +33,9 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
       hargaPerTonRules = await widget.repository.fetchHargaPerTonRules();
     } catch (_) {}
     final armadaIdByPlate = _buildArmadaIdByPlate(armadas);
+    final nonGabunganRules = hargaPerTonRules
+        .where(isRegularIncomeHargaRule)
+        .toList(growable: false);
 
     Map<String, dynamic>? resolveHargaRule({
       required String customerName,
@@ -41,7 +44,7 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
       String? muatan,
     }) {
       return _resolveHargaRuleShared(
-        rules: hargaPerTonRules,
+        rules: nonGabunganRules,
         customerName: customerName,
         lokasiMuat: lokasiMuat,
         lokasiBongkar: lokasiBongkar,
@@ -93,11 +96,18 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
       final previousSubtotal = '${row['subtotal'] ?? ''}'.trim();
       final wasAuto = row['harga_auto'] == true;
       final wasAutoSubtotal = row['subtotal_auto'] == true;
-      final harga = resolveHargaPerTon(
+      final regularHarga = resolveHargaPerTon(
         customerName: customer.text.trim(),
         lokasiMuat: '${row['lokasi_muat'] ?? ''}',
         lokasiBongkar: '${row['lokasi_bongkar'] ?? ''}',
         muatan: '${row['muatan'] ?? ''}',
+      );
+      final harga = resolveIncomeAutoHargaPerKg(
+        regularHarga: regularHarga,
+        usesManualArmada: _usesEffectiveManualArmada(row, armadas: armadas),
+        pickup: '${row['lokasi_muat'] ?? ''}',
+        destination: '${row['lokasi_bongkar'] ?? ''}',
+        gabunganRules: hargaPerTonRules,
       );
       final flatSubtotal = resolveFlatSubtotal(
         customerName: customer.text.trim(),
@@ -146,14 +156,14 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
       final rawManual =
           '${row['armada_manual'] ?? row['armada_label'] ?? row['armada'] ?? row['plat_nomor'] ?? row['no_polisi'] ?? ''}'
               .trim();
-      final useManual = _isManualArmadaRow(row);
-      final resolvedArmadaId = useManual
-          ? ''
-          : _resolveArmadaIdFromInput(
-              armadaId: rawArmadaId,
-              armadaManual: rawManual,
-              armadaIdByPlate: armadaIdByPlate,
-            );
+      final resolvedListedArmadaId = _resolveArmadaIdFromInput(
+        armadaId: rawArmadaId,
+        armadaManual: rawManual,
+        armadaIdByPlate: armadaIdByPlate,
+      );
+      final useManual =
+          _isManualArmadaRow(row) && resolvedListedArmadaId.isEmpty;
+      final resolvedArmadaId = useManual ? '' : resolvedListedArmadaId;
       final muatText = '${row['lokasi_muat'] ?? ''}'.trim();
       final muatIsManual = muatText.isNotEmpty &&
           !_AdminInvoiceListViewState._defaultMuatOptions.contains(muatText);
@@ -172,11 +182,18 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
         lokasiMuat: muatText,
         lokasiBongkar: '${row['lokasi_bongkar'] ?? ''}',
       );
-      final resolvedHarga = resolveHargaPerTon(
+      final regularHarga = resolveHargaPerTon(
         customerName: customer.text.trim(),
         lokasiMuat: muatText,
         lokasiBongkar: '${row['lokasi_bongkar'] ?? ''}',
         muatan: '${row['muatan'] ?? ''}',
+      );
+      final resolvedHarga = resolveIncomeAutoHargaPerKg(
+        regularHarga: regularHarga,
+        usesManualArmada: useManual,
+        pickup: muatText,
+        destination: '${row['lokasi_bongkar'] ?? ''}',
+        gabunganRules: hargaPerTonRules,
       );
       final resolvedSubtotal = _resolveHargaFlatTotalShared(
         resolvedRule,
@@ -603,29 +620,36 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                   ],
                                   onChanged: (value) {
                                     setDialogState(() {
+                                      final selectedValue = value ?? '';
                                       if (value ==
                                           _AdminInvoiceListViewState
                                               ._manualArmadaOptionId) {
                                         row['armada_id'] = '';
                                         row['armada_is_manual'] = true;
                                       } else {
-                                        row['armada_id'] = value ?? '';
-                                        row['armada_is_manual'] = false;
-                                        if ('${row['armada_id']}'
-                                            .trim()
-                                            .isNotEmpty) {
-                                          row['armada_manual'] = '';
-                                        }
+                                        applyListedArmadaSelection(
+                                          row,
+                                          selectedValue,
+                                        );
+                                        row['harga_auto'] = true;
+                                        row['subtotal_auto'] = false;
                                       }
                                       _syncDriverWithArmadaSelection(
                                         row,
                                         armadas: armadas,
-                                        overrideManualDriver: value != null &&
-                                            value.isNotEmpty &&
-                                            value !=
-                                                _AdminInvoiceListViewState
-                                                    ._manualArmadaOptionId,
+                                        overrideManualDriver:
+                                            selectedValue.isNotEmpty &&
+                                                selectedValue !=
+                                                    _AdminInvoiceListViewState
+                                                        ._manualArmadaOptionId,
                                       );
+                                      final hargaChanged = applyAutoHargaPerTon(
+                                        row,
+                                        force: true,
+                                      );
+                                      if (hargaChanged) {
+                                        editHargaFieldRefreshToken++;
+                                      }
                                       editDetailFieldRefreshToken++;
                                     });
                                   },
@@ -640,7 +664,7 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                   const SizedBox(height: 8),
                                   TextFormField(
                                     key: ValueKey(
-                                      'edit-armada-manual-$index-$editDetailFieldRefreshToken',
+                                      'edit-armada-manual-$index-${row['__row_key'] ?? 'row'}',
                                     ),
                                     initialValue:
                                         '${row['armada_manual'] ?? ''}',
@@ -650,13 +674,60 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                         'Manual Plate Number (Other/Combined)',
                                       ),
                                     ),
-                                    onChanged: (value) => setDialogState(() {
+                                    onChanged: (value) {
+                                      final previousArmadaId =
+                                          '${row['armada_id'] ?? ''}'.trim();
+                                      final previousIsManual =
+                                          row['armada_is_manual'] == true;
+                                      final previousDriver =
+                                          '${row['nama_supir'] ?? ''}'.trim();
+                                      final previousDriverManual =
+                                          '${row['nama_supir_manual'] ?? ''}'
+                                              .trim();
+                                      final previousDriverIsManual =
+                                          row['nama_supir_is_manual'] == true;
+                                      final previousDriverIsAuto =
+                                          row['nama_supir_auto'] == true;
                                       row['armada_manual'] = value;
                                       _syncDriverWithArmadaSelection(
                                         row,
                                         armadas: armadas,
                                       );
-                                    }),
+                                      final hargaChanged = applyAutoHargaPerTon(
+                                        row,
+                                        force: true,
+                                      );
+                                      final armadaOrDriverChanged =
+                                          previousArmadaId !=
+                                                  '${row['armada_id'] ?? ''}'
+                                                      .trim() ||
+                                              previousIsManual !=
+                                                  (row['armada_is_manual'] ==
+                                                      true) ||
+                                              previousDriver !=
+                                                  '${row['nama_supir'] ?? ''}'
+                                                      .trim() ||
+                                              previousDriverManual !=
+                                                  '${row['nama_supir_manual'] ?? ''}'
+                                                      .trim() ||
+                                              previousDriverIsManual !=
+                                                  (row['nama_supir_is_manual'] ==
+                                                      true) ||
+                                              previousDriverIsAuto !=
+                                                  (row['nama_supir_auto'] ==
+                                                      true);
+                                      if (hargaChanged ||
+                                          armadaOrDriverChanged) {
+                                        setDialogState(() {
+                                          if (hargaChanged) {
+                                            editHargaFieldRefreshToken++;
+                                          }
+                                          if (armadaOrDriverChanged) {
+                                            editDetailFieldRefreshToken++;
+                                          }
+                                        });
+                                      }
+                                    },
                                   ),
                                 ],
                                 const SizedBox(height: 8),
@@ -1128,8 +1199,13 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                             manualArmadaInputForValidation(
                                           first,
                                         );
+                                        final firstUsesManual =
+                                            _usesEffectiveManualArmada(
+                                          first,
+                                          armadas: armadas,
+                                        );
                                         final firstResolvedArmadaId =
-                                            _isManualArmadaRow(first)
+                                            firstUsesManual
                                                 ? ''
                                                 : _resolveArmadaIdFromInput(
                                                     armadaId: firstArmadaId,
@@ -1153,16 +1229,19 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                               manualArmadaInputForValidation(
                                             row,
                                           );
-                                          final resolvedArmadaId =
-                                              _isManualArmadaRow(row)
-                                                  ? ''
-                                                  : _resolveArmadaIdFromInput(
-                                                      armadaId: armadaId,
-                                                      armadaManual:
-                                                          armadaManual,
-                                                      armadaIdByPlate:
-                                                          armadaIdByPlate,
-                                                    );
+                                          final usesManual =
+                                              _usesEffectiveManualArmada(
+                                            row,
+                                            armadas: armadas,
+                                          );
+                                          final resolvedArmadaId = usesManual
+                                              ? ''
+                                              : _resolveArmadaIdFromInput(
+                                                  armadaId: armadaId,
+                                                  armadaManual: armadaManual,
+                                                  armadaIdByPlate:
+                                                      armadaIdByPlate,
+                                                );
                                           final hasArmadaSelection =
                                               resolvedArmadaId.isNotEmpty ||
                                                   armadaManual.isNotEmpty;
@@ -1237,7 +1316,10 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                                       : null) ??
                                                   '';
                                           final useManual =
-                                              _isManualArmadaRow(row);
+                                              _usesEffectiveManualArmada(
+                                            row,
+                                            armadas: armadas,
+                                          );
                                           final resolvedArmadaId = useManual
                                               ? ''
                                               : _resolveArmadaIdFromInput(

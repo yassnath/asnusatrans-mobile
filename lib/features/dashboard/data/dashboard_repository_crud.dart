@@ -1033,16 +1033,37 @@ extension DashboardRepositoryCrudExtension on DashboardRepository {
           );
         }
       }
+      await _deleteAutomaticExpensesForInvoiceBestEffort(cleanedId);
       await _syncArmadaStatusNowBestEffort();
     } on PostgrestException catch (e) {
       if (isPengurus) {
         final deletedByRpc = await _deletePengurusInvoiceViaRpc(cleanedId);
         if (deletedByRpc) {
+          await _deleteAutomaticExpensesForInvoiceBestEffort(cleanedId);
           await _syncArmadaStatusNowBestEffort();
           return;
         }
       }
       throw Exception('Gagal hapus invoice: ${e.message}');
+    }
+  }
+
+  Future<void> _deleteAutomaticExpensesForInvoiceBestEffort(
+    String invoiceId,
+  ) async {
+    final cleanedId = invoiceId.trim();
+    if (cleanedId.isEmpty) return;
+    try {
+      await _supabase.from('expenses').delete().inFilter('note', <String>[
+        'AUTO_SANGU:$cleanedId',
+        'AUTO_GABUNGAN:$cleanedId',
+      ]);
+    } catch (error, stackTrace) {
+      AppSecurity.debugLog(
+        'Failed to delete automatic expenses for removed invoice',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
   }
 
@@ -1146,44 +1167,26 @@ extension DashboardRepositoryCrudExtension on DashboardRepository {
     final year = localIssuedDate.year.toString();
     final yearInt = localIssuedDate.year;
     final monthInt = localIssuedDate.month;
-    final startDate = DateTime(yearInt, monthInt, 1);
-    final endDate = (monthInt == 12)
-        ? DateTime(yearInt + 1, 1, 1).subtract(const Duration(days: 1))
-        : DateTime(yearInt, monthInt + 1, 1).subtract(const Duration(days: 1));
-    final startIso = _dateOnly(startDate);
-    final endIso = _dateOnly(endDate);
 
     try {
       final rows = _toMapList(
         await _supabase
             .from('expenses')
             .select('id,no_expense,tanggal')
-            .gte('tanggal', startIso)
-            .lte('tanggal', endIso),
+            .like('no_expense', 'EXP-$month-$year-%'),
       );
-      final excludedId = excludeExpenseId?.trim() ?? '';
-      var maxSeq = 0;
-      for (final row in rows) {
-        final id = '${row['id'] ?? ''}'.trim();
-        if (excludedId.isNotEmpty && id == excludedId) continue;
-        final no = '${row['no_expense'] ?? ''}'.trim().toUpperCase();
-        final match = RegExp(r'^EXP-(\d{2})-(\d{4})-(\d{1,4})$').firstMatch(no);
-        if (match == null) continue;
-        final rowMonth = int.tryParse(match.group(1) ?? '') ?? 0;
-        final rowYear = int.tryParse(match.group(2) ?? '') ?? 0;
-        if (rowMonth != monthInt || rowYear != yearInt) continue;
-        final seq = int.tryParse(match.group(3) ?? '') ?? 0;
-        if (seq > maxSeq) maxSeq = seq;
-      }
-
-      final next = maxSeq + 1;
-      if (next > 9999) {
+      try {
+        return buildNextExpenseNumberForPeriod(
+          month: monthInt,
+          year: yearInt,
+          existingRows: rows,
+          excludeExpenseId: excludeExpenseId,
+        );
+      } on StateError {
         throw Exception(
           'Nomor expense bulan ini sudah mencapai batas 9999. Ganti periode bulan/tahun.',
         );
       }
-      final seq4 = next.toString().padLeft(4, '0');
-      return 'EXP-$month-$year-$seq4';
     } on PostgrestException catch (e) {
       throw Exception('Gagal menyiapkan nomor expense: ${e.message}');
     }

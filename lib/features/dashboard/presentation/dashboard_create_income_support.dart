@@ -106,6 +106,10 @@ extension _AdminCreateIncomeViewStateSupport on _AdminCreateIncomeViewState {
     return false;
   }
 
+  /// Pricing customer/route biasa tidak boleh tercampur rule armada Gabungan.
+  List<Map<String, dynamic>> get _nonGabunganRules =>
+      _hargaPerTonRules.where(isRegularIncomeHargaRule).toList(growable: false);
+
   double? _resolveHargaPerTon({
     String? customerName,
     required String lokasiMuat,
@@ -113,7 +117,7 @@ extension _AdminCreateIncomeViewStateSupport on _AdminCreateIncomeViewState {
     String? muatan,
   }) {
     final matchedRule = _resolveHargaRuleShared(
-      rules: _hargaPerTonRules,
+      rules: _nonGabunganRules,
       customerName: customerName ?? _customer.text.trim(),
       lokasiMuat: lokasiMuat,
       lokasiBongkar: lokasiBongkar,
@@ -132,7 +136,7 @@ extension _AdminCreateIncomeViewStateSupport on _AdminCreateIncomeViewState {
     String? muatan,
   }) {
     final matchedRule = _resolveHargaRuleShared(
-      rules: _hargaPerTonRules,
+      rules: _nonGabunganRules,
       customerName: customerName ?? _customer.text.trim(),
       lokasiMuat: lokasiMuat,
       lokasiBongkar: lokasiBongkar,
@@ -152,17 +156,29 @@ extension _AdminCreateIncomeViewStateSupport on _AdminCreateIncomeViewState {
     final previousSubtotal = '${row['subtotal'] ?? ''}'.trim();
     final wasAuto = row['harga_auto'] == true;
     final wasAutoSubtotal = row['subtotal_auto'] == true;
-    final harga = _resolveHargaPerTon(
+    final isManualArmada = _usesEffectiveManualArmada(row);
+    final lokasiMuat = '${row['lokasi_muat'] ?? ''}';
+    final lokasiBongkar = '${row['lokasi_bongkar'] ?? ''}';
+    final muatan = '${row['muatan'] ?? ''}';
+
+    final regularHarga = _resolveHargaPerTon(
       customerName: _customer.text.trim(),
-      lokasiMuat: '${row['lokasi_muat'] ?? ''}',
-      lokasiBongkar: '${row['lokasi_bongkar'] ?? ''}',
-      muatan: '${row['muatan'] ?? ''}',
+      lokasiMuat: lokasiMuat,
+      lokasiBongkar: lokasiBongkar,
+      muatan: muatan,
+    );
+    final harga = resolveIncomeAutoHargaPerKg(
+      regularHarga: regularHarga,
+      usesManualArmada: isManualArmada,
+      pickup: lokasiMuat,
+      destination: lokasiBongkar,
+      gabunganRules: _hargaPerTonRules,
     );
     final flatSubtotal = _resolveFlatSubtotal(
       customerName: _customer.text.trim(),
-      lokasiMuat: '${row['lokasi_muat'] ?? ''}',
-      lokasiBongkar: '${row['lokasi_bongkar'] ?? ''}',
-      muatan: '${row['muatan'] ?? ''}',
+      lokasiMuat: lokasiMuat,
+      lokasiBongkar: lokasiBongkar,
+      muatan: muatan,
     );
     final hasAutoHarga = harga != null && harga > 0;
     final hasFlatSubtotal = flatSubtotal != null && flatSubtotal > 0;
@@ -213,9 +229,12 @@ extension _AdminCreateIncomeViewStateSupport on _AdminCreateIncomeViewState {
     Map<String, dynamic> row, {
     required List<Map<String, dynamic>> armadas,
   }) {
-    if (_isManualArmadaRow(row)) return null;
+    if (_usesEffectiveManualArmada(row, armadas: armadas)) return null;
     var plate = '';
-    final armadaId = '${row['armada_id'] ?? ''}'.trim();
+    final armadaId = resolveListedArmadaIdFromRow(
+      row,
+      armadaIdByPlate: _buildArmadaIdByPlate(armadas),
+    );
     if (armadaId.isNotEmpty) {
       Map<String, dynamic>? selected;
       for (final armada in armadas) {
@@ -268,7 +287,7 @@ extension _AdminCreateIncomeViewStateSupport on _AdminCreateIncomeViewState {
   }
 
   void _clearDriverForManualArmadaIfNeeded(Map<String, dynamic> row) {
-    if (!_isManualArmadaRow(row)) return;
+    if (!_usesEffectiveManualArmada(row)) return;
     final manual = '${row['armada_manual'] ?? ''}'.trim();
     if (manual.isEmpty) {
       final detectedManual = manualArmadaLabelFromRow(row);
@@ -290,8 +309,9 @@ extension _AdminCreateIncomeViewStateSupport on _AdminCreateIncomeViewState {
     required List<Map<String, dynamic>> armadas,
     bool overrideManualDriver = false,
   }) {
+    _promoteManualPlateToListedArmada(row, armadas: armadas);
     _clearDriverForManualArmadaIfNeeded(row);
-    if (_isManualArmadaRow(row)) return;
+    if (_usesEffectiveManualArmada(row, armadas: armadas)) return;
 
     final defaultDriver =
         _resolveDefaultDriverForRow(row, armadas: armadas)?.trim() ?? '';
@@ -873,19 +893,43 @@ extension _AdminCreateIncomeViewStateSupport on _AdminCreateIncomeViewState {
     return buildArmadaIdByPlate(armadas);
   }
 
+  bool _usesEffectiveManualArmada(
+    Map<String, dynamic> row, {
+    List<Map<String, dynamic>>? armadas,
+  }) {
+    if (!_isManualArmadaRow(row)) return false;
+    final sourceArmadas = armadas ?? _loadedArmadas;
+    if (sourceArmadas.isEmpty) return true;
+    return resolveListedArmadaIdFromRow(
+      row,
+      armadaIdByPlate: _buildArmadaIdByPlate(sourceArmadas),
+    ).isEmpty;
+  }
+
+  bool _promoteManualPlateToListedArmada(
+    Map<String, dynamic> row, {
+    required List<Map<String, dynamic>> armadas,
+  }) {
+    if (!_isManualArmadaRow(row) || armadas.isEmpty) return false;
+    final resolvedArmadaId = resolveListedArmadaIdFromRow(
+      row,
+      armadaIdByPlate: _buildArmadaIdByPlate(armadas),
+    );
+    if (resolvedArmadaId.isEmpty) return false;
+    applyListedArmadaSelection(row, resolvedArmadaId);
+    return true;
+  }
+
   String _resolveArmadaIdFromInput({
     required String armadaId,
     required String armadaManual,
     required Map<String, String> armadaIdByPlate,
   }) {
-    final direct = armadaId.trim();
-    if (direct.isNotEmpty) return direct;
-    final manual = armadaManual.trim();
-    if (manual.isEmpty) return '';
-    if (_isManualArmadaText(manual)) return '';
-    final extracted = _extractPlateFromText(manual);
-    final normalized = _normalizePlateText(manual);
-    return armadaIdByPlate[extracted ?? normalized] ?? '';
+    return resolveArmadaIdFromPlateInput(
+      armadaId: armadaId,
+      armadaInput: armadaManual,
+      armadaIdByPlate: armadaIdByPlate,
+    );
   }
 
   void _normalizeManualRowsToArmadaId(List<Map<String, dynamic>> armadas) {
@@ -896,12 +940,14 @@ extension _AdminCreateIncomeViewStateSupport on _AdminCreateIncomeViewState {
       final beforeManual = '${row['nama_supir_manual'] ?? ''}'.trim();
       final beforeIsManual = row['nama_supir_is_manual'] == true;
       final beforeIsAuto = row['nama_supir_auto'] == true;
-      if (_isManualArmadaRow(row)) {
+      final promoted = _promoteManualPlateToListedArmada(row, armadas: armadas);
+      if (_usesEffectiveManualArmada(row, armadas: armadas)) {
         _clearDriverForManualArmadaIfNeeded(row);
       } else {
         _applyDefaultDriverForRow(row, armadas: armadas);
       }
-      if (beforeDriver != '${row['nama_supir'] ?? ''}'.trim() ||
+      if (promoted ||
+          beforeDriver != '${row['nama_supir'] ?? ''}'.trim() ||
           beforeManual != '${row['nama_supir_manual'] ?? ''}'.trim() ||
           beforeIsManual != (row['nama_supir_is_manual'] == true) ||
           beforeIsAuto != (row['nama_supir_auto'] == true)) {

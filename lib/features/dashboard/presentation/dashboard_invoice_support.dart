@@ -960,6 +960,7 @@ Map<String, dynamic>? _resolveHargaRuleShared({
     Map<String, dynamic>? bestRule;
     var bestScore = -1;
     for (final rule in rules) {
+      if (!isRegularIncomeHargaRule(rule)) continue;
       final ruleBongkarKey =
           _normalizeIncomeRuleTextShared('${rule['lokasi_bongkar'] ?? ''}');
       if (!_incomeLocationKeyMatchesShared(bongkarKey, ruleBongkarKey)) {

@@ -62,6 +62,20 @@ void main() {
       expect(rule?['flat_total'], isNull);
     });
 
+    test('returns regular listed-fleet Pare fallback rule', () {
+      final rule = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'T. Langon',
+        destination: 'pArE',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule?['lokasi_muat'], 'Selain Betoyo');
+      expect(rule?['lokasi_bongkar'], 'Pare');
+      expect(rule?['harga_per_ton'], 80.0);
+      expect(rule?['flat_total'], isNull);
+    });
+
     test('returns built-in Bumindo fallback rule', () {
       final rule = resolveBuiltInIncomePricingRule(
         customerName: 'Siapa Saja',
@@ -239,6 +253,11 @@ void main() {
     });
 
     test('returns built-in Betoyo derivative rules for new destinations', () {
+      final bimoli = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'Betoyo',
+        destination: 'Bimoli',
+      );
       final sudali = resolveBuiltInIncomePricingRule(
         customerName: 'Siapa Saja',
         pickup: 'BETOYO',
@@ -255,9 +274,30 @@ void main() {
         destination: 'Bricon Mojo',
       );
 
+      expect(bimoli?['harga_per_ton'], 35.0);
       expect(sudali?['harga_per_ton'], 65.0);
       expect(mkp?['harga_per_ton'], 57.0);
       expect(bricon?['harga_per_ton'], 62.0);
+    });
+
+    test('returns regular Bimoli pricing for listed fleet routes', () {
+      final nonBetoyo = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'T. Langon',
+        destination: 'bImOli',
+      );
+      final betoyo = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'Betoyo',
+        destination: 'BIMOLI',
+      );
+
+      expect(nonBetoyo?['lokasi_muat'], 'Selain Betoyo');
+      expect(nonBetoyo?['lokasi_bongkar'], 'Bimoli');
+      expect(nonBetoyo?['harga_per_ton'], 28.0);
+      expect(betoyo?['lokasi_muat'], 'Betoyo');
+      expect(betoyo?['lokasi_bongkar'], 'Bimoli');
+      expect(betoyo?['harga_per_ton'], 35.0);
     });
 
     test('returns built-in Maspion to T. Langon fallback rule', () {
@@ -286,6 +326,80 @@ void main() {
       expect(rule?['lokasi_bongkar'], 'T. Langon');
       expect(rule?['harga_per_ton'], 30.0);
       expect(rule?['flat_total'], isNull);
+    });
+
+    test('returns built-in Driyo and Benowo fallback rules', () {
+      final driyoLangon = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'dRiYo',
+        destination: 't. LANGON',
+      );
+      final nonBetoyoDriyo = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'T. Langon',
+        destination: 'DRIYO',
+      );
+      final nonBetoyoBenowo = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'Maspion',
+        destination: 'bEnOwO',
+      );
+      final betoyoBenowo = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'Betoyo',
+        destination: 'Benowo',
+      );
+
+      expect(driyoLangon?['lokasi_muat'], 'Driyo');
+      expect(driyoLangon?['lokasi_bongkar'], 'T. Langon');
+      expect(driyoLangon?['harga_per_ton'], 45.0);
+      expect(nonBetoyoDriyo?['lokasi_muat'], 'Selain Betoyo');
+      expect(nonBetoyoDriyo?['harga_per_ton'], 45.0);
+      expect(nonBetoyoBenowo?['lokasi_muat'], 'Selain Betoyo');
+      expect(nonBetoyoBenowo?['harga_per_ton'], 35.0);
+      expect(betoyoBenowo, isNull);
+    });
+
+    test('returns regular Manyar Mie Sedap and Wings route pricing', () {
+      final manyarLangon = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'mAnYaR',
+        destination: 't. LANGON',
+      );
+      final mieSedaapLangon = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'MIE SEDAAP',
+        destination: 'T. Langon',
+      );
+      final langonMieSedap = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'T. Langon',
+        destination: 'mie sedap',
+      );
+      final wingsLangon = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'WiNgS',
+        destination: 'T. Langon',
+      );
+      final langonWings = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'T. Langon',
+        destination: 'WINGS',
+      );
+
+      expect(manyarLangon?['harga_per_ton'], 30.0);
+      expect(manyarLangon?['lokasi_muat'], 'Manyar / Mie Sedap');
+      expect(manyarLangon?['lokasi_bongkar'], 'T. Langon');
+      expect(mieSedaapLangon?['harga_per_ton'], 30.0);
+      expect(langonMieSedap?['harga_per_ton'], 30.0);
+      expect(langonMieSedap?['lokasi_muat'], 'T. Langon');
+      expect(langonMieSedap?['lokasi_bongkar'], 'Manyar / Mie Sedap');
+      expect(wingsLangon?['harga_per_ton'], 45.0);
+      expect(wingsLangon?['lokasi_muat'], 'Wings');
+      expect(wingsLangon?['lokasi_bongkar'], 'T. Langon');
+      expect(langonWings?['harga_per_ton'], 45.0);
+      expect(langonWings?['lokasi_muat'], 'Selain Betoyo');
+      expect(langonWings?['lokasi_bongkar'], 'Wings');
     });
 
     test('prioritizes Antok tongkang rate for Maspion to T. Langon', () {

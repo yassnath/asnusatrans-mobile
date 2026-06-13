@@ -53,8 +53,7 @@ bool isAutoSanguExpense(Map<String, dynamic> expense) {
   final note = '${expense['note'] ?? ''}'.trim().toUpperCase();
   if (note.startsWith('AUTO_SANGU:')) return true;
   final text = expenseClassifierText(expense);
-  return text.startsWith('auto sangu sopir') ||
-      text.contains('auto sangu sopir');
+  return text.startsWith('auto sangu') || text.contains('auto sangu');
 }
 
 bool isAutoGabunganExpense(Map<String, dynamic> expense) {
@@ -100,8 +99,11 @@ String extractAutoExpenseMarker(Map<String, dynamic> expense) {
 
   final ket = '${expense['keterangan'] ?? ''}'.trim();
   final lowerKet = ket.toLowerCase();
-  const autoSanguPrefix = 'auto sangu sopir -';
-  if (lowerKet.startsWith(autoSanguPrefix)) {
+  const autoSanguSopirPrefix = 'auto sangu sopir -';
+  const autoSanguPrefix = 'auto sangu -';
+  if (lowerKet.startsWith(autoSanguSopirPrefix)) {
+    return ket.substring(autoSanguSopirPrefix.length).trim();
+  } else if (lowerKet.startsWith(autoSanguPrefix)) {
     return ket.substring(autoSanguPrefix.length).trim();
   }
   const autoGabunganPrefix = 'auto gabungan -';

@@ -22,12 +22,34 @@ bool isManualArmadaText(dynamic value) {
 }
 
 bool rowUsesManualArmada(Map<String, dynamic> row) {
+  // A selected fleet ID is authoritative even if legacy/manual labels remain.
+  if ('${row['armada_id'] ?? ''}'.trim().isNotEmpty) return false;
   if (isTruthyManualArmadaFlag(row['armada_is_manual'])) return true;
   if ('${row['armada_manual'] ?? ''}'.trim().isNotEmpty) return true;
   return isManualArmadaText(row['armada_label']) ||
       isManualArmadaText(row['armada']) ||
       isManualArmadaText(row['plat_nomor']) ||
       isManualArmadaText(row['no_polisi']);
+}
+
+void applyListedArmadaSelection(
+  Map<String, dynamic> row,
+  String armadaId,
+) {
+  row['armada_id'] = armadaId.trim();
+  row['armada_is_manual'] = false;
+  row['armada_manual'] = '';
+
+  for (final key in const [
+    'armada_label',
+    'armada',
+    'plat_nomor',
+    'no_polisi',
+  ]) {
+    if (isManualArmadaText(row[key])) {
+      row[key] = '';
+    }
+  }
 }
 
 String manualArmadaLabelFromRow(Map<String, dynamic> row) {

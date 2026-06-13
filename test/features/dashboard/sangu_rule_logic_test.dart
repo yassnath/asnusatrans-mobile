@@ -14,6 +14,10 @@ void main() {
       expect(normalizeSanguPlace('TEMANGGUNG'), 'temanggung');
       expect(normalizeSanguPlace('bumindo'), 'bumindo');
       expect(normalizeSanguPlace('JaSkIn'), 'jaskin');
+      expect(normalizeSanguPlace('Manyar'), 'manyar_mie_sedap');
+      expect(normalizeSanguPlace('Mie Sedaap'), 'manyar_mie_sedap');
+      expect(normalizeSanguPlace('Mie Sedap'), 'manyar_mie_sedap');
+      expect(normalizeSanguPlace('WiNgS'), 'wings');
       expect(
         normalizeSanguPlace('Surya Warna / Sukoharjo'),
         'surya warna sukoharjo',
@@ -194,6 +198,110 @@ void main() {
       expect(rule!['nominal'], 400000);
       expect(rule['lokasi_muat'], 'DEPO');
       expect(rule['lokasi_bongkar'], 'T. LANGON');
+    });
+
+    test('prioritizes Driyo and Benowo routes case-insensitively', () {
+      final driyoLangon = resolvePrioritizedSanguRouteRule(
+        pickup: 'dRiYo',
+        destination: 't. LANGON',
+      );
+      final nonBetoyoDriyo = resolvePrioritizedSanguRouteRule(
+        pickup: 'T. Langon',
+        destination: 'DRIYO',
+      );
+      final nonBetoyoBenowo = resolvePrioritizedSanguRouteRule(
+        pickup: 'Maspion',
+        destination: 'bEnOwO',
+      );
+      final betoyoBenowo = resolvePrioritizedSanguRouteRule(
+        pickup: 'Betoyo',
+        destination: 'Benowo',
+      );
+
+      expect(driyoLangon?['nominal'], 520000);
+      expect(driyoLangon?['lokasi_muat'], 'DRIYO');
+      expect(driyoLangon?['lokasi_bongkar'], 'T. LANGON');
+      expect(nonBetoyoDriyo?['nominal'], 520000);
+      expect(nonBetoyoDriyo?['lokasi_muat'], 'Selain Betoyo');
+      expect(nonBetoyoBenowo?['nominal'], 400000);
+      expect(nonBetoyoBenowo?['lokasi_muat'], 'Selain Betoyo');
+      expect(betoyoBenowo, isNull);
+    });
+
+    test('prioritizes Manyar Mie Sedap and Wings routes case-insensitively',
+        () {
+      final manyarLangon = resolvePrioritizedSanguRouteRule(
+        pickup: 'mAnYaR',
+        destination: 't. LANGON',
+      );
+      final mieSedaapLangon = resolvePrioritizedSanguRouteRule(
+        pickup: 'MIE SEDAAP',
+        destination: 'T. Langon',
+      );
+      final langonMieSedap = resolvePrioritizedSanguRouteRule(
+        pickup: 'T. Langon',
+        destination: 'mie sedap',
+      );
+      final wingsLangon = resolvePrioritizedSanguRouteRule(
+        pickup: 'WiNgS',
+        destination: 'T. Langon',
+      );
+      final langonWings = resolvePrioritizedSanguRouteRule(
+        pickup: 'T. Langon',
+        destination: 'WINGS',
+      );
+
+      expect(manyarLangon?['nominal'], 450000);
+      expect(manyarLangon?['lokasi_muat'], 'MANYAR / MIE SEDAP');
+      expect(manyarLangon?['lokasi_bongkar'], 'T. LANGON');
+      expect(mieSedaapLangon?['nominal'], 450000);
+      expect(langonMieSedap?['nominal'], 450000);
+      expect(langonMieSedap?['lokasi_muat'], 'T. LANGON');
+      expect(langonMieSedap?['lokasi_bongkar'], 'MANYAR / MIE SEDAP');
+      expect(wingsLangon?['nominal'], 520000);
+      expect(wingsLangon?['lokasi_muat'], 'WINGS');
+      expect(wingsLangon?['lokasi_bongkar'], 'T. LANGON');
+      expect(langonWings?['nominal'], 520000);
+      expect(langonWings?['lokasi_muat'], 'Selain Betoyo');
+      expect(langonWings?['lokasi_bongkar'], 'WINGS');
+    });
+
+    test('routes manual armada Driyo and Benowo to sangu, not Gabungan', () {
+      expect(
+        manualArmadaRouteUsesSanguExpense(
+          pickup: 'dRiYo',
+          destination: 't. LANGON',
+        ),
+        isTrue,
+      );
+      expect(
+        manualArmadaRouteUsesSanguExpense(
+          pickup: 'T. Langon',
+          destination: 'DRIYO',
+        ),
+        isTrue,
+      );
+      expect(
+        manualArmadaRouteUsesSanguExpense(
+          pickup: 'Maspion',
+          destination: 'bEnOwO',
+        ),
+        isTrue,
+      );
+      expect(
+        manualArmadaRouteUsesSanguExpense(
+          pickup: 'Betoyo',
+          destination: 'Benowo',
+        ),
+        isFalse,
+      );
+      expect(
+        manualArmadaRouteUsesSanguExpense(
+          pickup: 'T. Langon',
+          destination: 'SGM',
+        ),
+        isFalse,
+      );
     });
 
     test('prioritizes non-Betoyo pickup to Singosari private sangu', () {

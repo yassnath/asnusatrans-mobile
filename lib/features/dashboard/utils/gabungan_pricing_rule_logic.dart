@@ -16,13 +16,18 @@ double parseGabunganRuleNumber(dynamic value) {
 String normalizeGabunganRouteKey(dynamic value) {
   final key = normalizeIncomePricingRuleKey('${value ?? ''}');
   if (key.contains('bimoli')) return 'bimoli';
+  if (key.contains('driyo')) return 'driyo';
   if (key.contains('kendal')) return 'kendal';
   if (key.contains('kediri')) return 'kediri';
   if (key.contains('semarang')) return 'semarang';
+  if (key.contains('gerobokan') || key.contains('grobogan')) {
+    return 'gerobokan';
+  }
   if (key.contains('kedawung') || key.contains('dawung')) return 'kedawung';
   if (key.contains('royal')) return 'royal';
   if (key.contains('pare')) return 'pare';
   if (key.contains('gempol')) return 'gempol';
+  if (key.contains('bricon')) return 'bricon_mojo';
   if (key.contains('mkp')) return 'mkp';
   if (key.contains('bululawang')) return 'bululawang';
   if (key.contains('kedamean')) return 'kedamean';
@@ -50,6 +55,11 @@ String gabunganRouteKey({
 bool isGabunganHargaRuleCustomer(dynamic value) {
   final key = normalizeIncomePricingRuleKey('${value ?? ''}');
   return key == normalizeIncomePricingRuleKey(gabunganHargaRuleCustomerName);
+}
+
+bool isRegularIncomeHargaRule(Map<String, dynamic> rule) {
+  return rule['is_active'] != false &&
+      !isGabunganHargaRuleCustomer(rule['customer_name']);
 }
 
 double resolveGabunganRuleHargaPerKg({
@@ -89,10 +99,7 @@ double resolveGabunganRuleHargaPerKg({
 
     final ruleMuatKey =
         normalizeIncomePricingRuleKey('${rule['lokasi_muat'] ?? ''}');
-    final isGenericMkpRule = ruleMuatKey.isEmpty &&
-        incomePricingLocationKeyMatches(ruleBongkarKey, 'mkp') &&
-        incomePricingLocationKeyMatches(destinationKey, 'mkp');
-    if (isGenericMkpRule && incomePricingIsBetoyoLocationKey(pickupKey)) {
+    if (ruleMuatKey.isEmpty && incomePricingIsBetoyoLocationKey(pickupKey)) {
       continue;
     }
     if (ruleMuatKey.isNotEmpty &&
@@ -122,46 +129,50 @@ double resolveBuiltInGabunganHargaPerKg({
 }) {
   final pickupKey = normalizeGabunganRouteKey(pickup);
   final destinationKey = normalizeGabunganRouteKey(destination);
+  final pickupIsBetoyo = incomePricingIsBetoyoLocationKey(pickupKey);
+  final pickupIsNonBetoyo = pickupKey.isNotEmpty && !pickupIsBetoyo;
   if (pickupKey == 'betoyo' && destinationKey == 'bimoli') return 33;
   if (pickupKey == 'betoyo' && destinationKey == 'mkp') return 53;
+  if (pickupKey == 'betoyo' && destinationKey == 'langon') return 27;
+  if (pickupKey == 'langon' && destinationKey == 'betoyo') return 27;
+  if (pickupKey == 'driyo' && destinationKey == 'langon') return 40;
+  if (pickupIsNonBetoyo && destinationKey == 'driyo') return 40;
   if (pickupKey == 'maspion' && destinationKey == 'langon') return 23;
   switch (destinationKey) {
     case 'bululawang':
-      return 100;
+      return pickupIsNonBetoyo ? 100 : 0;
     case 'kendal':
-      return 170;
+      return pickupIsNonBetoyo ? 170 : 0;
     case 'kediri':
-      return 80;
+      return pickupIsNonBetoyo ? 80 : 0;
     case 'semarang':
-      return 158;
+      return pickupIsNonBetoyo ? 158 : 0;
+    case 'gerobokan':
+      return pickupIsNonBetoyo ? 158 : 0;
     case 'kedawung':
-      return 40;
+      return pickupIsNonBetoyo ? 40 : 0;
     case 'royal':
-      return 40;
+      return pickupIsNonBetoyo ? 40 : 0;
     case 'pare':
-      return 78;
+      return pickupIsNonBetoyo ? 78 : 0;
     case 'gempol':
-      return 50;
+      return pickupIsNonBetoyo ? 50 : 0;
+    case 'bricon_mojo':
+      return pickupIsNonBetoyo ? 53 : 0;
     case 'mkp':
-      if (pickupKey.isEmpty || incomePricingIsBetoyoLocationKey(pickupKey)) {
-        return 0;
-      }
-      return 50;
+      return pickupIsNonBetoyo ? 50 : 0;
     case 'kedamean':
-      return 41;
+      return pickupIsNonBetoyo ? 41 : 0;
     case 'temanggung':
-      return 230;
+      return pickupIsNonBetoyo ? 230 : 0;
     case 'kig':
-      return 38;
+      return pickupIsNonBetoyo ? 38 : 0;
     case 'sgm':
-      if (pickupKey.isEmpty || incomePricingIsBetoyoLocationKey(pickupKey)) {
-        return 0;
-      }
-      return 41;
+      return pickupIsNonBetoyo ? 41 : 0;
     case 'safelock':
-      return 50;
+      return pickupIsNonBetoyo ? 50 : 0;
     case 'rex_beji':
-      return 53;
+      return pickupIsNonBetoyo ? 53 : 0;
     default:
       return 0;
   }
@@ -182,4 +193,38 @@ double resolveGabunganHargaPerKg({
     pickup: pickup,
     destination: destination,
   );
+}
+
+double? resolveIncomeAutoHargaPerKg({
+  required double? regularHarga,
+  required bool usesManualArmada,
+  required String pickup,
+  required String destination,
+  List<Map<String, dynamic>> gabunganRules = const <Map<String, dynamic>>[],
+}) {
+  final normalizedRegular =
+      regularHarga != null && regularHarga > 0 ? regularHarga : null;
+  if (!usesManualArmada) return normalizedRegular;
+
+  final gabunganHarga = resolveGabunganRuleHargaPerKg(
+    rules: gabunganRules,
+    pickup: pickup,
+    destination: destination,
+  );
+  return gabunganHarga > 0 ? gabunganHarga : normalizedRegular;
+}
+
+double resolveGabunganExpenseHargaPerKg({
+  required double storedHarga,
+  required String pickup,
+  required String destination,
+  List<Map<String, dynamic>> gabunganRules = const <Map<String, dynamic>>[],
+}) {
+  final databaseHarga = resolveGabunganRuleHargaPerKg(
+    rules: gabunganRules,
+    pickup: pickup,
+    destination: destination,
+  );
+  if (databaseHarga > 0) return databaseHarga;
+  return storedHarga > 0 ? storedHarga : 0;
 }

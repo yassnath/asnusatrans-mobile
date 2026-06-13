@@ -20,23 +20,26 @@ extension _AdminInvoiceListReportSummary on _AdminInvoiceListViewState {
     final fixedIncomeInvoices = reportFixedInvoiceIds.isEmpty
         ? <Map<String, dynamic>>[]
         : await widget.repository.fetchInvoicesByIds(reportFixedInvoiceIds);
-    final reportIncomeInvoices = fixedIncomeInvoices.where((item) {
-      final id = '${item['id'] ?? ''}'.trim();
-      if (id.isNotEmpty && _locallyRemovedRowIds.contains(id)) return false;
-      if (_isPengurus) return _isOwnedByCurrentUser(item);
-      if (_isAdminOrOwner) return _isPengurusIncomeApproved(item);
-      return true;
-    }).toList();
-    final invoiceListIncomeInvoices =
-        (await widget.repository.fetchInvoices()).where((item) {
-      final id = '${item['id'] ?? ''}'.trim();
-      if (id.isNotEmpty && _locallyRemovedRowIds.contains(id)) {
-        return false;
-      }
-      if (_isPengurus) return _isOwnedByCurrentUser(item);
-      if (_isAdminOrOwner) return _isPengurusIncomeApproved(item);
-      return true;
-    }).toList();
+    final reportIncomeInvoices = dedupeReportInvoiceRowsById(
+      fixedIncomeInvoices.where((item) {
+        final id = '${item['id'] ?? ''}'.trim();
+        if (id.isNotEmpty && _locallyRemovedRowIds.contains(id)) return false;
+        if (_isPengurus) return _isOwnedByCurrentUser(item);
+        if (_isAdminOrOwner) return _isPengurusIncomeApproved(item);
+        return true;
+      }),
+    );
+    final invoiceListIncomeInvoices = dedupeReportInvoiceRowsById(
+      (await widget.repository.fetchInvoices()).where((item) {
+        final id = '${item['id'] ?? ''}'.trim();
+        if (id.isNotEmpty && _locallyRemovedRowIds.contains(id)) {
+          return false;
+        }
+        if (_isPengurus) return _isOwnedByCurrentUser(item);
+        if (_isAdminOrOwner) return _isPengurusIncomeApproved(item);
+        return true;
+      }),
+    );
     final reportExpenseSources = (await () async {
       try {
         return await widget.repository.fetchExpenses();
@@ -69,6 +72,7 @@ extension _AdminInvoiceListReportSummary on _AdminInvoiceListViewState {
         _normalizeArmadaNameKey('${armada['nama_truk'] ?? ''}'):
             '${armada['plat_nomor'] ?? ''}'.trim().toUpperCase(),
     };
+    final reportListedArmadaPlates = reportArmadaPlateById.values.toSet();
     final reportHargaPerTonRules = await (() async {
       try {
         return await widget.repository.fetchHargaPerTonRules();
@@ -352,16 +356,43 @@ extension _AdminInvoiceListReportSummary on _AdminInvoiceListViewState {
       return muatKey.contains('maspion') && isLangon;
     }
 
+    bool reportRowUsesManualArmada(Map<String, dynamic> row) {
+      return _isManualArmadaRow(row) &&
+          !rowMatchesListedArmadaPlate(
+            row,
+            listedPlates: reportListedArmadaPlates,
+          );
+    }
+
+    bool reportRowUsesGabunganArmada(
+      Map<String, dynamic> row,
+      Map<String, dynamic> invoice, {
+      String? resolvedMuat,
+      String? resolvedBongkar,
+    }) {
+      if (!reportRowUsesManualArmada(row)) return false;
+      final muat =
+          resolvedMuat ?? row['lokasi_muat'] ?? invoice['lokasi_muat'] ?? '';
+      final bongkar = resolvedBongkar ??
+          row['lokasi_bongkar'] ??
+          invoice['lokasi_bongkar'] ??
+          '';
+      return !manualArmadaRouteUsesSanguExpense(
+        pickup: '$muat',
+        destination: '$bongkar',
+      );
+    }
+
     bool incomeUsesReportGabunganArmada(Map<String, dynamic> income) {
       final details = _toDetailList(income['rincian']);
       if (details.isNotEmpty) {
         return details.any(
           (row) =>
-              _isManualArmadaRow(row) &&
+              reportRowUsesGabunganArmada(row, income) &&
               !isAntokTongkangMaspionLangonReportRow(row, income),
         );
       }
-      return _isManualArmadaRow(income) &&
+      return reportRowUsesGabunganArmada(income, income) &&
           !isAntokTongkangMaspionLangonReportRow(income, income);
     }
 
@@ -538,7 +569,8 @@ extension _AdminInvoiceListReportSummary on _AdminInvoiceListViewState {
       final effectiveDetails =
           details.isEmpty ? <Map<String, dynamic>>[invoice] : details;
       for (final detail in effectiveDetails) {
-        if (_isManualArmadaRow(detail) || _isManualArmadaRow(invoice)) {
+        if (reportRowUsesGabunganArmada(detail, invoice) ||
+            reportRowUsesGabunganArmada(invoice, invoice)) {
           continue;
         }
         final harga = _toNum(detail['harga'] ?? invoice['harga']);
@@ -576,7 +608,7 @@ extension _AdminInvoiceListReportSummary on _AdminInvoiceListViewState {
       final destinationKey = normalizeIncomePricingRuleKey(bongkar);
       final candidates = <Map<String, dynamic>>[];
       for (final rule in reportHargaPerTonRules) {
-        if (rule['is_active'] == false) continue;
+        if (!isRegularIncomeHargaRule(rule)) continue;
         final harga = _toNum(rule['harga_per_ton']);
         if (harga <= 0) continue;
         final ruleBongkar =
@@ -1197,6 +1229,7 @@ extension _AdminInvoiceListReportSummary on _AdminInvoiceListViewState {
       required String keyword,
     }) {
       final rows = <Map<String, dynamic>>[];
+      final includedIncomeDetailIdentities = <String>{};
 
       bool inRange(dynamic value) {
         final date = Formatters.parseDate(value);
@@ -1397,6 +1430,13 @@ extension _AdminInvoiceListReportSummary on _AdminInvoiceListViewState {
             'lokasi_bongkar': bongkar,
           };
           if (!keywordAllowed(rowSource)) continue;
+          if (!reserveReportIncomeDetailIdentity(
+            seenIdentities: includedIncomeDetailIdentities,
+            invoice: invoice,
+            detailIndex: detailIndex,
+          )) {
+            continue;
+          }
 
           final sanguAmount = resolveDetailSanguAmount(
             invoice: invoice,
@@ -1404,14 +1444,24 @@ extension _AdminInvoiceListReportSummary on _AdminInvoiceListViewState {
             detailIndex: detailIndex,
             detailCount: detailRows.length,
           );
-          final usesGabunganArmada =
-              (_isManualArmadaRow(detail) || _isManualArmadaRow(invoice)) &&
-                  !isAntokTongkangMaspionLangonReportRow(
+          final usesGabunganArmada = (reportRowUsesGabunganArmada(
                     detail,
                     invoice,
                     resolvedMuat: muat,
                     resolvedBongkar: bongkar,
-                  );
+                  ) ||
+                  reportRowUsesGabunganArmada(
+                    invoice,
+                    invoice,
+                    resolvedMuat: muat,
+                    resolvedBongkar: bongkar,
+                  )) &&
+              !isAntokTongkangMaspionLangonReportRow(
+                detail,
+                invoice,
+                resolvedMuat: muat,
+                resolvedBongkar: bongkar,
+              );
           final gabunganAmount = usesGabunganArmada ? detailTotal : 0.0;
           final gabunganLaba = usesGabunganArmada
               ? resolveGabunganReportLaba(
