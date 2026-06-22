@@ -18,6 +18,7 @@ void main() {
       expect(normalizeSanguPlace('Mie Sedaap'), 'manyar_mie_sedap');
       expect(normalizeSanguPlace('Mie Sedap'), 'manyar_mie_sedap');
       expect(normalizeSanguPlace('WiNgS'), 'wings');
+      expect(normalizeSanguPlace('MoJoSaRi'), 'mojosari');
       expect(
         normalizeSanguPlace('Surya Warna / Sukoharjo'),
         'surya warna sukoharjo',
@@ -217,6 +218,10 @@ void main() {
         pickup: 'T. Langon',
         destination: 'iNdO Star',
       );
+      final nonBetoyoMojosari = resolvePrioritizedSanguRouteRule(
+        pickup: 'T. Langon',
+        destination: 'mOjOsArI',
+      );
       final betoyoBenowo = resolvePrioritizedSanguRouteRule(
         pickup: 'Betoyo',
         destination: 'Benowo',
@@ -236,6 +241,9 @@ void main() {
       expect(nonBetoyoIndostar?['nominal'], 1035000);
       expect(nonBetoyoIndostar?['lokasi_muat'], 'Selain Betoyo');
       expect(nonBetoyoIndostar?['lokasi_bongkar'], 'INDOSTAR');
+      expect(nonBetoyoMojosari?['nominal'], 690000);
+      expect(nonBetoyoMojosari?['lokasi_muat'], 'Selain Betoyo');
+      expect(nonBetoyoMojosari?['lokasi_bongkar'], 'MOJOSARI');
       expect(betoyoBenowo, isNull);
       expect(betoyoIndostar, isNull);
     });
@@ -332,6 +340,13 @@ void main() {
         manualArmadaRouteUsesSanguExpense(
           pickup: 'T. Langon',
           destination: 'iNdOsTaR',
+        ),
+        isTrue,
+      );
+      expect(
+        manualArmadaRouteUsesSanguExpense(
+          pickup: 'T. Langon',
+          destination: 'MoJoSaRi',
         ),
         isTrue,
       );

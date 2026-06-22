@@ -77,16 +77,7 @@ extension _AdminInvoiceListViewStatePreviewSupport
         pickup: pickup,
         destination: destination,
       );
-      final effectiveHarga = resolveIncomeAutoHargaPerKg(
-            regularHarga: effectiveRegularHarga,
-            usesManualArmada: _usesEffectiveManualArmada(
-              row,
-              armadas: armadas,
-            ),
-            pickup: pickup,
-            destination: destination,
-            gabunganRules: hargaPerTonRules,
-          ) ??
+      final effectiveHarga = effectiveRegularHarga ??
           _toNum(detail['harga'] ?? previewItem['harga']);
       final tonase = _toNum(detail['tonase'] ?? previewItem['tonase']);
       final currentHarga = _toNum(detail['harga'] ?? previewItem['harga']);

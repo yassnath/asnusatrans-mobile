@@ -90,6 +90,34 @@ void main() {
       expect(rule?['flat_total'], isNull);
     });
 
+    test('keeps regular listed-fleet Kendal price separated from Gabungan', () {
+      final rule = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'T. Langon',
+        destination: 'KeNdAl',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule?['lokasi_muat'], 'Selain Betoyo');
+      expect(rule?['lokasi_bongkar'], 'Kendal');
+      expect(rule?['harga_per_ton'], 175.0);
+      expect(rule?['flat_total'], isNull);
+    });
+
+    test('returns regular listed-fleet Mojosari fallback rule', () {
+      final rule = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'T. Langon',
+        destination: 'mOjOsArI',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule?['lokasi_muat'], 'Selain Betoyo');
+      expect(rule?['lokasi_bongkar'], 'Mojosari');
+      expect(rule?['harga_per_ton'], 55.0);
+      expect(rule?['flat_total'], isNull);
+    });
+
     test('keeps Wings Driyo to T. Langon listed-fleet price at 45', () {
       final rule = resolveBuiltInIncomePricingRule(
         customerName: 'Hengky',

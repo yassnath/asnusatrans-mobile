@@ -27,12 +27,20 @@ type InvoiceRow = {
 };
 
 type ExpenseRow = {
+  id?: unknown;
+  no_expense?: unknown;
   tanggal?: unknown;
+  kategori?: unknown;
   total_pengeluaran?: unknown;
+  status?: unknown;
   keterangan?: unknown;
   note?: unknown;
   rincian?: unknown;
   created_at?: unknown;
+  invoice_entity?: unknown;
+  entity?: unknown;
+  tipe_invoice?: unknown;
+  type?: unknown;
 };
 
 type DeviceTokenRow = {
@@ -289,10 +297,18 @@ function invoiceTotal(invoice: InvoiceRow): number {
   return Math.max(0, toNumber(invoice.total_biaya) - toNumber(invoice.pph));
 }
 
-function cvReminderIncome(invoice: InvoiceRow): number {
-  const grossTotal = toNumber(invoice.total_biaya);
-  if (grossTotal <= 0) return invoiceTotal(invoice);
-  return Math.max(0, grossTotal - toNumber(invoice.pph));
+function roundRupiah(value: number): number {
+  return Number.isFinite(value) && value > 0 ? Math.round(value) : 0;
+}
+
+function calculatePph2Percent(subtotal: number): number {
+  const rounded = roundRupiah(subtotal);
+  return rounded > 0 ? Math.max(0, Math.round(rounded * 0.02)) : 0;
+}
+
+function totalAfterPph(subtotal: number): number {
+  const rounded = roundRupiah(subtotal);
+  return rounded > 0 ? Math.max(0, rounded - calculatePph2Percent(rounded)) : 0;
 }
 
 function invoiceReferenceDate(invoice: InvoiceRow): Date | null {
@@ -307,6 +323,105 @@ function invoiceReferenceDate(invoice: InvoiceRow): Date | null {
     if (date) return date;
   }
   return null;
+}
+
+function dateInPeriod(
+  date: Date | null,
+  start: Date,
+  endExclusive: Date,
+): boolean {
+  return date != null && date >= start && date < endExclusive;
+}
+
+function invoiceDetailReferenceDate(
+  detail: Record<string, unknown>,
+  invoice: InvoiceRow,
+): Date | null {
+  for (
+    const value of [
+      detail.armada_start_date,
+      detail.tanggal,
+      invoice.armada_start_date,
+      invoice.tanggal_kop,
+      invoice.tanggal,
+      invoice.created_at,
+    ]
+  ) {
+    const parsed = parseDate(value);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+function truthySubtotalAuto(value: unknown): boolean {
+  if (typeof value === "boolean") return value;
+  const raw = String(value ?? "").trim().toLowerCase();
+  return ["true", "1", "yes"].includes(raw);
+}
+
+function invoiceDetailSubtotal(
+  detail: Record<string, unknown>,
+  invoice?: InvoiceRow,
+  fallbackSubtotal = 0,
+): number {
+  const pick = (key: string): number => {
+    const direct = toNumber(detail[key]);
+    if (direct > 0) return direct;
+    if (!invoice) return 0;
+    return toNumber((invoice as Record<string, unknown>)[key]);
+  };
+
+  for (const key of ["manual_subtotal", "subtotal_manual"]) {
+    const manual = pick(key);
+    if (manual > 0) return roundRupiah(manual);
+  }
+
+  const tonase = pick("tonase");
+  const harga = pick("harga");
+  const computed = tonase > 0 && harga > 0 ? tonase * harga : 0;
+  if (truthySubtotalAuto(detail.subtotal_auto) && computed > 0) {
+    return roundRupiah(computed);
+  }
+
+  for (const key of ["subtotal", "total", "total_biaya", "jumlah"]) {
+    const explicit = pick(key);
+    if (explicit > 0) return roundRupiah(explicit);
+  }
+
+  if (computed > 0) return roundRupiah(computed);
+  return roundRupiah(fallbackSubtotal);
+}
+
+function invoiceSubtotalInPeriod(
+  invoice: InvoiceRow,
+  start: Date,
+  endExclusive: Date,
+): number {
+  const details = detailRows(invoice.rincian);
+  if (details.length > 0) {
+    return details.reduce((sum, detail) => {
+      if (
+        !dateInPeriod(
+          invoiceDetailReferenceDate(detail, invoice),
+          start,
+          endExclusive,
+        )
+      ) {
+        return sum;
+      }
+      return sum + invoiceDetailSubtotal(
+        detail,
+        details.length === 1 ? invoice : undefined,
+        details.length === 1 ? toNumber(invoice.total_biaya) : 0,
+      );
+    }, 0);
+  }
+
+  if (!dateInPeriod(invoiceReferenceDate(invoice), start, endExclusive)) {
+    return 0;
+  }
+  const grossTotal = toNumber(invoice.total_biaya);
+  return grossTotal > 0 ? grossTotal : invoiceTotal(invoice);
 }
 
 function expenseTotal(expense: ExpenseRow): number {
@@ -325,6 +440,54 @@ function expenseTotal(expense: ExpenseRow): number {
   return sum;
 }
 
+function expenseDetailReferenceDate(
+  detail: Record<string, unknown>,
+  expense: ExpenseRow,
+): Date | null {
+  for (
+    const value of [
+      detail.armada_start_date,
+      detail.tanggal,
+      expense.tanggal,
+      expense.created_at,
+    ]
+  ) {
+    const parsed = parseDate(value);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+function expenseTotalInPeriod(
+  expense: ExpenseRow,
+  start: Date,
+  endExclusive: Date,
+): number {
+  const details = detailRows(expense.rincian);
+  if (details.length > 0) {
+    const detailTotal = details.reduce((sum, detail) => {
+      if (
+        !dateInPeriod(
+          expenseDetailReferenceDate(detail, expense),
+          start,
+          endExclusive,
+        )
+      ) {
+        return sum;
+      }
+      for (const key of ["jumlah", "total", "nominal", "biaya"]) {
+        const parsed = toNumber(detail[key]);
+        if (parsed > 0) return sum + parsed;
+      }
+      return sum;
+    }, 0);
+    if (detailTotal > 0) return detailTotal;
+  }
+
+  const date = parseDate(expense.tanggal) ?? parseDate(expense.created_at);
+  return dateInPeriod(date, start, endExclusive) ? expenseTotal(expense) : 0;
+}
+
 function isAutoSanguExpense(expense: ExpenseRow): boolean {
   const note = String(expense.note ?? "").trim().toUpperCase();
   if (note.startsWith("AUTO_SANGU:")) return true;
@@ -332,14 +495,62 @@ function isAutoSanguExpense(expense: ExpenseRow): boolean {
   return description.startsWith("auto sangu sopir -");
 }
 
-function autoSanguMarker(expense: ExpenseRow): string {
+function isAutoGabunganExpense(expense: ExpenseRow): boolean {
+  const note = String(expense.note ?? "").trim().toUpperCase();
+  if (note.startsWith("AUTO_GABUNGAN:")) return true;
+  const description = String(expense.keterangan ?? "").trim().toLowerCase();
+  return description.startsWith("auto gabungan -");
+}
+
+function autoExpenseMarker(expense: ExpenseRow): string {
   const note = String(expense.note ?? "").trim();
   if (note.toUpperCase().startsWith("AUTO_SANGU:")) {
     return note.substring("AUTO_SANGU:".length).trim();
   }
+  if (note.toUpperCase().startsWith("AUTO_GABUNGAN:")) {
+    return note.substring("AUTO_GABUNGAN:".length).trim();
+  }
   const description = String(expense.keterangan ?? "").trim();
   const match = /auto\s+sangu\s+sopir\s*-\s*(.+)$/i.exec(description);
-  return match?.[1]?.trim() ?? "";
+  if (match?.[1]) return match[1].trim();
+  const gabunganMatch = /auto\s+gabungan\s*-\s*(.+)$/i.exec(description);
+  return gabunganMatch?.[1]?.trim() ?? "";
+}
+
+function isCompanyEntity(entity: string): boolean {
+  return entity === "cv_ant" || entity === "pt_ant";
+}
+
+function expenseEntityHint(expense: ExpenseRow): string | null {
+  for (
+    const value of [
+      expense.invoice_entity,
+      expense.entity,
+      expense.tipe_invoice,
+      expense.type,
+      expense.kategori,
+      expense.keterangan,
+      expense.note,
+    ]
+  ) {
+    const text = String(value ?? "").trim();
+    if (!text) continue;
+    const lower = text.toLowerCase();
+    const compact = text.toUpperCase().replaceAll(/\s+/g, "");
+    if (
+      lower.includes("pribadi") || lower.includes("personal") ||
+      compact.includes("/BS/") || compact.startsWith("BS")
+    ) {
+      return "personal";
+    }
+    if (
+      compact.includes("CV.ANT") || compact.includes("PT.ANT") ||
+      /^(CV|PT)[.\s]/.test(text.toUpperCase())
+    ) {
+      return "cv_ant";
+    }
+  }
+  return null;
 }
 
 function buildSummary(
@@ -365,24 +576,29 @@ function buildSummary(
 
   for (const invoice of invoices) {
     if (!isApprovedForBackoffice(invoice)) continue;
-    const date = invoiceReferenceDate(invoice);
-    if (!date || date < start || date >= endExclusive) continue;
     const entity = normalizeInvoiceEntity(invoice);
-    if (entity === "cv_ant") summary.cvIncome += cvReminderIncome(invoice);
-    if (entity === "personal") summary.personalIncome += invoiceTotal(invoice);
+    const subtotal = invoiceSubtotalInPeriod(invoice, start, endExclusive);
+    if (subtotal <= 0) continue;
+    if (isCompanyEntity(entity)) summary.cvIncome += totalAfterPph(subtotal);
+    if (entity === "personal") summary.personalIncome += subtotal;
   }
 
   for (const expense of expenses) {
-    if (!isAutoSanguExpense(expense)) continue;
-    const date = parseDate(expense.tanggal) ?? parseDate(expense.created_at);
-    if (!date || date < start || date >= endExclusive) continue;
-    const linkedInvoice = invoiceByMarker.get(
-      normalizeMarker(autoSanguMarker(expense)),
-    );
-    if (!linkedInvoice) continue;
-    const entity = normalizeInvoiceEntity(linkedInvoice);
-    if (entity === "cv_ant") summary.cvExpense += expenseTotal(expense);
-    if (entity === "personal") summary.personalExpense += expenseTotal(expense);
+    const total = expenseTotalInPeriod(expense, start, endExclusive);
+    if (total <= 0) continue;
+    const isAutoExpense = isAutoSanguExpense(expense) ||
+      isAutoGabunganExpense(expense);
+    const linkedInvoice = isAutoExpense
+      ? invoiceByMarker.get(normalizeMarker(autoExpenseMarker(expense)))
+      : undefined;
+    const entity = linkedInvoice
+      ? normalizeInvoiceEntity(linkedInvoice)
+      : expenseEntityHint(expense);
+    if (entity === "personal") {
+      summary.personalExpense += total;
+    } else if (entity == null || isCompanyEntity(entity)) {
+      summary.cvExpense += total;
+    }
   }
 
   return summary;
@@ -491,7 +707,7 @@ Deno.serve(async (req) => {
       serviceClient
         .from("expenses")
         .select(
-          "tanggal,total_pengeluaran,keterangan,note,rincian,created_at",
+          "id,no_expense,tanggal,kategori,total_pengeluaran,status,keterangan,note,rincian,created_at",
         ),
     ]);
 

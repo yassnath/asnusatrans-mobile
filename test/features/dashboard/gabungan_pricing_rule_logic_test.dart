@@ -638,6 +638,16 @@ void main() {
       expect(
         isRegularIncomeHargaRule({
           'customer_name': null,
+          'lokasi_muat': 'Selain Betoyo',
+          'lokasi_bongkar': 'Kendal',
+          'harga_per_ton': 170,
+          'is_active': true,
+        }),
+        isFalse,
+      );
+      expect(
+        isRegularIncomeHargaRule({
+          'customer_name': null,
           'lokasi_muat': null,
           'lokasi_bongkar': 'Bricon Mojo',
           'harga_per_ton': 53,
@@ -671,6 +681,16 @@ void main() {
           'lokasi_muat': 'Selain Betoyo',
           'lokasi_bongkar': 'Pare',
           'harga_per_ton': 80,
+          'is_active': true,
+        }),
+        isTrue,
+      );
+      expect(
+        isRegularIncomeHargaRule({
+          'customer_name': null,
+          'lokasi_muat': 'Selain Betoyo',
+          'lokasi_bongkar': 'Kendal',
+          'harga_per_ton': 175,
           'is_active': true,
         }),
         isTrue,

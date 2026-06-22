@@ -132,18 +132,11 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
       final previousSubtotal = '${row['subtotal'] ?? ''}'.trim();
       final wasAuto = row['harga_auto'] == true;
       final wasAutoSubtotal = row['subtotal_auto'] == true;
-      final regularHarga = resolveHargaPerTon(
+      final harga = resolveHargaPerTon(
         customerName: customer.text.trim(),
         lokasiMuat: '${row['lokasi_muat'] ?? ''}',
         lokasiBongkar: '${row['lokasi_bongkar'] ?? ''}',
         muatan: '${row['muatan'] ?? ''}',
-      );
-      final harga = resolveIncomeAutoHargaPerKg(
-        regularHarga: regularHarga,
-        usesManualArmada: _usesEffectiveManualArmada(row, armadas: armadas),
-        pickup: '${row['lokasi_muat'] ?? ''}',
-        destination: '${row['lokasi_bongkar'] ?? ''}',
-        gabunganRules: hargaPerTonRules,
       );
       final flatSubtotal = resolveFlatSubtotal(
         customerName: customer.text.trim(),
@@ -211,26 +204,23 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
         lokasiMuat: muatText,
         lokasiBongkar: '${row['lokasi_bongkar'] ?? ''}',
       );
-      final regularHarga = resolveHargaPerTon(
+      final resolvedHarga = resolveHargaPerTon(
         customerName: customer.text.trim(),
         lokasiMuat: muatText,
         lokasiBongkar: '${row['lokasi_bongkar'] ?? ''}',
         muatan: '${row['muatan'] ?? ''}',
-      );
-      final resolvedHarga = resolveIncomeAutoHargaPerKg(
-        regularHarga: regularHarga,
-        usesManualArmada: useManual,
-        pickup: muatText,
-        destination: '${row['lokasi_bongkar'] ?? ''}',
-        gabunganRules: hargaPerTonRules,
       );
       final resolvedSubtotal = _resolveHargaFlatTotalShared(
         resolvedRule,
         muatan: '${row['muatan'] ?? ''}',
       );
       final originalHargaText = _formatEditableNumber(row['harga']);
+      final keepManualHarga =
+          row['harga_auto'] != true && originalHargaText.isNotEmpty;
       final hargaText = resolvedHarga != null && resolvedHarga > 0
-          ? _formatEditableNumber(resolvedHarga)
+          ? keepManualHarga
+              ? originalHargaText
+              : _formatEditableNumber(resolvedHarga)
           : originalHargaText;
       final originalManualSubtotalText = _formatEditableNumber(
         row['manual_subtotal'] ?? row['subtotal_manual'],
@@ -238,8 +228,12 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
       final originalSubtotalText = originalManualSubtotalText.isNotEmpty
           ? originalManualSubtotalText
           : _formatEditableNumber(row['subtotal']);
+      final keepManualSubtotal =
+          row['subtotal_auto'] != true && originalSubtotalText.isNotEmpty;
       final subtotalText = resolvedSubtotal != null && resolvedSubtotal > 0
-          ? _formatEditableNumber(resolvedSubtotal)
+          ? keepManualSubtotal
+              ? originalSubtotalText
+              : _formatEditableNumber(resolvedSubtotal)
           : resolvedHarga != null && resolvedHarga > 0
               ? ''
               : originalSubtotalText;
@@ -261,8 +255,11 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
         'tonase': _formatEditableNumber(row['tonase']),
         'harga': hargaText,
         'subtotal': subtotalText,
-        'harga_auto': resolvedHarga != null && resolvedHarga > 0,
-        'subtotal_auto': resolvedSubtotal != null && resolvedSubtotal > 0,
+        'harga_auto':
+            !keepManualHarga && resolvedHarga != null && resolvedHarga > 0,
+        'subtotal_auto': !keepManualSubtotal &&
+            resolvedSubtotal != null &&
+            resolvedSubtotal > 0,
       };
       if (useManual) {
         _clearDriverForManualArmadaIfNeeded(mappedRow);

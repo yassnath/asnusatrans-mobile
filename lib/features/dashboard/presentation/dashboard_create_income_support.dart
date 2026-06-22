@@ -163,23 +163,15 @@ extension _AdminCreateIncomeViewStateSupport on _AdminCreateIncomeViewState {
     final previousSubtotal = '${row['subtotal'] ?? ''}'.trim();
     final wasAuto = row['harga_auto'] == true;
     final wasAutoSubtotal = row['subtotal_auto'] == true;
-    final isManualArmada = _usesEffectiveManualArmada(row, armadas: armadas);
     final lokasiMuat = '${row['lokasi_muat'] ?? ''}';
     final lokasiBongkar = '${row['lokasi_bongkar'] ?? ''}';
     final muatan = '${row['muatan'] ?? ''}';
 
-    final regularHarga = _resolveHargaPerTon(
+    final harga = _resolveHargaPerTon(
       customerName: _customer.text.trim(),
       lokasiMuat: lokasiMuat,
       lokasiBongkar: lokasiBongkar,
       muatan: muatan,
-    );
-    final harga = resolveIncomeAutoHargaPerKg(
-      regularHarga: regularHarga,
-      usesManualArmada: isManualArmada,
-      pickup: lokasiMuat,
-      destination: lokasiBongkar,
-      gabunganRules: _hargaPerTonRules,
     );
     final flatSubtotal = _resolveFlatSubtotal(
       customerName: _customer.text.trim(),

@@ -25,6 +25,7 @@ String normalizeSanguPlace(String value) {
   if (normalized.contains('cj') && normalized.contains('mojoagung')) {
     return 'mojoagung';
   }
+  if (normalized.contains('mojosari')) return 'mojosari';
   if (normalized.contains('mojoagung')) return 'mojoagung';
   if (normalized.contains('bricon') && normalized.contains('mojo')) {
     return 'bricon';
@@ -101,6 +102,9 @@ bool manualArmadaRouteUsesSanguExpense({
     return true;
   }
   if (!sanguIsBetoyoPlace(pickupNorm) && destinationNorm == 'indostar') {
+    return true;
+  }
+  if (!sanguIsBetoyoPlace(pickupNorm) && destinationNorm == 'mojosari') {
     return true;
   }
   if (!sanguIsBetoyoPlace(pickupNorm) && destinationNorm == 'sgm') {
@@ -490,6 +494,20 @@ Map<String, dynamic>? resolvePrioritizedSanguRouteRule({
       'nominal': 1035000,
       '__muat_norm': 'selain betoyo',
       '__bongkar_norm': 'indostar',
+    };
+  }
+
+  final nonBetoyoToMojosari = pickupNorm.isNotEmpty &&
+      !sanguIsBetoyoPlace(pickupNorm) &&
+      destinationNorm == 'mojosari';
+  if (nonBetoyoToMojosari) {
+    return <String, dynamic>{
+      'tempat': 'SELAIN BETOYO - MOJOSARI',
+      'lokasi_muat': 'Selain Betoyo',
+      'lokasi_bongkar': 'MOJOSARI',
+      'nominal': 690000,
+      '__muat_norm': 'selain betoyo',
+      '__bongkar_norm': 'mojosari',
     };
   }
 

@@ -39,7 +39,7 @@ extension DashboardRepositoryDashboardExtension on DashboardRepository {
           (columns) => _supabase.from('invoices').select(columns),
         ),
         _supabase.from('expenses').select(
-              'id,tanggal,total_pengeluaran,keterangan,note,rincian,created_at',
+              'id,tanggal,kategori,total_pengeluaran,keterangan,note,rincian,created_at',
             ),
       ]);
 
@@ -60,6 +60,82 @@ extension DashboardRepositoryDashboardExtension on DashboardRepository {
         return !date.isBefore(start) && date.isBefore(end);
       }
 
+      DateTime? detailReferenceDate(
+        Map<String, dynamic> detail,
+        Map<String, dynamic> invoice,
+      ) {
+        for (final value in [
+          detail['armada_start_date'],
+          detail['tanggal'],
+          invoice['armada_start_date'],
+          invoice['tanggal_kop'],
+          invoice['tanggal'],
+          invoice['created_at'],
+        ]) {
+          final parsed = Formatters.parseDate(value);
+          if (parsed != null) return parsed;
+        }
+        return null;
+      }
+
+      double invoiceSubtotalInPeriod(Map<String, dynamic> invoice) {
+        final details = _toMapList(invoice['rincian']);
+        if (details.isNotEmpty) {
+          var total = 0.0;
+          for (final detail in details) {
+            if (!isWithinPeriod(detailReferenceDate(detail, invoice))) {
+              continue;
+            }
+            total += resolveInvoiceDetailExcelSubtotal(
+              detail,
+              fallback: details.length == 1 ? invoice : null,
+              fallbackSubtotal:
+                  details.length == 1 ? _num(invoice['total_biaya']) : 0,
+            );
+          }
+          return total;
+        }
+
+        if (!isWithinPeriod(_invoiceReferenceDate(invoice))) return 0;
+        final grossTotal = _num(invoice['total_biaya']);
+        if (grossTotal > 0) return grossTotal;
+        return _invoiceTotal(invoice);
+      }
+
+      DateTime? expenseDetailReferenceDate(
+        Map<String, dynamic> detail,
+        Map<String, dynamic> expense,
+      ) {
+        for (final value in [
+          detail['armada_start_date'],
+          detail['tanggal'],
+          expense['tanggal'],
+          expense['created_at'],
+        ]) {
+          final parsed = Formatters.parseDate(value);
+          if (parsed != null) return parsed;
+        }
+        return null;
+      }
+
+      double expenseTotalInPeriod(Map<String, dynamic> expense) {
+        final details = _toMapList(expense['rincian']);
+        if (details.isNotEmpty) {
+          var total = 0.0;
+          for (final detail in details) {
+            if (!isWithinPeriod(expenseDetailReferenceDate(detail, expense))) {
+              continue;
+            }
+            total += _expenseDetailAmount(detail);
+          }
+          if (total > 0) return total;
+        }
+
+        final date =
+            Formatters.parseDate(expense['tanggal'] ?? expense['created_at']);
+        return isWithinPeriod(date) ? _expenseTotal(expense) : 0;
+      }
+
       String normalizeMarker(String value) {
         return value
             .toUpperCase()
@@ -75,18 +151,41 @@ extension DashboardRepositoryDashboardExtension on DashboardRepository {
         );
       }
 
-      bool isCvInvoice(Map<String, dynamic> invoice) {
-        return invoiceEntityOf(invoice) == Formatters.invoiceEntityCvAnt;
+      bool isCompanyReminderInvoice(Map<String, dynamic> invoice) {
+        return Formatters.isCompanyInvoiceEntity(invoiceEntityOf(invoice));
       }
 
       bool isPersonalInvoice(Map<String, dynamic> invoice) {
         return invoiceEntityOf(invoice) == Formatters.invoiceEntityPersonal;
       }
 
-      double cvReminderIncome(Map<String, dynamic> invoice) {
-        final grossTotal = _num(invoice['total_biaya']);
-        if (grossTotal <= 0) return _invoiceTotal(invoice);
-        return calculateInvoiceTotalAfterPph(grossTotal);
+      String? expenseEntityHint(Map<String, dynamic> expense) {
+        for (final value in [
+          expense['invoice_entity'],
+          expense['entity'],
+          expense['tipe_invoice'],
+          expense['type'],
+          expense['kategori'],
+          expense['keterangan'],
+          expense['note'],
+        ]) {
+          final text = '${value ?? ''}'.trim();
+          if (text.isEmpty) continue;
+          final lower = text.toLowerCase();
+          final compact = text.toUpperCase().replaceAll(RegExp(r'\s+'), '');
+          if (lower.contains('pribadi') ||
+              lower.contains('personal') ||
+              compact.contains('/BS/') ||
+              compact.startsWith('BS')) {
+            return Formatters.invoiceEntityPersonal;
+          }
+          if (compact.contains('CV.ANT') ||
+              compact.contains('PT.ANT') ||
+              RegExp(r'^(CV|PT)[.\s]').hasMatch(text.toUpperCase())) {
+            return Formatters.invoiceEntityCvAnt;
+          }
+        }
+        return null;
       }
 
       final invoiceByMarker = <String, Map<String, dynamic>>{};
@@ -108,36 +207,44 @@ extension DashboardRepositoryDashboardExtension on DashboardRepository {
       }
 
       final cvIncome = invoices.fold<double>(0, (sum, invoice) {
-        final date = _invoiceReferenceDate(invoice);
-        if (!isWithinPeriod(date) || !isCvInvoice(invoice)) {
+        if (!isCompanyReminderInvoice(invoice)) {
           return sum;
         }
-        return sum + cvReminderIncome(invoice);
+        return sum +
+            calculateInvoiceTotalAfterPph(
+              invoiceSubtotalInPeriod(invoice),
+            );
       });
       final personalIncome = invoices.fold<double>(0, (sum, invoice) {
-        final date = _invoiceReferenceDate(invoice);
-        if (!isWithinPeriod(date) || !isPersonalInvoice(invoice)) {
+        if (!isPersonalInvoice(invoice)) {
           return sum;
         }
-        return sum + _invoiceTotal(invoice);
+        return sum + invoiceSubtotalInPeriod(invoice);
       });
 
       var cvAutoSanguExpense = 0.0;
       var personalAutoSanguExpense = 0.0;
       for (final expense in expenses) {
-        if (!isAutoSanguExpense(expense)) continue;
-        final date =
-            Formatters.parseDate(expense['tanggal'] ?? expense['created_at']);
-        if (!isWithinPeriod(date)) continue;
+        final expenseTotal = expenseTotalInPeriod(expense);
+        if (expenseTotal <= 0) continue;
 
-        final linkedInvoice =
-            invoiceByMarker[normalizeMarker(extractAutoExpenseMarker(expense))];
-        if (linkedInvoice == null) continue;
-
-        final expenseTotal = _expenseTotal(expense);
-        if (isCvInvoice(linkedInvoice)) {
+        final isAutoExpense =
+            isAutoSanguExpense(expense) || isAutoGabunganExpense(expense);
+        final linkedInvoice = isAutoExpense
+            ? invoiceByMarker[normalizeMarker(
+                extractAutoExpenseMarker(expense),
+              )]
+            : null;
+        final hintedEntity = linkedInvoice == null
+            ? expenseEntityHint(expense)
+            : invoiceEntityOf(linkedInvoice);
+        final isPersonalExpense =
+            hintedEntity == Formatters.invoiceEntityPersonal;
+        final isCompanyExpense = hintedEntity == null ||
+            Formatters.isCompanyInvoiceEntity(hintedEntity);
+        if (isCompanyExpense) {
           cvAutoSanguExpense += expenseTotal;
-        } else if (isPersonalInvoice(linkedInvoice)) {
+        } else if (isPersonalExpense) {
           personalAutoSanguExpense += expenseTotal;
         }
       }
