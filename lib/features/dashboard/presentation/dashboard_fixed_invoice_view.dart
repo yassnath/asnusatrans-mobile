@@ -18,6 +18,7 @@ class _AdminFixedInvoiceView extends StatefulWidget {
 class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
   static const _fixedInvoicePrefsKey = 'fixed_invoice_ids_v1';
   static const _fixedInvoiceBatchPrefsKey = 'fixed_invoice_batches_v1';
+  static const _returnedFixedInvoicePrefsKey = 'returned_fixed_invoice_ids_v1';
   static const _fixedInvoiceNormalizationDoneKey =
       'fixed_invoice_normalization_done_v1';
   static const _fixedInvoiceRemotePromotionDoneKey =
@@ -315,6 +316,21 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
     final prefs = await SharedPreferences.getInstance();
     final values = ids.toList()..sort();
     await prefs.setStringList(_fixedInvoicePrefsKey, values);
+  }
+
+  Future<void> _rememberReturnedFixedInvoiceIds(Set<String> ids) async {
+    final cleaned =
+        ids.map((id) => id.trim()).where((id) => id.isNotEmpty).toSet();
+    if (cleaned.isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    final existing =
+        (prefs.getStringList(_returnedFixedInvoicePrefsKey) ?? const <String>[])
+            .map((id) => id.trim())
+            .where((id) => id.isNotEmpty)
+            .toSet();
+    existing.addAll(cleaned);
+    final values = existing.toList()..sort();
+    await prefs.setStringList(_returnedFixedInvoicePrefsKey, values);
   }
 
   Future<List<_FixedInvoiceBatch>> _loadFixedBatches() async {
@@ -1449,6 +1465,7 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
         );
       }
       await _saveFixedBatches(batches);
+      await _rememberReturnedFixedInvoiceIds(idsToReturn);
       if (!mounted) return;
       _snack(
         _t(

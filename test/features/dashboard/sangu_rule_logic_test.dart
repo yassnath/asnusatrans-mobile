@@ -213,9 +213,17 @@ void main() {
         pickup: 'Maspion',
         destination: 'bEnOwO',
       );
+      final nonBetoyoIndostar = resolvePrioritizedSanguRouteRule(
+        pickup: 'T. Langon',
+        destination: 'iNdO Star',
+      );
       final betoyoBenowo = resolvePrioritizedSanguRouteRule(
         pickup: 'Betoyo',
         destination: 'Benowo',
+      );
+      final betoyoIndostar = resolvePrioritizedSanguRouteRule(
+        pickup: 'Betoyo',
+        destination: 'Indostar',
       );
 
       expect(driyoLangon?['nominal'], 520000);
@@ -225,7 +233,11 @@ void main() {
       expect(nonBetoyoDriyo?['lokasi_muat'], 'Selain Betoyo');
       expect(nonBetoyoBenowo?['nominal'], 400000);
       expect(nonBetoyoBenowo?['lokasi_muat'], 'Selain Betoyo');
+      expect(nonBetoyoIndostar?['nominal'], 1035000);
+      expect(nonBetoyoIndostar?['lokasi_muat'], 'Selain Betoyo');
+      expect(nonBetoyoIndostar?['lokasi_bongkar'], 'INDOSTAR');
       expect(betoyoBenowo, isNull);
+      expect(betoyoIndostar, isNull);
     });
 
     test('prioritizes Manyar Mie Sedap and Wings routes case-insensitively',
@@ -258,33 +270,68 @@ void main() {
       expect(langonMieSedap?['nominal'], 450000);
       expect(langonMieSedap?['lokasi_muat'], 'T. LANGON');
       expect(langonMieSedap?['lokasi_bongkar'], 'MANYAR / MIE SEDAP');
-      expect(wingsLangon?['nominal'], 520000);
+      expect(wingsLangon?['nominal'], 450000);
       expect(wingsLangon?['lokasi_muat'], 'WINGS');
       expect(wingsLangon?['lokasi_bongkar'], 'T. LANGON');
-      expect(langonWings?['nominal'], 520000);
+      expect(langonWings?['nominal'], 450000);
       expect(langonWings?['lokasi_muat'], 'Selain Betoyo');
       expect(langonWings?['lokasi_bongkar'], 'WINGS');
     });
 
-    test('routes manual armada Driyo and Benowo to sangu, not Gabungan', () {
+    test('prioritizes SGM destination with fixed nominal', () {
+      final rule = resolvePrioritizedSanguRouteRule(
+        pickup: 'T. Langon',
+        destination: 'sGm',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule!['nominal'], 520000);
+      expect(rule['lokasi_bongkar'], 'SGM');
+    });
+
+    test('keeps manual Driyo and Wings to T. Langon as Gabungan expense', () {
       expect(
         manualArmadaRouteUsesSanguExpense(
           pickup: 'dRiYo',
           destination: 't. LANGON',
         ),
-        isTrue,
+        isFalse,
+      );
+      expect(
+        manualArmadaRouteUsesSanguExpense(
+          pickup: 'Wings Driyo',
+          destination: 'T. Langon',
+        ),
+        isFalse,
       );
       expect(
         manualArmadaRouteUsesSanguExpense(
           pickup: 'T. Langon',
           destination: 'DRIYO',
         ),
-        isTrue,
+        isFalse,
       );
+      expect(
+        manualArmadaRouteUsesSanguExpense(
+          pickup: 'T. Langon',
+          destination: 'wings driyo',
+        ),
+        isFalse,
+      );
+    });
+
+    test('routes selected manual destinations to sangu', () {
       expect(
         manualArmadaRouteUsesSanguExpense(
           pickup: 'Maspion',
           destination: 'bEnOwO',
+        ),
+        isTrue,
+      );
+      expect(
+        manualArmadaRouteUsesSanguExpense(
+          pickup: 'T. Langon',
+          destination: 'iNdOsTaR',
         ),
         isTrue,
       );
@@ -300,7 +347,7 @@ void main() {
           pickup: 'T. Langon',
           destination: 'SGM',
         ),
-        isFalse,
+        isTrue,
       );
     });
 

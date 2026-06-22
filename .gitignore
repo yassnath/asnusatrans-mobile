@@ -60,3 +60,4 @@ backup/
 **/*.bak
 **/*.dump
 **/*.sql
+!supabase/migrations/*.sql

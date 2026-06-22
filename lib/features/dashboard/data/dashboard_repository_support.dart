@@ -1636,6 +1636,8 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
     if (rule == null) return false;
     final destinationKey = _normalizeIncomePricingText(destination);
     if (destinationKey.contains('batang')) return true;
+    if (destinationKey.contains('bricon')) return true;
+    if (destinationKey.contains('pare')) return true;
     if (destinationKey.contains('gempol')) return true;
     if (destinationKey.contains('muncar')) return true;
     if (destinationKey.contains('sarana')) return true;
@@ -1648,8 +1650,16 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
     required String customerName,
     String? fallbackPickup,
     String? fallbackDestination,
+    required Map<String, String> armadaIdByPlate,
   }) {
-    if (_detailUsesManualArmada(detail)) return null;
+    final resolvedListedArmadaId = resolveListedArmadaIdFromRow(
+      detail,
+      armadaIdByPlate: armadaIdByPlate,
+    );
+    final usesEffectiveManualArmada =
+        _detailUsesManualArmada(detail) && resolvedListedArmadaId.isEmpty;
+    if (usesEffectiveManualArmada) return null;
+
     final pickup = '${detail['lokasi_muat'] ?? fallbackPickup ?? ''}'.trim();
     final destination =
         '${detail['lokasi_bongkar'] ?? fallbackDestination ?? ''}'.trim();
@@ -1680,8 +1690,31 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
     final nextDetail = Map<String, dynamic>.from(detail);
     var changed = false;
 
-    void clearExplicitTotals() {
-      for (final key in const <String>['subtotal', 'total', 'jumlah']) {
+    bool subtotalMatchesCurrentAuto(dynamic value) {
+      final subtotal = _num(value);
+      final currentHarga = _num(nextDetail['harga']);
+      final tonase = _num(nextDetail['tonase']);
+      if (subtotal <= 0 || currentHarga <= 0 || tonase <= 0) return false;
+      final currentAutoSubtotal = roundInvoiceRupiah(tonase * currentHarga);
+      return (subtotal - currentAutoSubtotal).abs() <= 1;
+    }
+
+    bool hasProtectedManualSubtotal() {
+      for (final key in const <String>['manual_subtotal', 'subtotal_manual']) {
+        final value = _num(nextDetail[key]);
+        if (value > 0 && !subtotalMatchesCurrentAuto(value)) return true;
+      }
+      return false;
+    }
+
+    void clearExplicitTotals({bool includeManual = false}) {
+      final keys = <String>[
+        if (includeManual) ...['manual_subtotal', 'subtotal_manual'],
+        'subtotal',
+        'total',
+        'jumlah',
+      ];
+      for (final key in keys) {
         if (!nextDetail.containsKey(key)) continue;
         final currentValue = nextDetail[key];
         if (currentValue == null) continue;
@@ -1693,7 +1726,8 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
 
     final tonaseValue = _num(nextDetail['tonase']);
     if (nextFlatTotal != null && nextFlatTotal > 0) {
-      clearExplicitTotals();
+      if (hasProtectedManualSubtotal()) return null;
+      clearExplicitTotals(includeManual: true);
       if (tonaseValue > 0 && nextHarga != null && nextHarga > 0) {
         final currentHarga = _num(nextDetail['harga']);
         if ((currentHarga - nextHarga).abs() > 0.0001) {
@@ -1723,7 +1757,13 @@ extension DashboardRepositorySupportExtension on DashboardRepository {
       return null;
     }
 
-    clearExplicitTotals();
+    if (hasProtectedManualSubtotal()) return null;
+    clearExplicitTotals(includeManual: true);
+    if (_detailUsesManualArmada(nextDetail) &&
+        resolvedListedArmadaId.isNotEmpty) {
+      applyListedArmadaSelection(nextDetail, resolvedListedArmadaId);
+      changed = true;
+    }
     final currentHarga = _num(nextDetail['harga']);
     if ((currentHarga - nextHarga).abs() > 0.0001) {
       nextDetail['harga'] = nextHarga;

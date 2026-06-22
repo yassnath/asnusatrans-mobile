@@ -469,6 +469,11 @@ class _AuthField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final inputTheme = Theme.of(context).inputDecorationTheme;
+    final fillColor = inputTheme.fillColor ?? AppColors.surfaceSoft(context);
+    final borderColor = inputTheme.enabledBorder?.borderSide.color ??
+        AppColors.cardBorder(context);
+    final iconColor = AppColors.textMutedFor(context);
     return SizedBox(
       height: 56,
       child: TextField(
@@ -476,17 +481,19 @@ class _AuthField extends StatelessWidget {
         keyboardType: keyboardType,
         obscureText: obscureText,
         onSubmitted: onSubmitted,
-        style: const TextStyle(
-            color: Color(0xFF0F172A), fontWeight: FontWeight.w500),
+        style: TextStyle(
+          color: AppColors.textPrimaryFor(context),
+          fontWeight: FontWeight.w500,
+        ),
         decoration: InputDecoration(
           hintText: hintText,
-          prefixIcon: Icon(icon, color: const Color(0xFF64748B)),
+          prefixIcon: Icon(icon, color: iconColor),
           suffixIcon: trailing,
           filled: true,
-          fillColor: const Color(0xFFF8FAFC),
+          fillColor: fillColor,
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+            borderSide: BorderSide(color: borderColor),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),

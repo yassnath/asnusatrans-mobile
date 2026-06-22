@@ -589,11 +589,11 @@ Dokumen ini adalah peta cepat untuk programmer saat ingin mengubah tampilan, fit
 
 | Asset | Untuk mengubah |
 | --- | --- |
-| `assets/images/iconapk.png` | Logo app/notifikasi/PDF |
+| `assets/images/iconapk.png` | Logo app/splash/fallback/notifikasi/PDF |
 | `assets/images/kopsurat.jpeg` | KOP invoice CV |
 | `assets/images/kopsuratpt.png` | KOP invoice PT |
-| `assets/images/logo.webp`, `assets/images/logo-light.webp` | Logo login/sidebar |
-| `assets/images/notif.png` | Visual notifikasi |
+| `assets/images/notif.png` | Badge visual sign in/sign up |
+| `assets/images/logo.webp`, `assets/images/logo-light.webp` | Logo menu/dashboard aplikasi |
 | `assets/images/pp-admin.webp`, `assets/images/pp-owner.webp` | Avatar default role |
 | `assets/templates/invoice_table_template.xlsx` | Template tabel print invoice |
 | `assets/fonts/Inter-Regular.ttf`, `assets/fonts/Inter-Italic.ttf` | Font app/PDF |

@@ -1462,7 +1462,16 @@ extension _AdminInvoiceListReportSummary on _AdminInvoiceListViewState {
                 resolvedMuat: muat,
                 resolvedBongkar: bongkar,
               );
-          final gabunganAmount = usesGabunganArmada ? detailTotal : 0.0;
+          final gabunganHarga = usesGabunganArmada
+              ? resolveGabunganReportHargaPerTon(muat: muat, bongkar: bongkar)
+              : 0.0;
+          final gabunganTonase = _toNum(detail['tonase'] ?? invoice['tonase']);
+          final gabunganAmount =
+              usesGabunganArmada && gabunganHarga > 0 && gabunganTonase > 0
+                  ? roundInvoiceRupiah(gabunganHarga * gabunganTonase)
+                  : usesGabunganArmada
+                      ? detailTotal
+                      : 0.0;
           final gabunganLaba = usesGabunganArmada
               ? resolveGabunganReportLaba(
                   detail: detail,

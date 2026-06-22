@@ -50,6 +50,19 @@ extension _AdminInvoiceListPrintSelector on _AdminInvoiceListViewState {
     final selectedIds = <String>{};
     final searchController = TextEditingController();
     final fixedInvoiceBatches = await _loadFixedInvoiceBatches();
+    final printHargaPerTonRules = await (() async {
+      try {
+        return await widget.repository.fetchHargaPerTonRules();
+      } catch (_) {
+        return <Map<String, dynamic>>[];
+      }
+    })();
+    for (var index = 0; index < allPrintableIncomes.length; index++) {
+      allPrintableIncomes[index] = _applyRegularInvoicePricingForPrintItem(
+        allPrintableIncomes[index],
+        hargaPerTonRules: printHargaPerTonRules,
+      );
+    }
 
     List<DateTime> resolveDepartureDates(Map<String, dynamic> item) {
       final dates = <DateTime>[];

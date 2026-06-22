@@ -160,6 +160,114 @@ extension _AdminInvoiceListViewStatePrintGroupSupport
     return _sortInvoicePrintDetailsByDateAndTolakanPair(details);
   }
 
+  Map<String, dynamic> _applyRegularInvoicePricingForPrintDetail({
+    required Map<String, dynamic> detail,
+    required Map<String, dynamic> source,
+    required List<Map<String, dynamic>> hargaPerTonRules,
+  }) {
+    String firstText(Iterable<dynamic> values) {
+      for (final value in values) {
+        final text = '${value ?? ''}'.trim();
+        if (text.isNotEmpty && text != '-') return text;
+      }
+      return '';
+    }
+
+    final pickup = firstText([detail['lokasi_muat'], source['lokasi_muat']]);
+    final destination =
+        firstText([detail['lokasi_bongkar'], source['lokasi_bongkar']]);
+    final cargo = firstText([detail['muatan'], source['muatan']]);
+    final regularRule = _resolveHargaRuleShared(
+      rules: hargaPerTonRules,
+      customerName: '${source['nama_pelanggan'] ?? ''}'.trim(),
+      lokasiMuat: pickup,
+      lokasiBongkar: destination,
+      muatan: cargo,
+    );
+    final regularHarga = _resolveHargaPerTonValueShared(
+      regularRule,
+      muatan: cargo,
+    );
+    final incomeHarga = resolveIncomeRegularHargaForRoute(
+      regularRule: regularRule,
+      adjustedRegularHarga: regularHarga,
+      pickup: pickup,
+      destination: destination,
+    );
+    final tonase = _toNum(detail['tonase'] ?? source['tonase']);
+    if (incomeHarga == null || incomeHarga <= 0 || tonase <= 0) {
+      return detail;
+    }
+
+    final currentHarga = _toNum(detail['harga'] ?? source['harga']);
+    final currentAutoSubtotal =
+        currentHarga > 0 ? roundInvoiceRupiah(currentHarga * tonase) : 0.0;
+    final manualSubtotal =
+        _toNum(detail['manual_subtotal'] ?? detail['subtotal_manual']);
+    final hasProtectedManualSubtotal = manualSubtotal > 0 &&
+        (currentAutoSubtotal <= 0 ||
+            (manualSubtotal - currentAutoSubtotal).abs() > 1);
+    if (hasProtectedManualSubtotal) return detail;
+
+    final next = Map<String, dynamic>.from(detail);
+    next['harga'] = incomeHarga;
+    next['subtotal_auto'] = true;
+    for (final key in const [
+      'manual_subtotal',
+      'subtotal_manual',
+      'subtotal',
+      'total',
+      'total_biaya',
+      'jumlah',
+    ]) {
+      next.remove(key);
+    }
+    return next;
+  }
+
+  Map<String, dynamic> _applyRegularInvoicePricingForPrintItem(
+    Map<String, dynamic> item, {
+    required List<Map<String, dynamic>> hargaPerTonRules,
+  }) {
+    final detailRows = _toDetailList(item['rincian']);
+    final sourceDetails = detailRows.isEmpty
+        ? <Map<String, dynamic>>[_fallbackIncomeDetailRow(item)]
+        : detailRows;
+    final nextDetails = sourceDetails
+        .map(
+          (detail) => _applyRegularInvoicePricingForPrintDetail(
+            detail: Map<String, dynamic>.from(detail),
+            source: item,
+            hargaPerTonRules: hargaPerTonRules,
+          ),
+        )
+        .toList(growable: false);
+    final subtotal = _resolveInvoiceDetailsExcelSubtotalShared(
+      nextDetails,
+      fallbackSubtotal: _toNum(item['total_biaya']),
+    );
+    if (subtotal <= 0) return item;
+
+    final customerName = '${item['nama_pelanggan'] ?? ''}'.trim();
+    final normalizedEntity = _resolveInvoiceEntity(
+      invoiceEntity: item['invoice_entity'],
+      invoiceNumber: item['no_invoice'],
+      customerName: customerName,
+    );
+    final includePph = Formatters.isCompanyInvoiceEntity(normalizedEntity);
+    final pph = includePph ? calculateInvoicePph2Percent(subtotal) : 0.0;
+    final totalBayar =
+        includePph ? calculateInvoiceTotalAfterPph(subtotal) : subtotal;
+    return {
+      ...item,
+      'rincian': nextDetails,
+      'invoice_entity': normalizedEntity,
+      'total_biaya': subtotal,
+      'pph': pph,
+      'total_bayar': totalBayar,
+    };
+  }
+
   List<_InvoicePrintGroup> _buildInvoicePrintGroups(
     List<Map<String, dynamic>> items,
   ) {
@@ -735,8 +843,22 @@ extension _AdminInvoiceListViewStatePrintGroupSupport
   Future<void> _printSingleInvoiceFromPreview(
     Map<String, dynamic> item,
   ) async {
-    final latestItem = await _resolveLatestInvoiceItem(item);
-    final selectedGroups = _buildInvoicePrintGroups([latestItem]);
+    final latestItem = await _resolveInvoicePreviewItem(item);
+    final printHargaPerTonRules = await (() async {
+      try {
+        return await widget.repository.fetchHargaPerTonRules();
+      } catch (_) {
+        return <Map<String, dynamic>>[];
+      }
+    })();
+    final regularPrintItem = _applyRegularInvoicePricingForPrintItem(
+      latestItem,
+      hargaPerTonRules:
+          printHargaPerTonRules.where(isRegularIncomeHargaRule).toList(
+                growable: false,
+              ),
+    );
+    final selectedGroups = _buildInvoicePrintGroups([regularPrintItem]);
     if (selectedGroups.isEmpty) return;
     final group = selectedGroups.first;
 

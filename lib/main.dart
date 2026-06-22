@@ -8,12 +8,14 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'app.dart';
 import 'core/config/app_config.dart';
 import 'core/i18n/language_controller.dart';
+import 'core/monitoring/app_error_reporter.dart';
 import 'core/notifications/push_notification_service.dart';
 import 'core/security/app_security.dart';
 import 'core/theme/theme_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await AppErrorReporter.initialize();
   _installFrameworkErrorFilters();
   ErrorWidget.builder = AppSecurity.buildReleaseErrorWidget;
 
@@ -50,6 +52,12 @@ Future<void> main() async {
       'App startup failed',
       error: error,
       stackTrace: stackTrace,
+    );
+    AppErrorReporter.report(
+      error,
+      stackTrace,
+      context: 'app.startup',
+      fatal: true,
     );
   }
 
@@ -133,6 +141,10 @@ void _installFrameworkErrorFilters() {
       return;
     }
 
+    AppErrorReporter.reportFlutterError(
+      details,
+      context: 'flutter.framework',
+    );
     if (previousFlutterError != null) {
       previousFlutterError(details);
     } else {
@@ -150,6 +162,12 @@ void _installFrameworkErrorFilters() {
       return true;
     }
 
+    AppErrorReporter.report(
+      error,
+      stack,
+      context: 'flutter.platform',
+      fatal: true,
+    );
     if (previousPlatformError != null) {
       return previousPlatformError(error, stack);
     }

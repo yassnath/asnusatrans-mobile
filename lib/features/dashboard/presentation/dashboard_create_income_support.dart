@@ -123,9 +123,15 @@ extension _AdminCreateIncomeViewStateSupport on _AdminCreateIncomeViewState {
       lokasiBongkar: lokasiBongkar,
       muatan: muatan ?? '',
     );
-    return _resolveHargaPerTonValueShared(
+    final adjustedHarga = _resolveHargaPerTonValueShared(
       matchedRule,
       muatan: muatan ?? '',
+    );
+    return resolveIncomeRegularHargaForRoute(
+      regularRule: matchedRule,
+      adjustedRegularHarga: adjustedHarga,
+      pickup: lokasiMuat,
+      destination: lokasiBongkar,
     );
   }
 
@@ -151,12 +157,13 @@ extension _AdminCreateIncomeViewStateSupport on _AdminCreateIncomeViewState {
   bool _applyAutoHargaPerTon(
     Map<String, dynamic> row, {
     bool force = false,
+    List<Map<String, dynamic>>? armadas,
   }) {
     final previousHarga = '${row['harga'] ?? ''}'.trim();
     final previousSubtotal = '${row['subtotal'] ?? ''}'.trim();
     final wasAuto = row['harga_auto'] == true;
     final wasAutoSubtotal = row['subtotal_auto'] == true;
-    final isManualArmada = _usesEffectiveManualArmada(row);
+    final isManualArmada = _usesEffectiveManualArmada(row, armadas: armadas);
     final lokasiMuat = '${row['lokasi_muat'] ?? ''}';
     final lokasiBongkar = '${row['lokasi_bongkar'] ?? ''}';
     final muatan = '${row['muatan'] ?? ''}';

@@ -333,6 +333,11 @@ class _Input extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final inputTheme = Theme.of(context).inputDecorationTheme;
+    final fillColor = inputTheme.fillColor ?? AppColors.surfaceSoft(context);
+    final borderColor = inputTheme.enabledBorder?.borderSide.color ??
+        AppColors.cardBorder(context);
+    final iconColor = AppColors.textMutedFor(context);
     return SizedBox(
       height: 46,
       child: TextField(
@@ -341,17 +346,19 @@ class _Input extends StatelessWidget {
         obscureText: obscureText,
         readOnly: readOnly,
         onTap: onTap,
-        style: const TextStyle(
-            color: Color(0xFF0F172A), fontWeight: FontWeight.w500),
+        style: TextStyle(
+          color: AppColors.textPrimaryFor(context),
+          fontWeight: FontWeight.w500,
+        ),
         decoration: InputDecoration(
           hintText: hint,
-          prefixIcon: Icon(icon, color: const Color(0xFF64748B), size: 20),
+          prefixIcon: Icon(icon, color: iconColor, size: 20),
           suffixIcon: trailing,
           filled: true,
-          fillColor: const Color(0xFFF8FAFC),
+          fillColor: fillColor,
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+            borderSide: BorderSide(color: borderColor),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
@@ -382,25 +389,30 @@ class _SelectInput extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final inputTheme = Theme.of(context).inputDecorationTheme;
+    final fillColor = inputTheme.fillColor ?? AppColors.surfaceSoft(context);
+    final borderColor = inputTheme.enabledBorder?.borderSide.color ??
+        AppColors.cardBorder(context);
+    final iconColor = AppColors.textMutedFor(context);
     return SizedBox(
       height: 46,
       child: CvantDropdownField<String>(
         initialValue: value.isEmpty ? null : value,
         isExpanded: true,
-        icon: const Icon(
+        icon: Icon(
           Icons.keyboard_arrow_down_rounded,
-          color: Color(0xFF64748B),
+          color: iconColor,
           size: 20,
         ),
         borderRadius: BorderRadius.circular(12),
         menuMaxHeight: 280,
         decoration: InputDecoration(
-          prefixIcon: Icon(icon, color: const Color(0xFF64748B), size: 20),
+          prefixIcon: Icon(icon, color: iconColor, size: 20),
           filled: true,
-          fillColor: const Color(0xFFF8FAFC),
+          fillColor: fillColor,
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+            borderSide: BorderSide(color: borderColor),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
@@ -409,12 +421,14 @@ class _SelectInput extends StatelessWidget {
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         ),
-        dropdownColor: Colors.white,
-        style: const TextStyle(
-            color: Color(0xFF0F172A), fontWeight: FontWeight.w500),
+        dropdownColor: fillColor,
+        style: TextStyle(
+          color: AppColors.textPrimaryFor(context),
+          fontWeight: FontWeight.w500,
+        ),
         hint: Text(
           hint,
-          style: const TextStyle(color: Color(0xFF94A3B8)),
+          style: TextStyle(color: AppColors.textMutedFor(context)),
         ),
         items: items
             .map(

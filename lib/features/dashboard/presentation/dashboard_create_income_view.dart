@@ -323,8 +323,22 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
       if (_details.isEmpty) {
         _details.add(_newDetail());
       }
+      var hargaChanged = false;
       for (final row in _details) {
-        _applyAutoHargaPerTon(row);
+        if (!_isOngkosKuliIncomeRow(row) &&
+            !_usesEffectiveManualArmada(row, armadas: armadas)) {
+          row['harga_auto'] = true;
+          row['subtotal_auto'] = false;
+          hargaChanged =
+              _applyAutoHargaPerTon(row, force: true, armadas: armadas) ||
+                  hargaChanged;
+        } else {
+          hargaChanged =
+              _applyAutoHargaPerTon(row, armadas: armadas) || hargaChanged;
+        }
+      }
+      if (hargaChanged) {
+        _hargaFieldRefreshToken++;
       }
       _detailFieldRefreshToken++;
     });
@@ -870,9 +884,12 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                     onChanged: (_) {
                       var hargaChanged = false;
                       for (final row in _details) {
-                        hargaChanged =
-                            _applyAutoHargaPerTon(row, force: true) ||
-                                hargaChanged;
+                        hargaChanged = _applyAutoHargaPerTon(
+                              row,
+                              force: true,
+                              armadas: armadas,
+                            ) ||
+                            hargaChanged;
                       }
                       setState(() {
                         if (hargaChanged) {
@@ -966,6 +983,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                                 final hargaChanged = _applyAutoHargaPerTon(
                                   row,
                                   force: true,
+                                  armadas: armadas,
                                 );
                                 if (hargaChanged) {
                                   _hargaFieldRefreshToken++;
@@ -993,6 +1011,7 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                                 final hargaChanged = _applyAutoHargaPerTon(
                                   row,
                                   force: true,
+                                  armadas: armadas,
                                 );
                                 setState(() {
                                   if (hargaChanged) {
@@ -1015,8 +1034,11 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                             ),
                             onChanged: (value) {
                               row['lokasi_bongkar'] = value;
-                              final hargaChanged =
-                                  _applyAutoHargaPerTon(row, force: true);
+                              final hargaChanged = _applyAutoHargaPerTon(
+                                row,
+                                force: true,
+                                armadas: armadas,
+                              );
                               if (hargaChanged) {
                                 setState(() {
                                   _hargaFieldRefreshToken++;
@@ -1046,8 +1068,11 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                                 if (wasOngkosKuli) {
                                   _resetDirectTotalOnlyIncomeRow(row);
                                 }
-                                hargaChanged =
-                                    _applyAutoHargaPerTon(row, force: true);
+                                hargaChanged = _applyAutoHargaPerTon(
+                                  row,
+                                  force: true,
+                                  armadas: armadas,
+                                );
                               }
                               if (ongkosKuliModeChanged || hargaChanged) {
                                 setState(() {
@@ -1141,8 +1166,11 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                                           .isNotEmpty &&
                                       selectedValue != _manualArmadaOptionId,
                                 );
-                                final hargaChanged =
-                                    _applyAutoHargaPerTon(row, force: true);
+                                final hargaChanged = _applyAutoHargaPerTon(
+                                  row,
+                                  force: true,
+                                  armadas: armadas,
+                                );
                                 if (hargaChanged) {
                                   _hargaFieldRefreshToken++;
                                 }
@@ -1185,8 +1213,11 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
                                   row,
                                   armadas: armadas,
                                 );
-                                final hargaChanged =
-                                    _applyAutoHargaPerTon(row, force: true);
+                                final hargaChanged = _applyAutoHargaPerTon(
+                                  row,
+                                  force: true,
+                                  armadas: armadas,
+                                );
                                 final armadaOrDriverChanged =
                                     previousArmadaId !=
                                             '${row['armada_id'] ?? ''}'

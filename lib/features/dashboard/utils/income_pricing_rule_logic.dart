@@ -469,6 +469,32 @@ Map<String, dynamic>? resolveBuiltInIncomePricingRule({
   }
 
   if (!pickupIsBetoyo &&
+      incomePricingLocationKeyMatches(destinationKey, 'bricon mojo')) {
+    return <String, dynamic>{
+      'customer_name': null,
+      'lokasi_muat': 'Selain Betoyo',
+      'lokasi_bongkar': 'Bricon Mojo',
+      'harga_per_ton': 55.0,
+      'flat_total': null,
+      'priority': 150,
+      'is_active': true,
+    };
+  }
+
+  if (!pickupIsBetoyo &&
+      incomePricingLocationKeyMatches(destinationKey, 'indostar')) {
+    return <String, dynamic>{
+      'customer_name': null,
+      'lokasi_muat': 'Selain Betoyo',
+      'lokasi_bongkar': 'Indostar',
+      'harga_per_ton': 88.0,
+      'flat_total': null,
+      'priority': 150,
+      'is_active': true,
+    };
+  }
+
+  if (!pickupIsBetoyo &&
       incomePricingLocationKeyMatches(destinationKey, 'gempol')) {
     return <String, dynamic>{
       'customer_name': null,

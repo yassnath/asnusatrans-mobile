@@ -380,7 +380,8 @@ void main() {
       );
     });
 
-    test('keeps Driyo pricing separated by fleet type', () {
+    test('keeps Driyo income pricing regular while Gabungan expense uses 40',
+        () {
       final rules = <Map<String, dynamic>>[
         {
           'customer_name': 'Gabungan',
@@ -418,7 +419,17 @@ void main() {
           destination: 'T. Langon',
           gabunganRules: rules,
         ),
-        40,
+        45,
+      );
+      expect(
+        resolveIncomeAutoHargaPerKg(
+          regularHarga: 45,
+          usesManualArmada: true,
+          pickup: 'Wings Driyo',
+          destination: 'T. Langon',
+          gabunganRules: rules,
+        ),
+        45,
       );
       expect(
         resolveIncomeAutoHargaPerKg(
@@ -437,6 +448,75 @@ void main() {
           pickup: 'Maspion',
           destination: 'Driyo',
           gabunganRules: rules,
+        ),
+        40,
+      );
+      expect(
+        resolveGabunganExpenseHargaPerKg(
+          storedHarga: 45,
+          pickup: 'Wings Driyo',
+          destination: 'T. Langon',
+          gabunganRules: rules,
+        ),
+        40,
+      );
+    });
+
+    test('restores raw regular price for report-only Gabungan income route',
+        () {
+      expect(
+        resolveIncomeRegularHargaForRoute(
+          regularRule: {
+            'customer_name': null,
+            'lokasi_muat': 'Wings Driyo',
+            'lokasi_bongkar': 'T. Langon',
+            'harga_per_ton': 45,
+          },
+          adjustedRegularHarga: 20,
+          pickup: 'Wings Driyo',
+          destination: 'T. Langon',
+        ),
+        45,
+      );
+      expect(
+        resolveIncomeRegularHargaForRoute(
+          regularRule: {
+            'customer_name': 'Hengky',
+            'lokasi_muat': 'Wings Driyo',
+            'lokasi_bongkar': 'T. Langon',
+            'harga_per_ton': 40,
+          },
+          adjustedRegularHarga: 20,
+          pickup: 'Wings Driyo',
+          destination: 'T. Langon',
+        ),
+        45,
+      );
+      expect(
+        resolveIncomeRegularHargaForRoute(
+          regularRule: {
+            'customer_name': 'Hengky',
+            'lokasi_muat': 'Wings Driyo',
+            'lokasi_bongkar': 'T. Langon',
+            'harga_per_ton': 20,
+          },
+          adjustedRegularHarga: 20,
+          pickup: 'Wings Driyo',
+          destination: 'T. Langon',
+        ),
+        45,
+      );
+      expect(
+        resolveIncomeRegularHargaForRoute(
+          regularRule: {
+            'customer_name': null,
+            'lokasi_muat': 'Selain Betoyo',
+            'lokasi_bongkar': 'Pare',
+            'harga_per_ton': 80,
+          },
+          adjustedRegularHarga: 40,
+          pickup: 'T. Langon',
+          destination: 'Pare',
         ),
         40,
       );
@@ -501,6 +581,12 @@ void main() {
 
       for (final entry in cases) {
         const regularHarga = 999.0;
+        final manualIncomeHarga = isGabunganReportOnlyIncomeRoute(
+          pickup: entry.pickup,
+          destination: entry.destination,
+        )
+            ? regularHarga
+            : entry.gabunganHarga;
         expect(
           resolveIncomeAutoHargaPerKg(
             regularHarga: regularHarga,
@@ -521,11 +607,74 @@ void main() {
             destination: entry.destination,
             gabunganRules: rules,
           ),
-          entry.gabunganHarga,
+          manualIncomeHarga,
           reason:
-              '${entry.pickup}-${entry.destination} must use Gabungan pricing for manual fleets',
+              '${entry.pickup}-${entry.destination} must use the correct income pricing for manual fleets',
         );
       }
+    });
+
+    test('marks stale null-customer Gabungan prices as non-regular rules', () {
+      expect(
+        isRegularIncomeHargaRule({
+          'customer_name': null,
+          'lokasi_muat': 'Selain Betoyo',
+          'lokasi_bongkar': 'Bricon Mojo',
+          'harga_per_ton': 53,
+          'is_active': true,
+        }),
+        isFalse,
+      );
+      expect(
+        isRegularIncomeHargaRule({
+          'customer_name': null,
+          'lokasi_muat': 'Selain Betoyo',
+          'lokasi_bongkar': 'Pare',
+          'harga_per_ton': 78,
+          'is_active': true,
+        }),
+        isFalse,
+      );
+      expect(
+        isRegularIncomeHargaRule({
+          'customer_name': null,
+          'lokasi_muat': null,
+          'lokasi_bongkar': 'Bricon Mojo',
+          'harga_per_ton': 53,
+          'is_active': true,
+        }),
+        isFalse,
+      );
+      expect(
+        isRegularIncomeHargaRule({
+          'customer_name': null,
+          'lokasi_muat': null,
+          'lokasi_bongkar': 'Pare',
+          'harga_per_ton': 78,
+          'is_active': true,
+        }),
+        isFalse,
+      );
+      expect(
+        isRegularIncomeHargaRule({
+          'customer_name': null,
+          'lokasi_muat': 'Selain Betoyo',
+          'lokasi_bongkar': 'Bricon Mojo',
+          'harga_per_ton': 55,
+          'is_active': true,
+        }),
+        isTrue,
+      );
+      expect(
+        isRegularIncomeHargaRule({
+          'customer_name': null,
+          'lokasi_muat': 'Selain Betoyo',
+          'lokasi_bongkar': 'Pare',
+          'harga_per_ton': 80,
+          'is_active': true,
+        }),
+        isTrue,
+      );
     });
 
     test('falls back to regular pricing when manual route has no database rule',
@@ -534,10 +683,19 @@ void main() {
         resolveIncomeAutoHargaPerKg(
           regularHarga: 80,
           usesManualArmada: true,
-          pickup: 'T. Langon',
-          destination: 'Pare',
+          pickup: 'Area Baru',
+          destination: 'Tujuan Baru',
         ),
         80,
+      );
+      expect(
+        resolveIncomeAutoHargaPerKg(
+          regularHarga: 45,
+          usesManualArmada: true,
+          pickup: 'Wings Driyo',
+          destination: 'T. Langon',
+        ),
+        45,
       );
       expect(
         resolveIncomeAutoHargaPerKg(
@@ -550,12 +708,21 @@ void main() {
       );
     });
 
-    test('uses stored price for Gabungan expense without a database rule', () {
+    test('uses Gabungan price for known expense routes and stored fallback',
+        () {
       expect(
         resolveGabunganExpenseHargaPerKg(
           storedHarga: 80,
-          pickup: 'T. Langon',
-          destination: 'Pare',
+          pickup: 'Wings Driyo',
+          destination: 'T. Langon',
+        ),
+        40,
+      );
+      expect(
+        resolveGabunganExpenseHargaPerKg(
+          storedHarga: 80,
+          pickup: 'Area Baru',
+          destination: 'Tujuan Baru',
         ),
         80,
       );

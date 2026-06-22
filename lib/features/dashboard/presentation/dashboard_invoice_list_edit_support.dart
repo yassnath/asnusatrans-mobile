@@ -1,7 +1,37 @@
 part of 'dashboard_page.dart';
 
 extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
-  Future<void> _openInvoiceEdit(Map<String, dynamic> item) async {
+  Future<void> _openInvoiceEdit(Map<String, dynamic> sourceItem) async {
+    final isExpandedDetailEdit =
+        sourceItem['__invoice_list_expanded_detail'] == true;
+    final expandedDetailIndex =
+        int.tryParse('${sourceItem['__detail_index'] ?? ''}'.trim());
+    var item = sourceItem;
+    List<Map<String, dynamic>> fullInvoiceDetails =
+        const <Map<String, dynamic>>[];
+    if (isExpandedDetailEdit) {
+      final latest = await _resolveLatestInvoiceItem(sourceItem);
+      fullInvoiceDetails = _toDetailList(latest['rincian']);
+      if (fullInvoiceDetails.isEmpty ||
+          expandedDetailIndex == null ||
+          expandedDetailIndex < 0 ||
+          expandedDetailIndex >= fullInvoiceDetails.length) {
+        _snack(
+          _t(
+            'Rincian invoice terbaru belum tersedia. Refresh data lalu coba edit lagi.',
+            'Latest invoice details are unavailable. Refresh the data and try editing again.',
+          ),
+          error: true,
+        );
+        return;
+      }
+      item = <String, dynamic>{
+        ...latest,
+        ...sourceItem,
+        'rincian': sourceItem['rincian'],
+      };
+    }
+
     final customer =
         TextEditingController(text: '${item['nama_pelanggan'] ?? ''}');
     final email = TextEditingController(text: '${item['email'] ?? ''}');
@@ -64,9 +94,15 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
         lokasiBongkar: lokasiBongkar,
         muatan: muatan,
       );
-      return _resolveHargaPerTonValueShared(
+      final adjustedHarga = _resolveHargaPerTonValueShared(
         matched,
         muatan: muatan ?? '',
+      );
+      return resolveIncomeRegularHargaForRoute(
+        regularRule: matched,
+        adjustedRegularHarga: adjustedHarga,
+        pickup: lokasiMuat,
+        destination: lokasiBongkar,
       );
     }
 
@@ -167,13 +203,6 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
       final muatText = '${row['lokasi_muat'] ?? ''}'.trim();
       final muatIsManual = muatText.isNotEmpty &&
           !_AdminInvoiceListViewState._defaultMuatOptions.contains(muatText);
-      final hargaText = _formatEditableNumber(row['harga']);
-      final manualSubtotalText = _formatEditableNumber(
-        row['manual_subtotal'] ?? row['subtotal_manual'],
-      );
-      final subtotalText = manualSubtotalText.isNotEmpty
-          ? manualSubtotalText
-          : _formatEditableNumber(row['subtotal']);
       final driverText = '${row['nama_supir'] ?? ''}'.trim();
       final isDriverManual =
           driverText.isNotEmpty && !_isKnownDriverOption(driverText);
@@ -199,6 +228,21 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
         resolvedRule,
         muatan: '${row['muatan'] ?? ''}',
       );
+      final originalHargaText = _formatEditableNumber(row['harga']);
+      final hargaText = resolvedHarga != null && resolvedHarga > 0
+          ? _formatEditableNumber(resolvedHarga)
+          : originalHargaText;
+      final originalManualSubtotalText = _formatEditableNumber(
+        row['manual_subtotal'] ?? row['subtotal_manual'],
+      );
+      final originalSubtotalText = originalManualSubtotalText.isNotEmpty
+          ? originalManualSubtotalText
+          : _formatEditableNumber(row['subtotal']);
+      final subtotalText = resolvedSubtotal != null && resolvedSubtotal > 0
+          ? _formatEditableNumber(resolvedSubtotal)
+          : resolvedHarga != null && resolvedHarga > 0
+              ? ''
+              : originalSubtotalText;
       final mappedRow = <String, dynamic>{
         'lokasi_muat': muatText,
         'lokasi_muat_manual': muatIsManual ? muatText : '',
@@ -217,11 +261,8 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
         'tonase': _formatEditableNumber(row['tonase']),
         'harga': hargaText,
         'subtotal': subtotalText,
-        'harga_auto':
-            resolvedHarga != null && _toNum(hargaText) == resolvedHarga,
-        'subtotal_auto': manualSubtotalText.isEmpty &&
-            resolvedSubtotal != null &&
-            _toNum(subtotalText) == resolvedSubtotal,
+        'harga_auto': resolvedHarga != null && resolvedHarga > 0,
+        'subtotal_auto': resolvedSubtotal != null && resolvedSubtotal > 0,
       };
       if (useManual) {
         _clearDriverForManualArmadaIfNeeded(mappedRow);
@@ -247,6 +288,26 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
         : <Map<String, dynamic>>[
             mapDetailRow(item),
           ];
+
+    List<Map<String, dynamic>> mergeExpandedEditDetails(
+      List<Map<String, dynamic>> editedDetails,
+    ) {
+      if (!isExpandedDetailEdit ||
+          expandedDetailIndex == null ||
+          fullInvoiceDetails.isEmpty ||
+          editedDetails.isEmpty ||
+          expandedDetailIndex < 0 ||
+          expandedDetailIndex >= fullInvoiceDetails.length) {
+        return editedDetails;
+      }
+
+      final merged = fullInvoiceDetails
+          .map((row) => Map<String, dynamic>.from(row))
+          .toList(growable: false);
+      merged[expandedDetailIndex] =
+          Map<String, dynamic>.from(editedDetails.first);
+      return merged;
+    }
 
     double detailSubtotal(Map<String, dynamic> row) {
       return _resolveInvoiceDetailExcelSubtotalShared(row);
@@ -1110,7 +1171,6 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                 onPressed: saving
                                     ? null
                                     : () async {
-                                        final first = details.first;
                                         if (customer.text.trim().isEmpty ||
                                             subtotal <= 0) {
                                           _snack(
@@ -1153,8 +1213,6 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                           );
                                           return;
                                         }
-                                        final firstArmadaId =
-                                            '${first['armada_id']}'.trim();
                                         String manualArmadaInputForValidation(
                                           Map<String, dynamic> row,
                                         ) {
@@ -1195,25 +1253,6 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                               '';
                                         }
 
-                                        final firstArmadaManual =
-                                            manualArmadaInputForValidation(
-                                          first,
-                                        );
-                                        final firstUsesManual =
-                                            _usesEffectiveManualArmada(
-                                          first,
-                                          armadas: armadas,
-                                        );
-                                        final firstResolvedArmadaId =
-                                            firstUsesManual
-                                                ? ''
-                                                : _resolveArmadaIdFromInput(
-                                                    armadaId: firstArmadaId,
-                                                    armadaManual:
-                                                        firstArmadaManual,
-                                                    armadaIdByPlate:
-                                                        armadaIdByPlate,
-                                                  );
                                         final invalidRouteOrArmadaIndexes =
                                             <int>[];
                                         for (var i = 0;
@@ -1438,7 +1477,35 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                                 row['subtotal_auto'] == true,
                                           };
                                         }).toList();
-                                        final driverNames = detailsPayload
+                                        final updateDetailsPayload =
+                                            mergeExpandedEditDetails(
+                                          detailsPayload,
+                                        );
+                                        final updateSubtotal =
+                                            _resolveInvoiceDetailsExcelSubtotalShared(
+                                          updateDetailsPayload,
+                                        );
+                                        final updatePph = isCompanyInvoiceMode
+                                            ? calculateInvoicePph2Percent(
+                                                updateSubtotal,
+                                              )
+                                            : 0.0;
+                                        final updateTotalBayar =
+                                            isCompanyInvoiceMode
+                                                ? calculateInvoiceTotalAfterPph(
+                                                    updateSubtotal,
+                                                  )
+                                                : updateSubtotal;
+                                        final updateFirst =
+                                            updateDetailsPayload.isNotEmpty
+                                                ? updateDetailsPayload.first
+                                                : detailsPayload.first;
+                                        final updateFirstArmadaId =
+                                            normalizeNullable(
+                                                  updateFirst['armada_id'],
+                                                ) ??
+                                                '';
+                                        final driverNames = updateDetailsPayload
                                             .map(
                                               (row) =>
                                                   '${row['nama_supir'] ?? ''}'
@@ -1461,7 +1528,8 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                             item['tanggal'],
                                           );
                                           DateTime? resolveEditedIssueDate() {
-                                            for (final row in detailsPayload) {
+                                            for (final row
+                                                in updateDetailsPayload) {
                                               final parsed =
                                                   Formatters.parseDate(
                                                 row['armada_start_date'],
@@ -1486,9 +1554,9 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                             customerName: customer.text.trim(),
                                             date: _toDbDate(effectiveDate),
                                             status: status,
-                                            totalBiaya: subtotal,
-                                            pph: pph,
-                                            totalBayar: totalBayar,
+                                            totalBiaya: updateSubtotal,
+                                            pph: updatePph,
+                                            totalBayar: updateTotalBayar,
                                             invoiceEntity: invoiceEntityMode,
                                             email: email.text,
                                             noTelp: phone.text,
@@ -1501,50 +1569,53 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                                 ? null
                                                 : _toDbDate(dueDate.text),
                                             pickup: normalizeNullable(
-                                              first['lokasi_muat'],
+                                              updateFirst['lokasi_muat'],
                                             ),
                                             destination: normalizeNullable(
-                                              first['lokasi_bongkar'],
+                                              updateFirst['lokasi_bongkar'],
                                             ),
                                             muatan: normalizeNullable(
-                                              first['muatan'],
+                                              updateFirst['muatan'],
                                             ),
                                             armadaId:
-                                                firstResolvedArmadaId.isEmpty
+                                                updateFirstArmadaId.isEmpty
                                                     ? null
-                                                    : firstResolvedArmadaId,
+                                                    : updateFirstArmadaId,
                                             armadaStartDate:
-                                                '${first['armada_start_date']}'
+                                                '${updateFirst['armada_start_date']}'
                                                         .trim()
                                                         .isEmpty
                                                     ? null
                                                     : _toDbDate(
-                                                        '${first['armada_start_date']}',
+                                                        '${updateFirst['armada_start_date']}',
                                                       ),
                                             armadaEndDate:
-                                                '${first['armada_end_date']}'
+                                                '${updateFirst['armada_end_date']}'
                                                         .trim()
                                                         .isEmpty
                                                     ? null
                                                     : _toDbDate(
-                                                        '${first['armada_end_date']}',
+                                                        '${updateFirst['armada_end_date']}',
                                                       ),
-                                            tonase:
-                                                _isOngkosKuliIncomeRow(first)
-                                                    ? null
-                                                    : _nullableIncomeNumber(
-                                                        first['tonase'],
-                                                      ),
-                                            harga: _isOngkosKuliIncomeRow(first)
+                                            tonase: _isOngkosKuliIncomeRow(
+                                              updateFirst,
+                                            )
                                                 ? null
                                                 : _nullableIncomeNumber(
-                                                    first['harga'],
+                                                    updateFirst['tonase'],
+                                                  ),
+                                            harga: _isOngkosKuliIncomeRow(
+                                              updateFirst,
+                                            )
+                                                ? null
+                                                : _nullableIncomeNumber(
+                                                    updateFirst['harga'],
                                                   ),
                                             namaSupir: driverNames.isEmpty
                                                 ? null
                                                 : driverNames,
                                             noInvoice: null,
-                                            details: detailsPayload,
+                                            details: updateDetailsPayload,
                                             acceptedBy: acceptedBy,
                                             generateAutoSangu:
                                                 !widget.session.isPengurus,

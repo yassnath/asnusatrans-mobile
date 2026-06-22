@@ -226,6 +226,7 @@ extension _AdminInvoiceListFixedInvoiceCache on _AdminInvoiceListViewState {
     final cleaned =
         invoiceIds.map((id) => id.trim()).where((id) => id.isNotEmpty).toSet();
     if (cleaned.isEmpty) return;
+    await _forgetReturnedFixedInvoiceIds(cleaned);
     final effectiveBatch = await _buildFixedInvoiceBatchFromInvoiceIdsImpl(
       cleaned,
       preferredBatch: batch,

@@ -18,7 +18,8 @@ List<List<Map<String, dynamic>>> buildInvoiceListRowGroups({
 
   for (final income in incomeRows) {
     final group = <Map<String, dynamic>>[income];
-    final id = '${income['id'] ?? ''}'.trim();
+    final id =
+        '${income['__invoice_list_row_key'] ?? income['id'] ?? ''}'.trim();
     final children = expenseByIncomeId[id];
     if (id.isNotEmpty &&
         attachedExpenseIncomeIds.add(id) &&

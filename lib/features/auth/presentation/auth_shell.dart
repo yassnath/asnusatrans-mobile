@@ -29,6 +29,10 @@ class AuthShell extends StatelessWidget {
     final panelShadow = isLight
         ? const Color.fromRGBO(15, 23, 42, 0.12)
         : const Color(0x73000000);
+    final badgeBackground = Theme.of(context).inputDecorationTheme.fillColor ??
+        (isLight ? const Color(0xFFF8FAFC) : AppColors.surfaceSoft(context));
+    const badgeSize = 88.0;
+    const badgeOverlap = badgeSize / 2;
 
     return Scaffold(
       body: Container(
@@ -49,60 +53,76 @@ class AuthShell extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(vertical: 18),
                   child: ConstrainedBox(
                     constraints: BoxConstraints(maxWidth: maxWidth),
-                    child: Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 12),
-                      padding: const EdgeInsets.all(24),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(color: panelBorder),
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: panelGradient,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: panelShadow,
-                            blurRadius: 48,
-                            offset: Offset(0, 24),
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      alignment: Alignment.topCenter,
+                      children: [
+                        Container(
+                          margin: const EdgeInsets.only(
+                            left: 12,
+                            top: badgeOverlap,
+                            right: 12,
                           ),
-                        ],
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Center(
-                            child: CvantLogo(
-                              height: 64,
-                              fit: BoxFit.contain,
+                          padding: const EdgeInsets.fromLTRB(
+                            24,
+                            badgeOverlap + 24,
+                            24,
+                            24,
+                          ),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(color: panelBorder),
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: panelGradient,
                             ),
-                          ),
-                          const SizedBox(height: 18),
-                          Text(
-                            title,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.1,
-                            ),
-                          ),
-                          if (subtitle != null) ...[
-                            const SizedBox(height: 10),
-                            Text(
-                              subtitle!,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: AppColors.textMutedFor(context),
-                                fontSize: 14,
-                                height: 1.45,
+                            boxShadow: [
+                              BoxShadow(
+                                color: panelShadow,
+                                blurRadius: 48,
+                                offset: const Offset(0, 24),
                               ),
-                            ),
-                          ],
-                          const SizedBox(height: 24),
-                          child,
-                        ],
-                      ),
+                            ],
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Text(
+                                title,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.1,
+                                ),
+                              ),
+                              if (subtitle != null) ...[
+                                const SizedBox(height: 10),
+                                Text(
+                                  subtitle!,
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: AppColors.textMutedFor(context),
+                                    fontSize: 14,
+                                    height: 1.45,
+                                  ),
+                                ),
+                              ],
+                              const SizedBox(height: 24),
+                              child,
+                            ],
+                          ),
+                        ),
+                        Positioned(
+                          top: 0,
+                          child: _AuthHeroBadge(
+                            size: badgeSize,
+                            backgroundColor: badgeBackground,
+                            borderColor: panelBorder,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -127,6 +147,44 @@ class AuthShell extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AuthHeroBadge extends StatelessWidget {
+  const _AuthHeroBadge({
+    required this.size,
+    required this.backgroundColor,
+    required this.borderColor,
+  });
+
+  final double size;
+  final Color backgroundColor;
+  final Color borderColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'CV AS Nusa Trans notification mascot',
+      image: true,
+      child: Container(
+        width: size,
+        height: size,
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: backgroundColor,
+          shape: BoxShape.circle,
+          border: Border.all(color: borderColor),
+        ),
+        child: const ClipOval(
+          child: CvantAssetImage(
+            assetPath: 'assets/images/notif.png',
+            width: 68,
+            height: 68,
+            fit: BoxFit.cover,
+          ),
         ),
       ),
     );

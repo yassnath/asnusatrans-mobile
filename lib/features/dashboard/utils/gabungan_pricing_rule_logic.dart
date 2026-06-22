@@ -57,9 +57,50 @@ bool isGabunganHargaRuleCustomer(dynamic value) {
   return key == normalizeIncomePricingRuleKey(gabunganHargaRuleCustomerName);
 }
 
+bool isLikelyLeakedGabunganHargaRule(Map<String, dynamic> rule) {
+  if (isGabunganHargaRuleCustomer(rule['customer_name'])) return true;
+  if (normalizeIncomePricingRuleKey('${rule['customer_name'] ?? ''}')
+      .isNotEmpty) {
+    return false;
+  }
+
+  final pickup = '${rule['lokasi_muat'] ?? ''}'.trim();
+  final destination = '${rule['lokasi_bongkar'] ?? ''}'.trim();
+  final storedHarga =
+      parseGabunganRuleNumber(rule['harga_per_ton'] ?? rule['harga']);
+  if (destination.isEmpty || storedHarga <= 0) return false;
+
+  final pickupCandidates = <String>{
+    if (pickup.isNotEmpty) pickup,
+    'Selain Betoyo',
+    'Betoyo',
+  };
+  for (final candidatePickup in pickupCandidates) {
+    final gabunganHarga = resolveBuiltInGabunganHargaPerKg(
+      pickup: candidatePickup,
+      destination: destination,
+    );
+    if (gabunganHarga <= 0 || (storedHarga - gabunganHarga).abs() > 0.001) {
+      continue;
+    }
+
+    final regularRule = resolveBuiltInIncomePricingRule(
+      customerName: '',
+      pickup: candidatePickup,
+      destination: destination,
+    );
+    final regularHarga = parseGabunganRuleNumber(
+      regularRule?['harga_per_ton'] ?? regularRule?['harga'],
+    );
+    if (regularHarga > 0 && (regularHarga - storedHarga).abs() > 0.001) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool isRegularIncomeHargaRule(Map<String, dynamic> rule) {
-  return rule['is_active'] != false &&
-      !isGabunganHargaRuleCustomer(rule['customer_name']);
+  return rule['is_active'] != false && !isLikelyLeakedGabunganHargaRule(rule);
 }
 
 double resolveGabunganRuleHargaPerKg({
@@ -195,6 +236,68 @@ double resolveGabunganHargaPerKg({
   );
 }
 
+bool isGabunganReportOnlyIncomeRoute({
+  required String pickup,
+  required String destination,
+}) {
+  final pickupKey = normalizeGabunganRouteKey(pickup);
+  final destinationKey = normalizeGabunganRouteKey(destination);
+  return (destinationKey == 'langon' &&
+          (pickupKey == 'driyo' || pickupKey == 'wings')) ||
+      (pickupKey == 'langon' &&
+          (destinationKey == 'driyo' || destinationKey == 'wings'));
+}
+
+double? resolveIncomeRegularHargaForRoute({
+  required Map<String, dynamic>? regularRule,
+  required double? adjustedRegularHarga,
+  required String pickup,
+  required String destination,
+}) {
+  final normalizedAdjusted =
+      adjustedRegularHarga != null && adjustedRegularHarga > 0
+          ? adjustedRegularHarga
+          : null;
+  if (!isGabunganReportOnlyIncomeRoute(
+    pickup: pickup,
+    destination: destination,
+  )) {
+    return normalizedAdjusted;
+  }
+
+  final builtInRule = resolveBuiltInIncomePricingRule(
+    customerName: '',
+    pickup: pickup,
+    destination: destination,
+  );
+  final rawBuiltInHarga = parseGabunganRuleNumber(
+    builtInRule?['harga_per_ton'] ?? builtInRule?['harga'],
+  );
+
+  final rawRuleHarga = parseGabunganRuleNumber(
+    regularRule?['harga_per_ton'] ?? regularRule?['harga'],
+  );
+  if (rawRuleHarga > 0) {
+    final gabunganHarga = resolveBuiltInGabunganHargaPerKg(
+      pickup: pickup,
+      destination: destination,
+    );
+    final isStaleGabunganRule = gabunganHarga > 0 &&
+        rawBuiltInHarga > 0 &&
+        (rawRuleHarga - gabunganHarga).abs() <= 0.001 &&
+        (rawRuleHarga - rawBuiltInHarga).abs() > 0.001;
+    final isSuspiciousLowerThanRegular =
+        rawBuiltInHarga > 0 && rawRuleHarga < rawBuiltInHarga;
+    if (!isStaleGabunganRule && !isSuspiciousLowerThanRegular) {
+      return rawRuleHarga;
+    }
+  }
+
+  if (rawBuiltInHarga > 0) return rawBuiltInHarga;
+
+  return normalizedAdjusted;
+}
+
 double? resolveIncomeAutoHargaPerKg({
   required double? regularHarga,
   required bool usesManualArmada,
@@ -205,8 +308,14 @@ double? resolveIncomeAutoHargaPerKg({
   final normalizedRegular =
       regularHarga != null && regularHarga > 0 ? regularHarga : null;
   if (!usesManualArmada) return normalizedRegular;
+  if (isGabunganReportOnlyIncomeRoute(
+    pickup: pickup,
+    destination: destination,
+  )) {
+    return normalizedRegular;
+  }
 
-  final gabunganHarga = resolveGabunganRuleHargaPerKg(
+  final gabunganHarga = resolveGabunganHargaPerKg(
     rules: gabunganRules,
     pickup: pickup,
     destination: destination,
@@ -220,11 +329,11 @@ double resolveGabunganExpenseHargaPerKg({
   required String destination,
   List<Map<String, dynamic>> gabunganRules = const <Map<String, dynamic>>[],
 }) {
-  final databaseHarga = resolveGabunganRuleHargaPerKg(
+  final gabunganHarga = resolveGabunganHargaPerKg(
     rules: gabunganRules,
     pickup: pickup,
     destination: destination,
   );
-  if (databaseHarga > 0) return databaseHarga;
+  if (gabunganHarga > 0) return gabunganHarga;
   return storedHarga > 0 ? storedHarga : 0;
 }

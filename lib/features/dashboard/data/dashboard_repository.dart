@@ -1067,6 +1067,7 @@ class DashboardRepository {
         'nama_supir',
         'lokasi_muat',
         'lokasi_bongkar',
+        'armada_start_date',
         'muatan',
       ]) {
         if (normalizedText(current[key]) != normalizedText(next[key])) {
@@ -1077,6 +1078,7 @@ class DashboardRepository {
         'tonase',
         'harga',
         'jumlah',
+        'source_detail_index',
       ]) {
         if ((_num(current[key]) - _num(next[key])).abs() > 0.01) {
           return false;
@@ -1312,7 +1314,8 @@ class DashboardRepository {
 
       final expenseDetails = <Map<String, dynamic>>[];
       final gabunganExpenseDetails = <Map<String, dynamic>>[];
-      for (final detail in details) {
+      for (var detailIndex = 0; detailIndex < details.length; detailIndex++) {
+        final detail = details[detailIndex];
         final originalPickup = _firstNonEmptyText([
           detail['lokasi_muat'],
           fallbackPickup,
@@ -1386,6 +1389,11 @@ class DashboardRepository {
             'nama_supir': null,
             'lokasi_muat': originalPickup,
             'lokasi_bongkar': originalDestination,
+            'source_detail_index': detailIndex,
+            'armada_start_date': _firstNonEmptyText([
+              detail['armada_start_date'],
+              detail['tanggal'],
+            ]),
             'muatan': effectiveCargo,
             'tonase': tonase,
             'harga': gabunganHarga,
@@ -1449,18 +1457,29 @@ class DashboardRepository {
           fallbackArmadaId: effectiveArmadaId,
         );
         final plateLabel = plate.isEmpty ? '-' : plate;
-        final pickupLabel =
-            displayRoute.pickup.isEmpty ? '-' : displayRoute.pickup;
+        final pickupLabel = baseRoute.pickup.isEmpty ? '-' : baseRoute.pickup;
         final bongkarLabel =
-            displayRoute.destination.isEmpty ? '-' : displayRoute.destination;
+            baseRoute.destination.isEmpty ? '-' : baseRoute.destination;
         final detailName = '$plateLabel ($pickupLabel-$bongkarLabel)';
         final detailKey = normalizeDetailKey(detailName);
         final matchedNominal = _num(match?['nominal'] ?? 0);
         final preservedBaseNominal = preservedBaseAmountByName[detailKey] ?? 0;
+        final matchPickupNorm = '${match?['__muat_norm'] ?? ''}'.trim();
+        final matchDestinationNorm = '${match?['__bongkar_norm'] ?? ''}'.trim();
+        final keepFullTolakanNominal = isTolakan &&
+            ((matchPickupNorm == 'wings' && matchDestinationNorm == 'langon') ||
+                matchDestinationNorm == 'sgm' ||
+                (matchDestinationNorm == 'wings' &&
+                    (matchPickupNorm == 'langon' ||
+                        matchPickupNorm == 'selain betoyo')));
         final effectiveNominal = matchedNominal > 0
-            ? (isTolakan ? matchedNominal / 2 : matchedNominal)
+            ? (isTolakan && !keepFullTolakanNominal
+                ? matchedNominal / 2
+                : matchedNominal)
             : (preservedBaseNominal > 0
-                ? (isTolakan ? preservedBaseNominal / 2 : preservedBaseNominal)
+                ? (isTolakan && !keepFullTolakanNominal
+                    ? preservedBaseNominal / 2
+                    : preservedBaseNominal)
                 : 0);
         if (effectiveNominal <= 0) {
           // Hindari memasukkan nominal yang tidak valid agar total tidak meleset.
@@ -1471,8 +1490,13 @@ class DashboardRepository {
         expenseDetails.add(<String, dynamic>{
           'nama': detailName,
           'nama_supir': singleDriverName,
-          'lokasi_muat': displayRoute.pickup,
-          'lokasi_bongkar': displayRoute.destination,
+          'lokasi_muat': baseRoute.pickup,
+          'lokasi_bongkar': baseRoute.destination,
+          'source_detail_index': detailIndex,
+          'armada_start_date': _firstNonEmptyText([
+            detail['armada_start_date'],
+            detail['tanggal'],
+          ]),
           'muatan': effectiveCargo,
           'jumlah': effectiveNominal,
         });
@@ -1849,6 +1873,8 @@ class DashboardRepository {
     var failedInvoices = 0;
     try {
       final rules = await fetchHargaPerTonRules();
+      final armadas = await fetchArmadas();
+      final armadaIdByPlate = buildArmadaIdByPlate(armadas);
 
       final invoices = _toMapList(
         await _runInvoiceSelectWithFallback(
@@ -1895,6 +1921,7 @@ class DashboardRepository {
               customerName: customerName,
               fallbackPickup: fallbackPickup,
               fallbackDestination: fallbackDestination,
+              armadaIdByPlate: armadaIdByPlate,
             );
             if (updatedDetail != null) {
               nextDetails.add(updatedDetail);

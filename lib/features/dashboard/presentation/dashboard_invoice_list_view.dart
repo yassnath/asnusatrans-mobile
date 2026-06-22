@@ -58,6 +58,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
   };
   static const _fixedInvoicePrefsKey = 'fixed_invoice_ids_v1';
   static const _fixedInvoiceBatchPrefsKey = 'fixed_invoice_batches_v1';
+  static const _returnedFixedInvoicePrefsKey = 'returned_fixed_invoice_ids_v1';
   static const _fixedInvoiceRemotePromotionDoneKey =
       'fixed_invoice_remote_promotion_done_v1';
   static const _invoiceListColumns =
@@ -74,6 +75,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
   late Future<List<dynamic>> _future;
   final _search = TextEditingController();
   final Set<String> _locallyRemovedRowIds = <String>{};
+  final Set<String> _returnedFixedInvoiceIds = <String>{};
   String _limit = '10';
   bool _backgroundFixedInvoiceSyncRunning = false;
   bool _backgroundAutoSanguCleanupRunning = false;
@@ -84,6 +86,10 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
   bool _incomePricingBackfillDone = false;
   bool _invoiceDetailDateSyncDone = false;
   final Set<String> _loadedInvoiceIdsForAutoExpenseSync = <String>{};
+  final List<Map<String, dynamic>> _invoiceListAutoExpenseArmadas =
+      <Map<String, dynamic>>[];
+  final List<Map<String, dynamic>> _invoiceListAutoExpenseHargaRules =
+      <Map<String, dynamic>>[];
 
   bool get _isEn => LanguageController.language.value == AppLanguage.en;
   bool get _isPengurus => widget.session.isPengurus;
@@ -91,6 +97,32 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
   String get _currentUserId => widget.session.userId?.trim() ?? '';
 
   String _t(String id, String en) => _isEn ? en : id;
+
+  DateTime _invoiceListIncomeHistoryStart(DateTime now) {
+    final startYear = now.month >= 4 ? now.year : now.year - 1;
+    return DateTime(startYear, 4, 1);
+  }
+
+  Future<Set<String>> _loadReturnedFixedInvoiceIds() async {
+    final prefs = await SharedPreferences.getInstance();
+    return (prefs.getStringList(_returnedFixedInvoicePrefsKey) ??
+            const <String>[])
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+  }
+
+  Future<void> _forgetReturnedFixedInvoiceIds(Iterable<String> ids) async {
+    final cleaned =
+        ids.map((id) => id.trim()).where((id) => id.isNotEmpty).toSet();
+    if (cleaned.isEmpty) return;
+    final existing = await _loadReturnedFixedInvoiceIds();
+    existing.removeAll(cleaned);
+    final prefs = await SharedPreferences.getInstance();
+    final values = existing.toList()..sort();
+    await prefs.setStringList(_returnedFixedInvoicePrefsKey, values);
+    _returnedFixedInvoiceIds.removeAll(cleaned);
+  }
 
   double _resolveInvoiceJumlahWithSpecialRules(Map<String, dynamic> invoice) {
     final details = _toDetailList(invoice['rincian']);
@@ -617,23 +649,121 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     return expanded;
   }
 
+  Map<String, dynamic> _applyEffectivePricingForInvoiceList(
+    Map<String, dynamic> row, {
+    required List<Map<String, dynamic>> hargaPerTonRules,
+  }) {
+    final details = _toDetailList(row['rincian']);
+    if (details.isEmpty) return row;
+    final regularRules =
+        hargaPerTonRules.where(isRegularIncomeHargaRule).toList(
+              growable: false,
+            );
+
+    String firstText(Iterable<dynamic> values) {
+      for (final value in values) {
+        final text = '${value ?? ''}'.trim();
+        if (text.isNotEmpty && text != '-') return text;
+      }
+      return '';
+    }
+
+    Map<String, dynamic> applyDetail(Map<String, dynamic> detail) {
+      final pickup = firstText([detail['lokasi_muat'], row['lokasi_muat']]);
+      final destination =
+          firstText([detail['lokasi_bongkar'], row['lokasi_bongkar']]);
+      final cargo = firstText([detail['muatan'], row['muatan']]);
+      final regularRule = _resolveHargaRuleShared(
+        rules: regularRules,
+        customerName: '${row['nama_pelanggan'] ?? ''}'.trim(),
+        lokasiMuat: pickup,
+        lokasiBongkar: destination,
+        muatan: cargo,
+      );
+      final regularHarga = _resolveHargaPerTonValueShared(
+        regularRule,
+        muatan: cargo,
+      );
+      final incomeHarga = resolveIncomeRegularHargaForRoute(
+        regularRule: regularRule,
+        adjustedRegularHarga: regularHarga,
+        pickup: pickup,
+        destination: destination,
+      );
+      final effectiveHarga = (incomeHarga ?? 0) > 0
+          ? incomeHarga!
+          : _toNum(detail['harga'] ?? row['harga']);
+      final tonase = _toNum(detail['tonase'] ?? row['tonase']);
+      final currentHarga = _toNum(detail['harga'] ?? row['harga']);
+      final currentAutoSubtotal = currentHarga > 0 && tonase > 0
+          ? roundInvoiceRupiah(currentHarga * tonase)
+          : 0.0;
+      final manualSubtotal =
+          _toNum(detail['manual_subtotal'] ?? detail['subtotal_manual']);
+      final hasProtectedManualSubtotal = manualSubtotal > 0 &&
+          (currentAutoSubtotal <= 0 ||
+              (manualSubtotal - currentAutoSubtotal).abs() > 1);
+      if (hasProtectedManualSubtotal || effectiveHarga <= 0 || tonase <= 0) {
+        return detail;
+      }
+
+      final next = Map<String, dynamic>.from(detail);
+      next['harga'] = effectiveHarga;
+      next['subtotal_auto'] = true;
+      for (final key in const [
+        'manual_subtotal',
+        'subtotal_manual',
+        'subtotal',
+        'total',
+        'total_biaya',
+        'jumlah',
+      ]) {
+        next.remove(key);
+      }
+      return next;
+    }
+
+    final nextDetails = details.map(applyDetail).toList(growable: false);
+    final subtotal = _resolveInvoiceDetailsExcelSubtotalShared(nextDetails);
+    if (subtotal <= 0) return row;
+
+    final normalizedEntity = Formatters.normalizeInvoiceEntity(
+      row['invoice_entity'],
+      invoiceNumber: row['no_invoice'],
+      customerName: row['nama_pelanggan'],
+    );
+    final includePph = Formatters.isCompanyInvoiceEntity(normalizedEntity);
+    final pph = includePph ? calculateInvoicePph2Percent(subtotal) : 0.0;
+    final totalBayar =
+        includePph ? calculateInvoiceTotalAfterPph(subtotal) : subtotal;
+
+    return {
+      ...row,
+      'rincian': nextDetails,
+      'total_biaya': subtotal,
+      'pph': pph,
+      'total_bayar': totalBayar,
+    };
+  }
+
   Future<List<dynamic>> _load() async {
     if (_isPengurus && _currentUserId.isEmpty) {
       return const [<Map<String, dynamic>>[], <Map<String, dynamic>>[]];
     }
     final now = DateTime.now();
-    final since = DateTime(now.year, now.month - 1, 1);
+    final incomeSince = _invoiceListIncomeHistoryStart(now);
+    final expenseSince = DateTime(now.year, now.month - 1, 1);
     final scopedUserId = _isPengurus ? _currentUserId : null;
     const int? fetchLimit = null;
     final response = await Future.wait<dynamic>([
       widget.repository.fetchInvoicesSinceWithScope(
-        since,
+        incomeSince,
         columns: _invoiceListColumns,
         createdBy: scopedUserId,
         limit: fetchLimit,
       ),
       widget.repository.fetchExpensesSinceWithScope(
-        since,
+        expenseSince,
         _expenseListColumns,
         createdBy: scopedUserId,
         limit: fetchLimit == null ? null : max(80, fetchLimit * 2),
@@ -641,12 +771,48 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       _isAdminOrOwner
           ? _loadLocalFixedInvoiceIds()
           : Future<Set<String>>.value(<String>{}),
+      _loadReturnedFixedInvoiceIds(),
+      (() async {
+        try {
+          return await widget.repository.fetchArmadas();
+        } catch (_) {
+          return <Map<String, dynamic>>[];
+        }
+      })(),
+      (() async {
+        try {
+          return await widget.repository.fetchHargaPerTonRules();
+        } catch (_) {
+          return <Map<String, dynamic>>[];
+        }
+      })(),
     ]);
 
     final rawIncomes =
         (response[0] as List).cast<Map<String, dynamic>>().toList();
     final rawExpenses =
         (response[1] as List).cast<Map<String, dynamic>>().toList();
+    final fixedIds = (response[2] as Set<String>)
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    final returnedIds = (response[3] as Set<String>)
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    final rawIncomeIds = rawIncomes
+        .map((item) => '${item['id'] ?? ''}'.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    final missingReturnedIds = returnedIds.difference(rawIncomeIds);
+    if (missingReturnedIds.isNotEmpty) {
+      rawIncomes.addAll(
+        await widget.repository.fetchInvoicesByIds(missingReturnedIds),
+      );
+    }
+    _returnedFixedInvoiceIds
+      ..clear()
+      ..addAll(returnedIds.difference(fixedIds));
     final scopedIncomes = rawIncomes.where((item) {
       final id = '${item['id'] ?? ''}'.trim();
       if (id.isNotEmpty && _locallyRemovedRowIds.contains(id)) return false;
@@ -654,25 +820,43 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       if (_isAdminOrOwner) return _isPengurusIncomeApproved(item);
       return true;
     }).toList();
+    final armadas = (response[4] as List)
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList(growable: false);
+    final hargaPerTonRules = (response[5] as List)
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList(growable: false);
+    _invoiceListAutoExpenseArmadas
+      ..clear()
+      ..addAll(armadas);
+    _invoiceListAutoExpenseHargaRules
+      ..clear()
+      ..addAll(hargaPerTonRules);
+    final pricedScopedIncomes = scopedIncomes
+        .map(
+          (item) => _applyEffectivePricingForInvoiceList(
+            item,
+            hargaPerTonRules: hargaPerTonRules,
+          ),
+        )
+        .toList(growable: false);
     _loadedInvoiceIdsForAutoExpenseSync
       ..clear()
       ..addAll(
-        scopedIncomes
+        pricedScopedIncomes
             .map((item) => '${item['id'] ?? ''}'.trim())
             .where((id) => id.isNotEmpty),
       );
-    final expandedIncomes = _expandIncomeRowsForInvoiceList(scopedIncomes);
+    final expandedIncomes =
+        _expandIncomeRowsForInvoiceList(pricedScopedIncomes);
     final scopedExpenses = rawExpenses.where((item) {
       final id = '${item['id'] ?? ''}'.trim();
       if (id.isNotEmpty && _locallyRemovedRowIds.contains(id)) return false;
       if (_isPengurus) return _isOwnedByCurrentUser(item);
       return true;
     }).toList();
-    final fixedIds = (response[2] as Set<String>)
-        .map((id) => id.trim())
-        .where((id) => id.isNotEmpty)
-        .toSet();
-
     if (fixedIds.isEmpty) {
       return [expandedIncomes, scopedExpenses];
     }
@@ -1405,6 +1589,28 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       return drivers.join(' | ');
     }
 
+    int? parseDetailIndex(dynamic value) {
+      if (value is int) return value;
+      return int.tryParse('${value ?? ''}'.trim());
+    }
+
+    String incomeSourceId(Map<String, dynamic> source) {
+      final sourceId = '${source['__source_invoice_id'] ?? ''}'.trim();
+      if (sourceId.isNotEmpty) return sourceId;
+      return '${source['id'] ?? ''}'.trim();
+    }
+
+    String incomeRowKey(Map<String, dynamic> source) {
+      final sourceId = incomeSourceId(source);
+      final detailIndex = parseDetailIndex(source['__detail_index']);
+      if (source['__invoice_list_expanded_detail'] == true &&
+          sourceId.isNotEmpty &&
+          detailIndex != null) {
+        return '$sourceId#$detailIndex';
+      }
+      return '${source['id'] ?? sourceId}'.trim();
+    }
+
     final incomeRows = incomes.map((item) {
       final invoiceNumber = Formatters.invoiceNumber(
         item['no_invoice'],
@@ -1436,6 +1642,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         '__armada_start_dates': searchFields['dates'],
         '__armada_plates': searchFields['plates'],
         '__armada_routes': searchFields['routes'],
+        '__invoice_list_row_key': incomeRowKey(item),
       };
     }).toList();
 
@@ -1448,19 +1655,390 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     });
 
     final incomeById = <String, Map<String, dynamic>>{};
+    final incomeRowsBySourceId = <String, List<Map<String, dynamic>>>{};
     final incomeIdByInvoiceToken = <String, String>{};
     for (final income in incomeRows) {
       final id = '${income['id'] ?? ''}'.trim();
-      if (id.isEmpty) continue;
-      incomeById[normalizeToken(id)] = income;
+      final sourceId = incomeSourceId(income);
+      if (id.isEmpty && sourceId.isEmpty) continue;
+      final sourceKey = sourceId.isNotEmpty ? sourceId : id;
+      incomeRowsBySourceId
+          .putIfAbsent(sourceKey, () => <Map<String, dynamic>>[])
+          .add(income);
+      if (id.isNotEmpty) {
+        incomeById.putIfAbsent(normalizeToken(id), () => income);
+      }
+      if (sourceId.isNotEmpty) {
+        incomeById.putIfAbsent(normalizeToken(sourceId), () => income);
+      }
       final rawInvoice = normalizeToken(income['no_invoice']);
       final formattedInvoice = normalizeToken(income['__number']);
       if (rawInvoice.isNotEmpty) {
-        incomeIdByInvoiceToken[rawInvoice] = id;
+        incomeIdByInvoiceToken[rawInvoice] = sourceKey;
       }
       if (formattedInvoice.isNotEmpty) {
-        incomeIdByInvoiceToken[formattedInvoice] = id;
+        incomeIdByInvoiceToken[formattedInvoice] = sourceKey;
       }
+    }
+    for (final rows in incomeRowsBySourceId.values) {
+      rows.sort((a, b) {
+        final aIndex = parseDetailIndex(a['__detail_index']);
+        final bIndex = parseDetailIndex(b['__detail_index']);
+        if (aIndex != null && bIndex != null) {
+          return aIndex.compareTo(bIndex);
+        }
+        if (aIndex != null) return -1;
+        if (bIndex != null) return 1;
+        final aDate = Formatters.parseDate(a['__date']) ??
+            DateTime.fromMillisecondsSinceEpoch(0);
+        final bDate = Formatters.parseDate(b['__date']) ??
+            DateTime.fromMillisecondsSinceEpoch(0);
+        return aDate.compareTo(bDate);
+      });
+    }
+
+    String normalizedRoutePart(dynamic value) {
+      return '${value ?? ''}'
+          .toLowerCase()
+          .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim();
+    }
+
+    String routeKeyForDetail(
+      Map<String, dynamic> detail, {
+      Map<String, dynamic>? fallbackIncomeDetail,
+    }) {
+      final route = extractRouteDriverFromDetail(
+        detail,
+        fallbackIncomeDetail: fallbackIncomeDetail,
+      );
+      final muat = normalizedRoutePart(route.muat);
+      final bongkar = normalizedRoutePart(route.bongkar);
+      if (muat.isEmpty && bongkar.isEmpty) return '';
+      return '$muat|$bongkar';
+    }
+
+    Map<String, dynamic>? firstIncomeDetail(Map<String, dynamic>? income) {
+      if (income == null) return null;
+      final details = _toDetailList(income['rincian']);
+      if (details.isNotEmpty) return details.first;
+      return income;
+    }
+
+    String buildSingleAutoExpenseRouteLabel(
+      Map<String, dynamic> detail,
+      Map<String, dynamic>? targetIncome,
+    ) {
+      final fallback = firstIncomeDetail(targetIncome);
+      var route = extractRouteDriverFromDetail(
+        detail,
+        fallbackIncomeDetail: fallback,
+      );
+      if (route.muat.isEmpty && route.bongkar.isEmpty && fallback != null) {
+        route = extractRouteDriverFromDetail(
+          fallback,
+          fallbackIncomeDetail: fallback,
+        );
+      }
+      if (route.muat.isEmpty && route.bongkar.isEmpty) return '-';
+      return '${route.muat.isEmpty ? '-' : route.muat}-'
+          '${route.bongkar.isEmpty ? '-' : route.bongkar}';
+    }
+
+    String buildSingleAutoExpenseDriverLabel(
+      Map<String, dynamic> detail,
+      Map<String, dynamic>? targetIncome,
+    ) {
+      final fallback = firstIncomeDetail(targetIncome);
+      final route = extractRouteDriverFromDetail(
+        detail,
+        fallbackIncomeDetail: fallback,
+      );
+      if (route.driver.trim().isNotEmpty) return route.driver.trim();
+      return '-';
+    }
+
+    double expenseDetailAmount(Map<String, dynamic> detail) {
+      for (final key in const [
+        'jumlah',
+        'amount',
+        'total',
+        'total_pengeluaran',
+        'nominal',
+        'subtotal',
+      ]) {
+        final amount = _toNum(detail[key]);
+        if (amount > 0) return amount;
+      }
+      return 0;
+    }
+
+    dynamic expenseDetailDate(
+      Map<String, dynamic> detail,
+      Map<String, dynamic>? targetIncome,
+      Map<String, dynamic> parentExpense,
+    ) {
+      for (final value in [
+        detail['armada_start_date'],
+        detail['tanggal'],
+        targetIncome?['__date'],
+        targetIncome?['tanggal'],
+        targetIncome?['created_at'],
+        parentExpense['tanggal'],
+        parentExpense['created_at'],
+      ]) {
+        if (Formatters.parseDate(value) != null) return value;
+      }
+      return parentExpense['tanggal'] ?? parentExpense['created_at'];
+    }
+
+    Map<String, dynamic>? targetIncomeForExpenseDetail({
+      required List<Map<String, dynamic>> targetRows,
+      required Map<String, dynamic> expenseDetail,
+      required int detailIndex,
+      required int detailCount,
+      required Set<String> usedRowKeys,
+    }) {
+      bool unused(Map<String, dynamic> row) {
+        final key = '${row['__invoice_list_row_key'] ?? incomeRowKey(row)}';
+        return !usedRowKeys.contains(key);
+      }
+
+      final explicitIndex = parseDetailIndex(
+        expenseDetail['source_detail_index'] ??
+            expenseDetail['detail_index'] ??
+            expenseDetail['__detail_index'],
+      );
+      if (explicitIndex != null) {
+        for (final row in targetRows) {
+          if (parseDetailIndex(row['__detail_index']) == explicitIndex &&
+              unused(row)) {
+            return row;
+          }
+        }
+      }
+
+      if (detailCount == targetRows.length &&
+          detailIndex < targetRows.length &&
+          unused(targetRows[detailIndex])) {
+        return targetRows[detailIndex];
+      }
+
+      final expenseRouteKey = routeKeyForDetail(expenseDetail);
+      if (expenseRouteKey.isNotEmpty) {
+        for (final row in targetRows) {
+          if (!unused(row)) continue;
+          final rowRouteKey = routeKeyForDetail(
+            firstIncomeDetail(row) ?? row,
+            fallbackIncomeDetail: row,
+          );
+          if (rowRouteKey == expenseRouteKey) return row;
+        }
+      }
+
+      for (final row in targetRows) {
+        if (unused(row)) return row;
+      }
+      return targetRows.isEmpty ? null : targetRows.first;
+    }
+
+    dynamic autoExpenseDateFromIncome(
+      Map<String, dynamic> detail,
+      Map<String, dynamic> income,
+    ) {
+      for (final value in [
+        detail['armada_start_date'],
+        detail['tanggal'],
+        income['__date'],
+        income['tanggal'],
+        income['created_at'],
+      ]) {
+        if (Formatters.parseDate(value) != null) return value;
+      }
+      return income['__date'] ?? income['tanggal'] ?? income['created_at'];
+    }
+
+    Map<String, dynamic>? buildExpectedAutoExpenseRowForIncome(
+      Map<String, dynamic> income,
+    ) {
+      final detail = firstIncomeDetail(income) ?? income;
+      var route = extractRouteDriverFromDetail(
+        detail,
+        fallbackIncomeDetail: income,
+      );
+      if (route.muat.trim().isEmpty || route.bongkar.trim().isEmpty) {
+        final routeLabel = '${income['__route'] ?? ''}'.trim();
+        final parts = routeLabel
+            .split(RegExp(r'\s*[-–—]\s*'))
+            .map((part) => part.trim())
+            .where((part) => part.isNotEmpty)
+            .toList(growable: false);
+        if (parts.length >= 2) {
+          route = (
+            muat: route.muat.trim().isEmpty ? parts.first : route.muat,
+            bongkar: route.bongkar.trim().isEmpty
+                ? parts.sublist(1).join('-')
+                : route.bongkar,
+            driver: route.driver,
+          );
+        }
+      }
+      final pickup = route.muat.trim();
+      final destination = route.bongkar.trim();
+      if (pickup.isEmpty || destination.isEmpty) return null;
+
+      final merged = <String, dynamic>{
+        ...income,
+        ...detail,
+      };
+      final cargo = '${detail['muatan'] ?? income['muatan'] ?? ''}'.trim();
+      final displayDate = autoExpenseDateFromIncome(detail, income);
+      final routeLabel = '${pickup.isEmpty ? '-' : pickup}-'
+          '${destination.isEmpty ? '-' : destination}';
+      final sourceId = incomeSourceId(income);
+      final rowKey =
+          '${income['__invoice_list_row_key'] ?? incomeRowKey(income)}';
+      final detailIndex = parseDetailIndex(income['__detail_index']);
+      final usesManualGabungan = _usesEffectiveManualArmada(
+            merged,
+            armadas: _invoiceListAutoExpenseArmadas,
+          ) &&
+          !manualArmadaRouteUsesSanguExpense(
+            pickup: pickup,
+            destination: destination,
+          );
+
+      if (usesManualGabungan) {
+        final tonase = _toNum(detail['tonase'] ?? income['tonase']);
+        final gabunganHarga = resolveGabunganExpenseHargaPerKg(
+          storedHarga: _toNum(detail['harga'] ?? income['harga']),
+          pickup: pickup,
+          destination: destination,
+          gabunganRules: _invoiceListAutoExpenseHargaRules,
+        );
+        final total = tonase > 0 && gabunganHarga > 0
+            ? roundInvoiceRupiah(tonase * gabunganHarga)
+            : 0.0;
+        if (total <= 0) return null;
+        return <String, dynamic>{
+          'id': 'virtual-auto-gabungan:$rowKey',
+          'no_expense': '-',
+          'tanggal': displayDate,
+          'kategori': 'Gabungan',
+          'keterangan': 'Auto gabungan',
+          'status': 'Paid',
+          'dicatat_oleh': 'System',
+          'note': sourceId.isEmpty ? null : 'AUTO_GABUNGAN:$sourceId',
+          'rincian': [
+            {
+              'nama': 'Gabungan ($routeLabel)',
+              'lokasi_muat': pickup,
+              'lokasi_bongkar': destination,
+              'armada_start_date': displayDate,
+              'muatan': cargo,
+              'tonase': tonase,
+              'harga': gabunganHarga,
+              'jumlah': total,
+              if (detailIndex != null) 'source_detail_index': detailIndex,
+            },
+          ],
+          'total_pengeluaran': total,
+          '__type': 'Expense',
+          '__number': '-',
+          '__name': 'Gabungan',
+          '__total': total,
+          '__date': displayDate,
+          '__sort_date': displayDate,
+          '__status': 'Paid',
+          '__recorded_by': 'System',
+          '__route': routeLabel,
+          '__is_auto_gabungan': true,
+          '__virtual_auto_expense': true,
+          '__linked_income_row_key': rowKey,
+        };
+      }
+
+      final rule = resolvePrioritizedSanguRouteRule(
+        pickup: pickup,
+        destination: destination,
+        customerName: '${income['nama_pelanggan'] ?? income['__name'] ?? ''}',
+        invoiceEntity: '${income['invoice_entity'] ?? ''}',
+      );
+      final total = _toNum(rule?['nominal']);
+      if (total <= 0) return null;
+      final driver = route.driver.trim().isEmpty ? '-' : route.driver.trim();
+      return <String, dynamic>{
+        'id': 'virtual-auto-sangu:$rowKey',
+        'no_expense': '-',
+        'tanggal': displayDate,
+        'kategori': 'Sangu Sopir',
+        'keterangan': 'Auto sangu sopir',
+        'status': 'Paid',
+        'dicatat_oleh': 'System',
+        'note': sourceId.isEmpty ? null : 'AUTO_SANGU:$sourceId',
+        'rincian': [
+          {
+            'nama': '$driver ($routeLabel)',
+            'nama_supir': driver == '-' ? null : driver,
+            'lokasi_muat': pickup,
+            'lokasi_bongkar': destination,
+            'armada_start_date': displayDate,
+            'muatan': cargo,
+            'jumlah': total,
+            if (detailIndex != null) 'source_detail_index': detailIndex,
+          },
+        ],
+        'total_pengeluaran': total,
+        '__type': 'Expense',
+        '__number': '-',
+        '__name': driver,
+        '__total': total,
+        '__date': displayDate,
+        '__sort_date': displayDate,
+        '__status': 'Paid',
+        '__recorded_by': 'System',
+        '__route': routeLabel,
+        '__is_auto_sangu': true,
+        '__virtual_auto_expense': true,
+        '__linked_income_row_key': rowKey,
+      };
+    }
+
+    bool autoExpenseMatchesExpected(
+      Map<String, dynamic> row,
+      Map<String, dynamic> expected,
+    ) {
+      if (row['__is_auto_sangu'] == true &&
+          expected['__is_auto_sangu'] != true) {
+        return false;
+      }
+      if (row['__is_auto_gabungan'] == true &&
+          expected['__is_auto_gabungan'] != true) {
+        return false;
+      }
+      final rowRoute = normalizedRoutePart(row['__route']);
+      final expectedRoute = normalizedRoutePart(expected['__route']);
+      if (rowRoute.isNotEmpty &&
+          expectedRoute.isNotEmpty &&
+          rowRoute != expectedRoute) {
+        return false;
+      }
+      final rowDate = Formatters.parseDate(row['__date'] ?? row['tanggal']);
+      final expectedDate = Formatters.parseDate(
+        expected['__date'] ?? expected['tanggal'],
+      );
+      if (rowDate != null &&
+          expectedDate != null &&
+          (rowDate.year != expectedDate.year ||
+              rowDate.month != expectedDate.month ||
+              rowDate.day != expectedDate.day)) {
+        return false;
+      }
+      return (_toNum(row['__total'] ?? row['total_pengeluaran']) -
+                  _toNum(expected['__total'] ?? expected['total_pengeluaran']))
+              .abs() <=
+          1;
     }
 
     final expenseByIncomeId = <String, List<Map<String, dynamic>>>{};
@@ -1489,34 +2067,124 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       final autoDriverLabel =
           autoSangu ? buildAutoSanguDriverLabel(item, linkedIncome) : '';
 
-      final mapped = <String, dynamic>{
-        ...item,
-        '__type': 'Expense',
-        '__number': item['no_expense'],
-        '__name': autoSangu
-            ? autoDriverLabel
+      Map<String, dynamic> mapExpenseRow({
+        Map<String, dynamic>? detail,
+        Map<String, dynamic>? targetIncome,
+        int? detailIndex,
+      }) {
+        final hasDetail = detail != null;
+        final detailTotal = hasDetail ? expenseDetailAmount(detail) : 0.0;
+        final total =
+            detailTotal > 0 ? detailTotal : _toNum(item['total_pengeluaran']);
+        final displayDate = hasDetail
+            ? expenseDetailDate(detail, targetIncome, item)
+            : item['tanggal'] ?? item['created_at'];
+        final displayRoute = hasDetail && (autoSangu || autoGabungan)
+            ? buildSingleAutoExpenseRouteLabel(detail, targetIncome)
+            : (autoSangu || autoGabungan)
+                ? autoRouteLabel
+                : (item['keterangan'] ?? item['kategori'] ?? '-');
+        final displayName = autoSangu
+            ? (hasDetail
+                ? buildSingleAutoExpenseDriverLabel(detail, targetIncome)
+                : autoDriverLabel)
             : autoGabungan
                 ? 'Gabungan'
-                : (item['kategori'] ?? item['keterangan'] ?? '-'),
-        '__total': item['total_pengeluaran'],
-        '__date': item['tanggal'] ?? item['created_at'],
-        '__sort_date':
-            item['updated_at'] ?? item['created_at'] ?? item['tanggal'],
-        '__status': item['status'],
-        '__recorded_by': item['dicatat_oleh'] ?? '-',
-        '__route': (autoSangu || autoGabungan)
-            ? autoRouteLabel
-            : (item['keterangan'] ?? item['kategori'] ?? '-'),
-        '__is_auto_sangu': autoSangu,
-        '__is_auto_gabungan': autoGabungan,
-      };
+                : (item['kategori'] ?? item['keterangan'] ?? '-');
+        return <String, dynamic>{
+          ...item,
+          if (hasDetail) 'rincian': [detail],
+          'total_pengeluaran': total,
+          '__type': 'Expense',
+          '__number': item['no_expense'],
+          '__name': displayName,
+          '__total': total,
+          '__date': displayDate,
+          '__sort_date': displayDate,
+          '__status': item['status'],
+          '__recorded_by': item['dicatat_oleh'] ?? '-',
+          '__route': displayRoute,
+          '__is_auto_sangu': autoSangu,
+          '__is_auto_gabungan': autoGabungan,
+          if (detailIndex != null) '__auto_expense_detail_index': detailIndex,
+          if (targetIncome != null)
+            '__linked_income_row_key': targetIncome['__invoice_list_row_key'] ??
+                incomeRowKey(targetIncome),
+        };
+      }
+
+      final mapped = mapExpenseRow();
       if (linkedIncomeId != null && linkedIncomeId.isNotEmpty) {
+        final targetRows = incomeRowsBySourceId[linkedIncomeId] ??
+            const <Map<String, dynamic>>[];
+        final expenseDetails = _toDetailList(item['rincian']);
+        if ((autoSangu || autoGabungan) &&
+            expenseDetails.isNotEmpty &&
+            targetRows.length > 1) {
+          final usedRowKeys = <String>{};
+          var attached = 0;
+          for (var detailIndex = 0;
+              detailIndex < expenseDetails.length;
+              detailIndex++) {
+            final detail = expenseDetails[detailIndex];
+            final amount = expenseDetailAmount(detail);
+            if (amount <= 0) continue;
+            final targetIncome = targetIncomeForExpenseDetail(
+              targetRows: targetRows,
+              expenseDetail: detail,
+              detailIndex: detailIndex,
+              detailCount: expenseDetails.length,
+              usedRowKeys: usedRowKeys,
+            );
+            if (targetIncome == null) continue;
+            final rowKey =
+                '${targetIncome['__invoice_list_row_key'] ?? incomeRowKey(targetIncome)}'
+                    .trim();
+            if (rowKey.isEmpty) continue;
+            usedRowKeys.add(rowKey);
+            expenseByIncomeId
+                .putIfAbsent(rowKey, () => <Map<String, dynamic>>[])
+                .add(
+                  mapExpenseRow(
+                    detail: detail,
+                    targetIncome: targetIncome,
+                    detailIndex: detailIndex,
+                  ),
+                );
+            attached++;
+          }
+          if (attached > 0) continue;
+        }
+
+        final fallbackRowKey = targetRows.isNotEmpty
+            ? '${targetRows.first['__invoice_list_row_key'] ?? incomeRowKey(targetRows.first)}'
+            : linkedIncomeId;
         expenseByIncomeId
-            .putIfAbsent(linkedIncomeId, () => <Map<String, dynamic>>[])
+            .putIfAbsent(fallbackRowKey, () => <Map<String, dynamic>>[])
             .add(mapped);
       } else if (shouldShowStandaloneInvoiceListExpense(mapped)) {
         standaloneExpenses.add(mapped);
       }
+    }
+
+    for (final income in incomeRows) {
+      final rowKey =
+          '${income['__invoice_list_row_key'] ?? incomeRowKey(income)}'.trim();
+      if (rowKey.isEmpty) continue;
+      final expected = buildExpectedAutoExpenseRowForIncome(income);
+      if (expected == null) continue;
+      final existing =
+          expenseByIncomeId[rowKey] ?? const <Map<String, dynamic>>[];
+      final hasMatching =
+          existing.any((row) => autoExpenseMatchesExpected(row, expected));
+      if (hasMatching) continue;
+      final manualRows = existing
+          .where((row) => !isInvoiceListAutoExpenseRow(row))
+          .toList(growable: false);
+      expenseByIncomeId[rowKey] = <Map<String, dynamic>>[
+        expected,
+        ...manualRows,
+      ];
     }
 
     for (final rows in expenseByIncomeId.values) {
@@ -1551,12 +2219,53 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     return rowGroups.expand((group) => group).toList(growable: false);
   }
 
+  bool _isReturnedFixedInvoiceRow(Map<String, dynamic> item) {
+    if ('${item['__type']}' != 'Income') return false;
+    for (final value in [
+      item['id'],
+      item['__source_invoice_id'],
+    ]) {
+      final id = '${value ?? ''}'.trim();
+      if (id.isNotEmpty && _returnedFixedInvoiceIds.contains(id)) return true;
+    }
+    final invoiceNumber =
+        '${item['no_invoice'] ?? item['__number'] ?? ''}'.toUpperCase();
+    final compactNumber = invoiceNumber.replaceAll(RegExp(r'[^A-Z0-9]+'), '');
+    return RegExp(r'^(CV|PT)ANT\d{6,}$').hasMatch(compactNumber);
+  }
+
   List<Map<String, dynamic>> _applyFilterAndLimit(
       List<Map<String, dynamic>> rows) {
     final q = _search.text.trim().toLowerCase();
     final now = DateTime.now();
-    final visibleSince = DateTime(now.year, now.month - 1, 1);
-    final filtered = rows.where((item) {
+    final incomeHistoryStart = _invoiceListIncomeHistoryStart(now);
+    final currentMonthStart = DateTime(now.year, now.month, 1);
+    final expenseVisibleSince = DateTime(now.year, now.month - 1, 1);
+    final rowGroups = <List<Map<String, dynamic>>>[];
+    List<Map<String, dynamic>>? activeIncomeGroup;
+    for (final row in rows) {
+      if ('${row['__type']}' == 'Income') {
+        activeIncomeGroup = <Map<String, dynamic>>[row];
+        rowGroups.add(activeIncomeGroup);
+        continue;
+      }
+
+      final linkedIncomeKey = '${row['__linked_income_row_key'] ?? ''}'.trim();
+      final activeIncomeKey =
+          '${activeIncomeGroup?.first['__invoice_list_row_key'] ?? activeIncomeGroup?.first['id'] ?? ''}'
+              .trim();
+      if (isInvoiceListAutoExpenseRow(row) &&
+          activeIncomeGroup != null &&
+          (linkedIncomeKey.isEmpty || linkedIncomeKey == activeIncomeKey)) {
+        activeIncomeGroup.add(row);
+        continue;
+      }
+
+      activeIncomeGroup = null;
+      rowGroups.add(<Map<String, dynamic>>[row]);
+    }
+
+    bool dateAllowed(Map<String, dynamic> item) {
       final date = Formatters.parseDate(
         item['__date'] ??
             item['tanggal_kop'] ??
@@ -1564,9 +2273,39 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
             item['created_at'],
       );
       if (date == null) return false;
-      if (date.isBefore(visibleSince) || date.isAfter(now)) return false;
-      return _matchesKeywordInAnyColumn(item, q);
-    }).toList();
+      final isIncome = '${item['__type']}' == 'Income';
+      final isReturnedIncome = _isReturnedFixedInvoiceRow(item);
+      if (isIncome && date.isBefore(incomeHistoryStart)) return false;
+      final visibleSince = isIncome ? currentMonthStart : expenseVisibleSince;
+      if (!isReturnedIncome && date.isBefore(visibleSince)) return false;
+      if (date.isAfter(now)) return false;
+      return true;
+    }
+
+    final indexedFilteredGroups =
+        <({int index, List<Map<String, dynamic>> group})>[];
+    for (var index = 0; index < rowGroups.length; index++) {
+      final group = rowGroups[index];
+      if (group.isEmpty) continue;
+      final parent = group.first;
+      if (!dateAllowed(parent)) continue;
+      if (q.isNotEmpty &&
+          !group.any((item) => _matchesKeywordInAnyColumn(item, q))) {
+        continue;
+      }
+      indexedFilteredGroups.add((index: index, group: group));
+    }
+
+    indexedFilteredGroups.sort((a, b) {
+      final aReturned = _isReturnedFixedInvoiceRow(a.group.first);
+      final bReturned = _isReturnedFixedInvoiceRow(b.group.first);
+      if (aReturned != bReturned) return aReturned ? -1 : 1;
+      return a.index.compareTo(b.index);
+    });
+
+    final filtered = indexedFilteredGroups
+        .expand((entry) => entry.group)
+        .toList(growable: false);
 
     if (_limit == 'all') {
       return filtered;
@@ -1652,6 +2391,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
           final isIncome = '${item['__type']}' == 'Income';
           final isExpandedIncomeDetail =
               item['__invoice_list_expanded_detail'] == true;
+          final isVirtualAutoExpense = item['__virtual_auto_expense'] == true;
           final isEn = LanguageController.language.value == AppLanguage.en;
           final invoiceTypeLabel = isIncome
               ? _resolveInvoiceEntityLabel(
@@ -1700,7 +2440,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
               context: context,
               color: color,
             ),
-            onPrimaryAction: isExpandedIncomeDetail
+            onPrimaryAction: isVirtualAutoExpense
                 ? null
                 : isIncome && _isPengurus
                     ? (canOpenPengurusEdit
@@ -1729,7 +2469,8 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                 ? _openInvoicePreview(item)
                 : _openExpensePreview(item),
             onSend: isIncome && !_isPengurus ? () => _sendInvoice(item) : null,
-            onDelete: !isExpandedIncomeDetail &&
+            onDelete: !isVirtualAutoExpense &&
+                    !isExpandedIncomeDetail &&
                     !(isIncome && _isPengurus && approvalStatus == 'approved')
                 ? () => _confirmDelete(
                       id: '${item['id']}',

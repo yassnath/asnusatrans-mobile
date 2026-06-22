@@ -85,6 +85,44 @@ void main() {
       );
     });
 
+    test('attaches children to expanded invoice detail row keys', () {
+      final groups = buildInvoiceListRowGroups(
+        incomeRows: const [
+          {
+            '__type': 'Income',
+            'id': 'invoice-1',
+            '__invoice_list_row_key': 'invoice-1#0',
+          },
+          {
+            '__type': 'Income',
+            'id': 'invoice-1',
+            '__invoice_list_row_key': 'invoice-1#1',
+          },
+        ],
+        expenseByIncomeId: const {
+          'invoice-1#0': [
+            {
+              '__type': 'Expense',
+              '__is_auto_gabungan': true,
+              'id': 'gabungan-0',
+            },
+          ],
+          'invoice-1#1': [
+            {
+              '__type': 'Expense',
+              '__is_auto_gabungan': true,
+              'id': 'gabungan-1',
+            },
+          ],
+        },
+        standaloneExpenses: const [],
+      );
+
+      expect(groups, hasLength(2));
+      expect(groups.first.map((row) => row['id']), ['invoice-1', 'gabungan-0']);
+      expect(groups.last.map((row) => row['id']), ['invoice-1', 'gabungan-1']);
+    });
+
     test('keeps auto sangu and Gabungan rows attached at the cutoff', () {
       final rows = <Map<String, dynamic>>[
         for (var index = 0; index < 10; index++)

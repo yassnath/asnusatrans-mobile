@@ -3,15 +3,122 @@ part of 'dashboard_page.dart';
 extension _AdminInvoiceListViewStatePreviewSupport
     on _AdminInvoiceListViewState {
   Future<void> _openInvoicePreview(Map<String, dynamic> item) async {
-    final previewItem = await _resolveLatestInvoiceItem(item);
+    final previewItem = await _resolveInvoicePreviewItem(item);
     final latestCustomerName = '${previewItem['nama_pelanggan'] ?? ''}'.trim();
     final latestIsCompanyInvoice = _resolveIsCompanyInvoice(
       invoiceEntity: previewItem['invoice_entity'],
       invoiceNumber: previewItem['no_invoice'],
       customerName: latestCustomerName,
     );
+    final armadas = await widget.repository.fetchArmadas();
+    final hargaPerTonRules = await (() async {
+      try {
+        return await widget.repository.fetchHargaPerTonRules();
+      } catch (_) {
+        return <Map<String, dynamic>>[];
+      }
+    })();
+    final regularHargaPerTonRules = hargaPerTonRules
+        .where(isRegularIncomeHargaRule)
+        .toList(growable: false);
+    final detailList = _toDetailList(previewItem['rincian']);
+
+    String firstText(Iterable<dynamic> values) {
+      for (final value in values) {
+        final text = '${value ?? ''}'.trim();
+        if (text.isNotEmpty && text != '-') return text;
+      }
+      return '';
+    }
+
+    Map<String, dynamic> applyEffectivePreviewPricing(
+      Map<String, dynamic> detail,
+    ) {
+      final row = <String, dynamic>{
+        ...previewItem,
+        ...detail,
+      };
+      for (final key in const [
+        'armada_id',
+        'armada_manual',
+        'armada_label',
+        'armada',
+        'plat_nomor',
+        'no_polisi',
+      ]) {
+        if (firstText([row[key]]).isEmpty) {
+          row[key] = previewItem[key];
+        }
+      }
+
+      final pickup = firstText([
+        detail['lokasi_muat'],
+        previewItem['lokasi_muat'],
+      ]);
+      final destination = firstText([
+        detail['lokasi_bongkar'],
+        previewItem['lokasi_bongkar'],
+      ]);
+      final cargo = firstText([detail['muatan'], previewItem['muatan']]);
+      final regularRule = _resolveHargaRuleShared(
+        rules: regularHargaPerTonRules,
+        customerName: latestCustomerName,
+        lokasiMuat: pickup,
+        lokasiBongkar: destination,
+        muatan: cargo,
+      );
+      final regularHarga = _resolveHargaPerTonValueShared(
+        regularRule,
+        muatan: cargo,
+      );
+      final effectiveRegularHarga = resolveIncomeRegularHargaForRoute(
+        regularRule: regularRule,
+        adjustedRegularHarga: regularHarga,
+        pickup: pickup,
+        destination: destination,
+      );
+      final effectiveHarga = resolveIncomeAutoHargaPerKg(
+            regularHarga: effectiveRegularHarga,
+            usesManualArmada: _usesEffectiveManualArmada(
+              row,
+              armadas: armadas,
+            ),
+            pickup: pickup,
+            destination: destination,
+            gabunganRules: hargaPerTonRules,
+          ) ??
+          _toNum(detail['harga'] ?? previewItem['harga']);
+      final tonase = _toNum(detail['tonase'] ?? previewItem['tonase']);
+      final currentHarga = _toNum(detail['harga'] ?? previewItem['harga']);
+      final currentAutoSubtotal = currentHarga > 0 && tonase > 0
+          ? roundInvoiceRupiah(currentHarga * tonase)
+          : 0.0;
+      final manualSubtotal =
+          _toNum(detail['manual_subtotal'] ?? detail['subtotal_manual']);
+      final hasProtectedManualSubtotal = manualSubtotal > 0 &&
+          (currentAutoSubtotal <= 0 ||
+              (manualSubtotal - currentAutoSubtotal).abs() > 1);
+      if (!hasProtectedManualSubtotal && effectiveHarga > 0 && tonase > 0) {
+        row['harga'] = effectiveHarga;
+        row['subtotal_auto'] = true;
+        for (final key in const [
+          'manual_subtotal',
+          'subtotal_manual',
+          'subtotal',
+          'total',
+          'total_biaya',
+          'jumlah',
+        ]) {
+          row.remove(key);
+        }
+      }
+      return row;
+    }
+
+    final effectiveDetailList =
+        detailList.map(applyEffectivePreviewPricing).toList(growable: false);
     final latestSubtotal = _resolveInvoiceDetailsExcelSubtotalShared(
-      _toDetailList(previewItem['rincian']),
+      effectiveDetailList,
       fallbackSubtotal: _toNum(previewItem['total_biaya']),
     );
     final latestDisplayTotal = latestIsCompanyInvoice
@@ -20,7 +127,6 @@ extension _AdminInvoiceListViewStatePreviewSupport
     final displayedTotal = _toNum(item['__total']);
     final shouldRefreshAfterPreview =
         displayedTotal > 0 && (displayedTotal - latestDisplayTotal).abs() > 0.5;
-    final armadas = await widget.repository.fetchArmadas();
     final armadaPlateById = buildArmadaPlateById(armadas);
     final armadaPlateByName = buildArmadaPlateByName(armadas);
     if (!mounted) return;
@@ -33,7 +139,6 @@ extension _AdminInvoiceListViewStatePreviewSupport
           520.0,
           max(300.0, MediaQuery.sizeOf(context).width - 32),
         );
-        final detailList = _toDetailList(previewItem['rincian']);
         final customerName = latestCustomerName;
         final invoiceEntityLabel = _resolveInvoiceEntityLabel(
           invoiceEntity: previewItem['invoice_entity'],
@@ -68,7 +173,7 @@ extension _AdminInvoiceListViewStatePreviewSupport
                       style: TextStyle(fontWeight: FontWeight.w700),
                     ),
                     const SizedBox(height: 6),
-                    ...detailList.asMap().entries.map((entry) {
+                    ...effectiveDetailList.asMap().entries.map((entry) {
                       final index = entry.key;
                       final row = entry.value;
                       final tonase = _toNum(row['tonase']);
@@ -172,6 +277,55 @@ extension _AdminInvoiceListViewStatePreviewSupport
     if (shouldRefreshAfterPreview && mounted) {
       await _refresh();
     }
+  }
+
+  Future<Map<String, dynamic>> _resolveInvoicePreviewItem(
+    Map<String, dynamic> item,
+  ) async {
+    final latest = await _resolveLatestInvoiceItem(item);
+    if (item['__invoice_list_expanded_detail'] != true) return latest;
+
+    final detailList = _toDetailList(item['rincian']);
+    if (detailList.isEmpty) return latest;
+
+    final preserved = <String, dynamic>{
+      ...latest,
+      'rincian': [Map<String, dynamic>.from(detailList.first)],
+    };
+
+    for (final entry in item.entries) {
+      final key = entry.key.toString();
+      if (key.startsWith('__')) {
+        preserved[key] = entry.value;
+      }
+    }
+
+    for (final key in const [
+      'tanggal',
+      'armada_start_date',
+      'armada_end_date',
+      'lokasi_muat',
+      'lokasi_bongkar',
+      'muatan',
+      'nama_supir',
+      'armada_id',
+      'armada_manual',
+      'armada_label',
+      'armada',
+      'plat_nomor',
+      'no_polisi',
+      'tonase',
+      'harga',
+      'total_biaya',
+      'pph',
+      'total_bayar',
+    ]) {
+      if (item.containsKey(key)) {
+        preserved[key] = item[key];
+      }
+    }
+
+    return preserved;
   }
 
   String _resolveInvoiceEntity({

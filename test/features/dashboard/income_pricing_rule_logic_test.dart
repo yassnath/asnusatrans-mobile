@@ -76,6 +76,31 @@ void main() {
       expect(rule?['flat_total'], isNull);
     });
 
+    test('returns regular listed-fleet Bricon Mojo fallback rule', () {
+      final rule = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'T. Langon',
+        destination: 'bricon mojo',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule?['lokasi_muat'], 'Selain Betoyo');
+      expect(rule?['lokasi_bongkar'], 'Bricon Mojo');
+      expect(rule?['harga_per_ton'], 55.0);
+      expect(rule?['flat_total'], isNull);
+    });
+
+    test('keeps Wings Driyo to T. Langon listed-fleet price at 45', () {
+      final rule = resolveBuiltInIncomePricingRule(
+        customerName: 'Hengky',
+        pickup: 'Wings Driyo',
+        destination: 'T. Langon',
+      );
+
+      expect(rule, isNotNull);
+      expect(rule?['harga_per_ton'], 45.0);
+    });
+
     test('returns built-in Bumindo fallback rule', () {
       final rule = resolveBuiltInIncomePricingRule(
         customerName: 'Siapa Saja',
@@ -344,10 +369,20 @@ void main() {
         pickup: 'Maspion',
         destination: 'bEnOwO',
       );
+      final nonBetoyoIndostar = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'T. Langon',
+        destination: 'iNdOsTaR',
+      );
       final betoyoBenowo = resolveBuiltInIncomePricingRule(
         customerName: 'Siapa Saja',
         pickup: 'Betoyo',
         destination: 'Benowo',
+      );
+      final betoyoIndostar = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'Betoyo',
+        destination: 'Indostar',
       );
 
       expect(driyoLangon?['lokasi_muat'], 'Driyo');
@@ -357,7 +392,11 @@ void main() {
       expect(nonBetoyoDriyo?['harga_per_ton'], 45.0);
       expect(nonBetoyoBenowo?['lokasi_muat'], 'Selain Betoyo');
       expect(nonBetoyoBenowo?['harga_per_ton'], 35.0);
+      expect(nonBetoyoIndostar?['lokasi_muat'], 'Selain Betoyo');
+      expect(nonBetoyoIndostar?['lokasi_bongkar'], 'Indostar');
+      expect(nonBetoyoIndostar?['harga_per_ton'], 88.0);
       expect(betoyoBenowo, isNull);
+      expect(betoyoIndostar, isNull);
     });
 
     test('returns regular Manyar Mie Sedap and Wings route pricing', () {
