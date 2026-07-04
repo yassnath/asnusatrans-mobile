@@ -27,6 +27,14 @@ String normalizeSanguPlace(String value) {
   }
   if (normalized.contains('mojosari')) return 'mojosari';
   if (normalized.contains('mojoagung')) return 'mojoagung';
+  if (normalized.contains('sawah')) return 'sawah';
+  if (normalized.contains('gangsir')) return 'gangsir';
+  if (normalized.contains('kepatihan')) return 'kepatihan';
+  if (normalized.contains('blitar')) return 'blitar';
+  if (normalized == 'apk') return 'apk';
+  if (normalized.contains('delta') && normalized.contains('mas')) {
+    return 'delta mas';
+  }
   if (normalized.contains('bricon') && normalized.contains('mojo')) {
     return 'bricon';
   }
@@ -497,6 +505,20 @@ Map<String, dynamic>? resolvePrioritizedSanguRouteRule({
     };
   }
 
+  final nonBetoyoToBriconMojo = pickupNorm.isNotEmpty &&
+      !sanguIsBetoyoPlace(pickupNorm) &&
+      destinationNorm == 'bricon';
+  if (nonBetoyoToBriconMojo) {
+    return <String, dynamic>{
+      'tempat': 'SELAIN BETOYO - BRICON MOJO',
+      'lokasi_muat': 'Selain Betoyo',
+      'lokasi_bongkar': 'BRICON MOJO',
+      'nominal': 750000,
+      '__muat_norm': 'selain betoyo',
+      '__bongkar_norm': 'bricon',
+    };
+  }
+
   final nonBetoyoToMojosari = pickupNorm.isNotEmpty &&
       !sanguIsBetoyoPlace(pickupNorm) &&
       destinationNorm == 'mojosari';
@@ -508,6 +530,102 @@ Map<String, dynamic>? resolvePrioritizedSanguRouteRule({
       'nominal': 690000,
       '__muat_norm': 'selain betoyo',
       '__bongkar_norm': 'mojosari',
+    };
+  }
+
+  final nonBetoyoToKepatihan = pickupNorm.isNotEmpty &&
+      !sanguIsBetoyoPlace(pickupNorm) &&
+      destinationNorm == 'kepatihan';
+  if (nonBetoyoToKepatihan) {
+    return <String, dynamic>{
+      'tempat': 'SELAIN BETOYO - KEPATIHAN',
+      'lokasi_muat': 'Selain Betoyo',
+      'lokasi_bongkar': 'KEPATIHAN',
+      'nominal': 400000,
+      '__muat_norm': 'selain betoyo',
+      '__bongkar_norm': 'kepatihan',
+    };
+  }
+
+  final betoyoToSawah =
+      sanguIsBetoyoPlace(pickupNorm) && destinationNorm == 'sawah';
+  if (betoyoToSawah) {
+    return <String, dynamic>{
+      'tempat': 'BETOYO - T. SAWAH',
+      'lokasi_muat': 'BETOYO',
+      'lokasi_bongkar': 'T. SAWAH',
+      'nominal': 575000,
+      '__muat_norm': 'betoyo',
+      '__bongkar_norm': 'sawah',
+    };
+  }
+
+  final nonBetoyoToSawah = pickupNorm.isNotEmpty &&
+      !sanguIsBetoyoPlace(pickupNorm) &&
+      destinationNorm == 'sawah';
+  if (nonBetoyoToSawah) {
+    return <String, dynamic>{
+      'tempat': 'SELAIN BETOYO - T. SAWAH',
+      'lokasi_muat': 'Selain Betoyo',
+      'lokasi_bongkar': 'T. SAWAH',
+      'nominal': 575000,
+      '__muat_norm': 'selain betoyo',
+      '__bongkar_norm': 'sawah',
+    };
+  }
+
+  final betoyoToGangsir =
+      sanguIsBetoyoPlace(pickupNorm) && destinationNorm == 'gangsir';
+  if (betoyoToGangsir) {
+    return <String, dynamic>{
+      'tempat': 'BETOYO - G. GANGSIR',
+      'lokasi_muat': 'BETOYO',
+      'lokasi_bongkar': 'G. GANGSIR',
+      'nominal': 690000,
+      '__muat_norm': 'betoyo',
+      '__bongkar_norm': 'gangsir',
+    };
+  }
+
+  final nonBetoyoToGangsir = pickupNorm.isNotEmpty &&
+      !sanguIsBetoyoPlace(pickupNorm) &&
+      destinationNorm == 'gangsir';
+  if (nonBetoyoToGangsir) {
+    return <String, dynamic>{
+      'tempat': 'SELAIN BETOYO - G. GANGSIR',
+      'lokasi_muat': 'Selain Betoyo',
+      'lokasi_bongkar': 'G. GANGSIR',
+      'nominal': 690000,
+      '__muat_norm': 'selain betoyo',
+      '__bongkar_norm': 'gangsir',
+    };
+  }
+
+  final nonBetoyoToApk = pickupNorm.isNotEmpty &&
+      !sanguIsBetoyoPlace(pickupNorm) &&
+      destinationNorm == 'apk';
+  if (nonBetoyoToApk) {
+    return <String, dynamic>{
+      'tempat': 'SELAIN BETOYO - APK',
+      'lokasi_muat': 'Selain Betoyo',
+      'lokasi_bongkar': 'APK',
+      'nominal': 1725000,
+      '__muat_norm': 'selain betoyo',
+      '__bongkar_norm': 'apk',
+    };
+  }
+
+  final nonBetoyoToDeltaMas = pickupNorm.isNotEmpty &&
+      !sanguIsBetoyoPlace(pickupNorm) &&
+      destinationNorm == 'delta mas';
+  if (nonBetoyoToDeltaMas) {
+    return <String, dynamic>{
+      'tempat': 'SELAIN BETOYO - DELTA MAS',
+      'lokasi_muat': 'Selain Betoyo',
+      'lokasi_bongkar': 'DELTA MAS',
+      'nominal': 1265000,
+      '__muat_norm': 'selain betoyo',
+      '__bongkar_norm': 'delta mas',
     };
   }
 

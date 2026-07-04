@@ -19,6 +19,12 @@ void main() {
       expect(normalizeSanguPlace('Mie Sedap'), 'manyar_mie_sedap');
       expect(normalizeSanguPlace('WiNgS'), 'wings');
       expect(normalizeSanguPlace('MoJoSaRi'), 'mojosari');
+      expect(normalizeSanguPlace('t. SAWAH'), 'sawah');
+      expect(normalizeSanguPlace('G. Gangsir'), 'gangsir');
+      expect(normalizeSanguPlace('KePaTiHaN'), 'kepatihan');
+      expect(normalizeSanguPlace('bLiTaR'), 'blitar');
+      expect(normalizeSanguPlace('apk'), 'apk');
+      expect(normalizeSanguPlace('Delta Mas'), 'delta mas');
       expect(
         normalizeSanguPlace('Surya Warna / Sukoharjo'),
         'surya warna sukoharjo',
@@ -218,6 +224,10 @@ void main() {
         pickup: 'T. Langon',
         destination: 'iNdO Star',
       );
+      final nonBetoyoBriconMojo = resolvePrioritizedSanguRouteRule(
+        pickup: 'T. Langon',
+        destination: 'bRiCoN mOjO',
+      );
       final nonBetoyoMojosari = resolvePrioritizedSanguRouteRule(
         pickup: 'T. Langon',
         destination: 'mOjOsArI',
@@ -241,11 +251,65 @@ void main() {
       expect(nonBetoyoIndostar?['nominal'], 1035000);
       expect(nonBetoyoIndostar?['lokasi_muat'], 'Selain Betoyo');
       expect(nonBetoyoIndostar?['lokasi_bongkar'], 'INDOSTAR');
+      expect(nonBetoyoBriconMojo?['nominal'], 750000);
+      expect(nonBetoyoBriconMojo?['lokasi_muat'], 'Selain Betoyo');
+      expect(nonBetoyoBriconMojo?['lokasi_bongkar'], 'BRICON MOJO');
       expect(nonBetoyoMojosari?['nominal'], 690000);
       expect(nonBetoyoMojosari?['lokasi_muat'], 'Selain Betoyo');
       expect(nonBetoyoMojosari?['lokasi_bongkar'], 'MOJOSARI');
       expect(betoyoBenowo, isNull);
       expect(betoyoIndostar, isNull);
+    });
+
+    test('prioritizes new Sawah, Gangsir, APK, and Delta Mas routes', () {
+      final betoyoSawah = resolvePrioritizedSanguRouteRule(
+        pickup: 'Betoyo',
+        destination: 't. SAWAH',
+      );
+      final nonBetoyoSawah = resolvePrioritizedSanguRouteRule(
+        pickup: 'T. Langon',
+        destination: 'Sawah',
+      );
+      final gangsir = resolvePrioritizedSanguRouteRule(
+        pickup: 'Maspion',
+        destination: 'g. GANGSIR',
+      );
+      final betoyoGangsir = resolvePrioritizedSanguRouteRule(
+        pickup: 'Betoyo',
+        destination: 'g. GANGSIR',
+      );
+      final kepatihan = resolvePrioritizedSanguRouteRule(
+        pickup: 'T. Langon',
+        destination: 'KePaTiHaN',
+      );
+      final betoyoBlitar = resolvePrioritizedSanguRouteRule(
+        pickup: 'Betoyo',
+        destination: 'Blitar',
+      );
+      final apk = resolvePrioritizedSanguRouteRule(
+        pickup: 'Legundi',
+        destination: 'ApK',
+      );
+      final deltaMas = resolvePrioritizedSanguRouteRule(
+        pickup: 'T. Langon',
+        destination: 'delta mas',
+      );
+
+      expect(betoyoSawah?['nominal'], 575000);
+      expect(betoyoSawah?['lokasi_muat'], 'BETOYO');
+      expect(nonBetoyoSawah?['nominal'], 575000);
+      expect(nonBetoyoSawah?['lokasi_muat'], 'Selain Betoyo');
+      expect(gangsir?['nominal'], 690000);
+      expect(gangsir?['lokasi_bongkar'], 'G. GANGSIR');
+      expect(betoyoGangsir?['nominal'], 690000);
+      expect(betoyoGangsir?['lokasi_muat'], 'BETOYO');
+      expect(kepatihan?['nominal'], 400000);
+      expect(kepatihan?['lokasi_bongkar'], 'KEPATIHAN');
+      expect(betoyoBlitar, isNull);
+      expect(apk?['nominal'], 1725000);
+      expect(apk?['lokasi_bongkar'], 'APK');
+      expect(deltaMas?['nominal'], 1265000);
+      expect(deltaMas?['lokasi_bongkar'], 'DELTA MAS');
     });
 
     test('prioritizes Manyar Mie Sedap and Wings routes case-insensitively',

@@ -15,7 +15,7 @@ extension _AdminInvoiceListPrintSelector on _AdminInvoiceListViewState {
         ? await _loadFixedInvoiceIds()
         : await _loadLocalFixedInvoiceIds();
 
-    final allPrintableIncomes = await (() async {
+    final rawPrintableIncomes = await (() async {
       try {
         return cloneMapRows(await widget.repository.fetchInvoices());
       } catch (_) {
@@ -57,12 +57,20 @@ extension _AdminInvoiceListPrintSelector on _AdminInvoiceListViewState {
         return <Map<String, dynamic>>[];
       }
     })();
-    for (var index = 0; index < allPrintableIncomes.length; index++) {
-      allPrintableIncomes[index] = _applyRegularInvoicePricingForPrintItem(
-        allPrintableIncomes[index],
+    for (var index = 0; index < rawPrintableIncomes.length; index++) {
+      rawPrintableIncomes[index] = _applyRegularInvoicePricingForPrintItem(
+        rawPrintableIncomes[index],
         hargaPerTonRules: printHargaPerTonRules,
       );
     }
+    final allPrintableIncomes = expandInvoicePrintSelectorRows(
+      rawPrintableIncomes,
+    ).where((item) {
+      final id = '${item['id'] ?? ''}'.trim();
+      final fixedIdentity = invoiceFixedIdentityForRow(item);
+      return !((id.isNotEmpty && fixedIds.contains(id)) ||
+          (fixedIdentity.isNotEmpty && fixedIds.contains(fixedIdentity)));
+    }).toList(growable: false);
 
     List<DateTime> resolveDepartureDates(Map<String, dynamic> item) {
       final dates = <DateTime>[];
@@ -127,10 +135,9 @@ extension _AdminInvoiceListPrintSelector on _AdminInvoiceListViewState {
       String selectedKind,
     ) {
       if (selectedKind == 'all') return true;
-      final entity = _resolveInvoiceEntity(
-        invoiceNumber: item['no_invoice'],
-        customerName: item['nama_pelanggan'],
-        invoiceEntity: item['invoice_entity'],
+      final entity = _resolveInvoiceEntityWithSpecialRules(
+        item,
+        details: _toDetailList(item['rincian']),
       );
       switch (selectedKind) {
         case Formatters.invoiceEntityCvAnt:
@@ -342,10 +349,11 @@ extension _AdminInvoiceListPrintSelector on _AdminInvoiceListViewState {
                           return const SizedBox.shrink();
                         }
                         final customer = '${item['nama_pelanggan'] ?? '-'}';
-                        final modeLabel = _resolveInvoiceEntityLabel(
-                          invoiceEntity: item['invoice_entity'],
-                          invoiceNumber: item['no_invoice'],
-                          customerName: item['nama_pelanggan'],
+                        final modeLabel = Formatters.invoiceEntityLabel(
+                          _resolveInvoiceEntityWithSpecialRules(
+                            item,
+                            details: _toDetailList(item['rincian']),
+                          ),
                         );
                         final departureLines =
                             buildDepartureSummaryForItems(group.items)
@@ -525,6 +533,51 @@ extension _AdminInvoiceListPrintSelector on _AdminInvoiceListViewState {
           final bDate = resolveInvoiceDepartureSortDate(b);
           return bDate.compareTo(aDate);
         });
+    }
+
+    Future<Map<String, dynamic>> resolveLatestPrintableItem(
+      Map<String, dynamic> item,
+    ) async {
+      final invoiceId =
+          '${item['__source_invoice_id'] ?? item['id'] ?? ''}'.trim();
+      if (invoiceId.isEmpty) return item;
+      try {
+        final latest = await widget.repository.fetchInvoiceById(invoiceId);
+        if (latest == null || latest.isEmpty) return item;
+        final pricedLatest = _applyRegularInvoicePricingForPrintItem(
+          Map<String, dynamic>.from(latest),
+          hargaPerTonRules: printHargaPerTonRules,
+        );
+        if (item['__invoice_list_expanded_detail'] != true) {
+          return pricedLatest;
+        }
+
+        final wantedDetailIndex = int.tryParse(
+          '${item['__detail_index'] ?? ''}'.trim(),
+        );
+        if (wantedDetailIndex == null) return item;
+        final expandedLatest = expandInvoicePrintSelectorRows([pricedLatest]);
+        for (final row in expandedLatest) {
+          final rowDetailIndex = int.tryParse(
+            '${row['__detail_index'] ?? ''}'.trim(),
+          );
+          if (row['__invoice_list_expanded_detail'] == true &&
+              rowDetailIndex == wantedDetailIndex) {
+            final resolved = Map<String, dynamic>.from(row);
+            resolved['__print_selector_key'] = invoicePrintSelectorRowKey(item);
+            return resolved;
+          }
+        }
+        return item;
+      } catch (_) {
+        return item;
+      }
+    }
+
+    Future<List<Map<String, dynamic>>> resolveLatestPrintableItems(
+      Iterable<Map<String, dynamic>> items,
+    ) {
+      return Future.wait(items.map(resolveLatestPrintableItem));
     }
 
     if (!mounted) return;
@@ -731,7 +784,7 @@ extension _AdminInvoiceListPrintSelector on _AdminInvoiceListViewState {
                                     color: AppColors.divider(context)),
                                 itemBuilder: (context, index) {
                                   final item = rows[index];
-                                  final id = '${item['id'] ?? ''}'.trim();
+                                  final id = invoicePrintSelectorRowKey(item);
                                   final checked = selectedIds.contains(id);
                                   final customer =
                                       '${item['nama_pelanggan'] ?? '-'}';
@@ -796,10 +849,10 @@ extension _AdminInvoiceListPrintSelector on _AdminInvoiceListViewState {
                       );
                       return;
                     }
-                    final selected = await _resolveLatestInvoiceItems(
+                    final selected = await resolveLatestPrintableItems(
                       allPrintableIncomes
-                          .where((item) =>
-                              selectedIds.contains('${item['id'] ?? ''}'))
+                          .where((item) => selectedIds
+                              .contains(invoicePrintSelectorRowKey(item)))
                           .cast<Map<String, dynamic>>(),
                     );
                     final selectedGroups = _buildInvoicePrintGroups(selected);
@@ -840,7 +893,7 @@ extension _AdminInvoiceListPrintSelector on _AdminInvoiceListViewState {
                                 ? editedKopLocation
                                 : '${baseItem['lokasi_kop'] ?? ''}'.trim();
                         final fixedInvoiceIds = group.items
-                            .map((item) => '${item['id'] ?? ''}'.trim())
+                            .map(invoiceFixedIdentityForRow)
                             .where((id) => id.isNotEmpty)
                             .toList();
                         final groupPrintMetaUpdates = <Map<String, String?>>[];

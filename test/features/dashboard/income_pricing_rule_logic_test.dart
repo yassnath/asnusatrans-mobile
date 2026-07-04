@@ -118,6 +118,74 @@ void main() {
       expect(rule?['flat_total'], isNull);
     });
 
+    test('returns new regular route prices case-insensitively', () {
+      final betoyoSawah = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'Betoyo',
+        destination: 't. SAWAH',
+      );
+      final nonBetoyoSawah = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'T. Langon',
+        destination: 'Sawah',
+      );
+      final gangsir = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'T. Langon',
+        destination: 'g. GaNgSiR',
+      );
+      final betoyoGangsir = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'bEtOyO',
+        destination: 'g. GaNgSiR',
+      );
+      final kepatihan = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'T. Langon',
+        destination: 'KePaTiHaN',
+      );
+      final betoyoBlitar = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'Betoyo',
+        destination: 'bLiTaR',
+      );
+      final apk = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'Maspion',
+        destination: 'apk',
+      );
+      final deltaMas = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'Legundi',
+        destination: 'DELTA MAS',
+      );
+      final sgm = resolveBuiltInIncomePricingRule(
+        customerName: 'Siapa Saja',
+        pickup: 'T. Langon',
+        destination: 'sGm',
+      );
+
+      expect(betoyoSawah?['lokasi_muat'], 'Betoyo');
+      expect(betoyoSawah?['harga_per_ton'], 55.0);
+      expect(nonBetoyoSawah?['lokasi_muat'], 'Selain Betoyo');
+      expect(nonBetoyoSawah?['harga_per_ton'], 57.0);
+      expect(gangsir?['lokasi_bongkar'], 'G. Gangsir');
+      expect(gangsir?['harga_per_ton'], 55.0);
+      expect(betoyoGangsir?['lokasi_muat'], 'Betoyo');
+      expect(betoyoGangsir?['harga_per_ton'], 60.0);
+      expect(kepatihan?['lokasi_bongkar'], 'Kepatihan');
+      expect(kepatihan?['harga_per_ton'], 35.0);
+      expect(betoyoBlitar?['lokasi_muat'], 'Betoyo');
+      expect(betoyoBlitar?['lokasi_bongkar'], 'Blitar');
+      expect(betoyoBlitar?['harga_per_ton'], 125.0);
+      expect(apk?['lokasi_bongkar'], 'APK');
+      expect(apk?['harga_per_ton'], 120.0);
+      expect(deltaMas?['lokasi_bongkar'], 'Delta Mas');
+      expect(deltaMas?['harga_per_ton'], 100.0);
+      expect(sgm?['lokasi_bongkar'], 'SGM');
+      expect(sgm?['harga_per_ton'], 43.0);
+    });
+
     test('keeps Wings Driyo to T. Langon listed-fleet price at 45', () {
       final rule = resolveBuiltInIncomePricingRule(
         customerName: 'Hengky',

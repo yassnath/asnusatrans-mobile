@@ -703,9 +703,14 @@ List<_FixedInvoiceBatch> _buildLegacyFixedInvoiceBatchesFromInvoices({
   final result = <_FixedInvoiceBatch>[];
   for (final invoice in invoices) {
     final invoiceId = '${invoice['id'] ?? ''}'.trim();
-    if (invoiceId.isEmpty ||
-        !fixedIds.contains(invoiceId) ||
-        consumedInvoiceIds.contains(invoiceId)) {
+    final matchingFixedIds = fixedIds
+        .map((id) => id.trim())
+        .where((id) =>
+            id.isNotEmpty &&
+            invoiceFixedSourceId(id) == invoiceId &&
+            !consumedInvoiceIds.contains(id))
+        .toList(growable: false);
+    if (invoiceId.isEmpty || matchingFixedIds.isEmpty) {
       continue;
     }
     final rawInvoiceNumber = '${invoice['no_invoice'] ?? ''}'.trim();
@@ -722,32 +727,35 @@ List<_FixedInvoiceBatch> _buildLegacyFixedInvoiceBatchesFromInvoices({
             );
             return normalized == '-' ? rawInvoiceNumber : normalized;
           })();
-    result.add(
-      _FixedInvoiceBatch(
-        batchId: 'legacy_$invoiceId',
-        invoiceIds: <String>[invoiceId],
-        invoiceNumber: normalizedInvoiceNumber,
-        customerName: customerName,
-        kopDate: kopDate.isEmpty ? null : kopDate,
-        kopLocation: '${invoice['lokasi_kop'] ?? ''}'.trim().isEmpty
-            ? null
-            : '${invoice['lokasi_kop'] ?? ''}'.trim(),
-        status: '${invoice['status'] ?? 'Unpaid'}'.trim().isEmpty
-            ? 'Unpaid'
-            : '${invoice['status'] ?? 'Unpaid'}'.trim(),
-        paidAt: '${invoice['paid_at'] ?? ''}'.trim().isEmpty
-            ? null
-            : '${invoice['paid_at'] ?? ''}'.trim(),
-        createdAt: '${invoice['created_at'] ?? ''}'.trim().isEmpty
-            ? DateTime.now().toIso8601String()
-            : '${invoice['created_at'] ?? ''}'.trim(),
-        updatedAt: '${invoice['updated_at'] ?? invoice['created_at'] ?? ''}'
-                .trim()
-                .isEmpty
-            ? null
-            : '${invoice['updated_at'] ?? invoice['created_at'] ?? ''}'.trim(),
-      ),
-    );
+    for (final fixedId in matchingFixedIds) {
+      result.add(
+        _FixedInvoiceBatch(
+          batchId: 'legacy_$fixedId',
+          invoiceIds: <String>[fixedId],
+          invoiceNumber: normalizedInvoiceNumber,
+          customerName: customerName,
+          kopDate: kopDate.isEmpty ? null : kopDate,
+          kopLocation: '${invoice['lokasi_kop'] ?? ''}'.trim().isEmpty
+              ? null
+              : '${invoice['lokasi_kop'] ?? ''}'.trim(),
+          status: '${invoice['status'] ?? 'Unpaid'}'.trim().isEmpty
+              ? 'Unpaid'
+              : '${invoice['status'] ?? 'Unpaid'}'.trim(),
+          paidAt: '${invoice['paid_at'] ?? ''}'.trim().isEmpty
+              ? null
+              : '${invoice['paid_at'] ?? ''}'.trim(),
+          createdAt: '${invoice['created_at'] ?? ''}'.trim().isEmpty
+              ? DateTime.now().toIso8601String()
+              : '${invoice['created_at'] ?? ''}'.trim(),
+          updatedAt: '${invoice['updated_at'] ?? invoice['created_at'] ?? ''}'
+                  .trim()
+                  .isEmpty
+              ? null
+              : '${invoice['updated_at'] ?? invoice['created_at'] ?? ''}'
+                  .trim(),
+        ),
+      );
+    }
   }
   return result;
 }
@@ -767,6 +775,108 @@ String _resolveInvoiceEntityShared({
     customerName: customerName,
     isCompany: fallback,
   );
+}
+
+String _normalizeSpecialInvoiceRuleText(dynamic value) {
+  return '${value ?? ''}'
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+}
+
+bool _isTritunggalMakmurAbadhiSejahteraCustomer(dynamic value) {
+  final normalized = _normalizeSpecialInvoiceRuleText(value);
+  return normalized.contains('tritunggal') &&
+      normalized.contains('makmur') &&
+      normalized.contains('abadhi') &&
+      normalized.contains('sejahtera');
+}
+
+bool _isUnergiIntiPersadaCustomer(dynamic value) {
+  final normalized = _normalizeSpecialInvoiceRuleText(value);
+  return normalized.contains('unergi') &&
+      normalized.contains('inti') &&
+      normalized.contains('persada');
+}
+
+bool _isPareOrApkDestination(dynamic value) {
+  final normalized = _normalizeSpecialInvoiceRuleText(value);
+  final compact = normalized.replaceAll(' ', '');
+  return compact == 'pare' || compact == 'apk';
+}
+
+bool _isSpecialNumberedPersonalInvoice(
+  Map<String, dynamic> item, {
+  Iterable<Map<String, dynamic>> details = const <Map<String, dynamic>>[],
+}) {
+  final customerName = '${item['nama_pelanggan'] ?? item['__customer'] ?? ''}';
+  final isTritunggal = _isTritunggalMakmurAbadhiSejahteraCustomer(customerName);
+  final isUnergi = _isUnergiIntiPersadaCustomer(customerName);
+  if (!isTritunggal && !isUnergi) {
+    return false;
+  }
+
+  bool rowQualifies(Map<String, dynamic> row) {
+    final destination =
+        row['lokasi_bongkar'] ?? row['__bongkar'] ?? row['__tujuan'];
+    if (isTritunggal && _isPareOrApkDestination(destination)) {
+      return true;
+    }
+
+    final departureDate = Formatters.parseDate(
+      row['armada_start_date'] ?? row['tanggal'],
+    );
+    if (!isTritunggalSpecialPersonalDepartureDate(departureDate)) {
+      return false;
+    }
+    return isUnergi;
+  }
+
+  final detailRows = details.toList(growable: false);
+  if (detailRows.any(rowQualifies)) return true;
+
+  final rawDetails = item['rincian'];
+  if (rawDetails is List &&
+      rawDetails
+          .whereType<Map>()
+          .map((detail) => Map<String, dynamic>.from(detail))
+          .any(rowQualifies)) {
+    return true;
+  }
+
+  if (rowQualifies(item)) return true;
+
+  final batchItems = item['__batch_items'];
+  return batchItems is List &&
+      batchItems.whereType<Map>().any(
+            (batchItem) => _isSpecialNumberedPersonalInvoice(
+              Map<String, dynamic>.from(batchItem),
+            ),
+          );
+}
+
+String _resolveInvoiceEntityWithSpecialRules(
+  Map<String, dynamic> item, {
+  Iterable<Map<String, dynamic>> details = const <Map<String, dynamic>>[],
+}) {
+  if (_isSpecialNumberedPersonalInvoice(item, details: details)) {
+    return Formatters.invoiceEntityPersonal;
+  }
+  return _resolveInvoiceEntityShared(
+    invoiceEntity: item['invoice_entity'],
+    invoiceNumber: item['no_invoice'],
+    customerName: item['nama_pelanggan'],
+  );
+}
+
+String _resolveSpecialInvoiceSignatureName(
+  Map<String, dynamic> item, {
+  Iterable<Map<String, dynamic>> details = const <Map<String, dynamic>>[],
+}) {
+  return _isSpecialNumberedPersonalInvoice(item, details: details)
+      ? 'R U D I'
+      : 'A N T O K';
 }
 
 bool _resolveIsCompanyInvoiceShared({

@@ -272,7 +272,12 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
     final legacyBatches = legacyIds.isEmpty
         ? const <_FixedInvoiceBatch>[]
         : _buildLegacyFixedInvoiceBatchesFromInvoices(
-            invoices: await widget.repository.fetchInvoicesByIds(legacyIds),
+            invoices: await widget.repository.fetchInvoicesByIds(
+              legacyIds
+                  .map(invoiceFixedSourceId)
+                  .where((id) => id.isNotEmpty)
+                  .toSet(),
+            ),
             fixedIds: legacyIds,
             existingBatches: <_FixedInvoiceBatch>[
               ...localBatches,
@@ -1496,24 +1501,20 @@ class _AdminFixedInvoiceViewState extends State<_AdminFixedInvoiceView> {
     final rows = <Map<String, dynamic>>[];
 
     final invoiceIdsToFetch = <String>{
-      ...localIds,
-      for (final batch in batches) ...batch.invoiceIds,
-    };
+      ...localIds.map(invoiceFixedSourceId),
+      for (final batch in batches)
+        ...batch.invoiceIds.map(invoiceFixedSourceId),
+    }.where((id) => id.isNotEmpty).toSet();
     final invoices =
         await widget.repository.fetchInvoicesByIds(invoiceIdsToFetch);
-    final invoiceById = <String, Map<String, dynamic>>{
-      for (final item in invoices)
-        '${item['id'] ?? ''}'.trim(): Map<String, dynamic>.from(item),
-    };
 
     if (batches.isEmpty) return <Map<String, dynamic>>[];
 
     for (final batch in batches) {
-      final batchItems = batch.invoiceIds
-          .map((id) => invoiceById[id])
-          .whereType<Map<String, dynamic>>()
-          .map((row) => Map<String, dynamic>.from(row))
-          .toList();
+      final batchItems = resolveFixedInvoiceSourceRows(
+        fixedIds: batch.invoiceIds,
+        sourceInvoices: invoices,
+      ).map((row) => Map<String, dynamic>.from(row)).toList();
       if (batchItems.isEmpty) continue;
       final total = _fixedInvoiceBatchExcelTotal(batchItems);
       final paymentSummary = _summarizeFixedInvoicePayments(

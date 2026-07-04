@@ -507,6 +507,123 @@ Map<String, dynamic>? resolveBuiltInIncomePricingRule({
     };
   }
 
+  if (incomePricingLocationKeyMatches(pickupKey, 'betoyo') &&
+      incomePricingLocationKeyMatches(destinationKey, 't sawah')) {
+    return <String, dynamic>{
+      'customer_name': null,
+      'lokasi_muat': 'Betoyo',
+      'lokasi_bongkar': 'T. Sawah',
+      'harga_per_ton': 55.0,
+      'flat_total': null,
+      'priority': 155,
+      'is_active': true,
+    };
+  }
+
+  if (incomePricingLocationKeyMatches(pickupKey, 'betoyo') &&
+      incomePricingLocationKeyMatches(destinationKey, 'g gangsir')) {
+    return <String, dynamic>{
+      'customer_name': null,
+      'lokasi_muat': 'Betoyo',
+      'lokasi_bongkar': 'G. Gangsir',
+      'harga_per_ton': 60.0,
+      'flat_total': null,
+      'priority': 155,
+      'is_active': true,
+    };
+  }
+
+  if (incomePricingLocationKeyMatches(pickupKey, 'betoyo') &&
+      incomePricingLocationKeyMatches(destinationKey, 'blitar')) {
+    return <String, dynamic>{
+      'customer_name': null,
+      'lokasi_muat': 'Betoyo',
+      'lokasi_bongkar': 'Blitar',
+      'harga_per_ton': 125.0,
+      'flat_total': null,
+      'priority': 155,
+      'is_active': true,
+    };
+  }
+
+  if (!pickupIsBetoyo &&
+      incomePricingLocationKeyMatches(destinationKey, 't sawah')) {
+    return <String, dynamic>{
+      'customer_name': null,
+      'lokasi_muat': 'Selain Betoyo',
+      'lokasi_bongkar': 'T. Sawah',
+      'harga_per_ton': 57.0,
+      'flat_total': null,
+      'priority': 150,
+      'is_active': true,
+    };
+  }
+
+  if (!pickupIsBetoyo &&
+      incomePricingLocationKeyMatches(destinationKey, 'kepatihan')) {
+    return <String, dynamic>{
+      'customer_name': null,
+      'lokasi_muat': 'Selain Betoyo',
+      'lokasi_bongkar': 'Kepatihan',
+      'harga_per_ton': 35.0,
+      'flat_total': null,
+      'priority': 150,
+      'is_active': true,
+    };
+  }
+
+  if (!pickupIsBetoyo &&
+      incomePricingLocationKeyMatches(destinationKey, 'g gangsir')) {
+    return <String, dynamic>{
+      'customer_name': null,
+      'lokasi_muat': 'Selain Betoyo',
+      'lokasi_bongkar': 'G. Gangsir',
+      'harga_per_ton': 55.0,
+      'flat_total': null,
+      'priority': 150,
+      'is_active': true,
+    };
+  }
+
+  if (!pickupIsBetoyo &&
+      incomePricingLocationKeyMatches(destinationKey, 'apk')) {
+    return <String, dynamic>{
+      'customer_name': null,
+      'lokasi_muat': 'Selain Betoyo',
+      'lokasi_bongkar': 'APK',
+      'harga_per_ton': 120.0,
+      'flat_total': null,
+      'priority': 150,
+      'is_active': true,
+    };
+  }
+
+  if (!pickupIsBetoyo &&
+      incomePricingLocationKeyMatches(destinationKey, 'delta mas')) {
+    return <String, dynamic>{
+      'customer_name': null,
+      'lokasi_muat': 'Selain Betoyo',
+      'lokasi_bongkar': 'Delta Mas',
+      'harga_per_ton': 100.0,
+      'flat_total': null,
+      'priority': 150,
+      'is_active': true,
+    };
+  }
+
+  if (!pickupIsBetoyo &&
+      incomePricingLocationKeyMatches(destinationKey, 'sgm')) {
+    return <String, dynamic>{
+      'customer_name': null,
+      'lokasi_muat': 'Selain Betoyo',
+      'lokasi_bongkar': 'SGM',
+      'harga_per_ton': 43.0,
+      'flat_total': null,
+      'priority': 150,
+      'is_active': true,
+    };
+  }
+
   if (!pickupIsBetoyo &&
       incomePricingLocationKeyMatches(destinationKey, 'indostar')) {
     return <String, dynamic>{

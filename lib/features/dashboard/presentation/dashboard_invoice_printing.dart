@@ -136,17 +136,12 @@ List<Map<String, dynamic>> _expandInvoicePrintDetailsForPdf(
 
   final baseItem = Map<String, dynamic>.from(sourceItems.first);
   final mergedDetails = _expandInvoicePrintDetailsForPdf(sourceItems);
-  final customerName = '${baseItem['nama_pelanggan'] ?? ''}';
-  final resolvedInvoiceEntity = _resolveInvoiceEntityShared(
-    invoiceEntity: baseItem['invoice_entity'],
-    invoiceNumber: baseItem['no_invoice'],
-    customerName: customerName,
+  final resolvedInvoiceEntity = _resolveInvoiceEntityWithSpecialRules(
+    baseItem,
+    details: mergedDetails,
   );
-  final isCompanyInvoice = _resolveIsCompanyInvoiceShared(
-    invoiceEntity: baseItem['invoice_entity'],
-    invoiceNumber: baseItem['no_invoice'],
-    customerName: customerName,
-  );
+  final isCompanyInvoice =
+      Formatters.isCompanyInvoiceEntity(resolvedInvoiceEntity);
 
   final subtotal = _resolveInvoiceDetailsExcelSubtotalShared(
     mergedDetails,
@@ -376,16 +371,18 @@ Future<bool> _printDashboardInvoicePdf(
         : _dashboardToDetailList(item['rincian']);
     final invoiceRawNumber = '${item['no_invoice'] ?? '-'}';
     final customerName = '${item['nama_pelanggan'] ?? ''}';
-    final resolvedInvoiceEntity = _resolveInvoiceEntityShared(
-      invoiceEntity: item['invoice_entity'],
-      invoiceNumber: invoiceRawNumber,
-      customerName: customerName,
+    final resolvedInvoiceEntity = _resolveInvoiceEntityWithSpecialRules(
+      item,
+      details: invoiceDetailList,
     );
-    final isCompanyInvoice = _resolveIsCompanyInvoiceShared(
-      invoiceEntity: item['invoice_entity'],
-      invoiceNumber: invoiceRawNumber,
-      customerName: customerName,
+    final isCompanyInvoice =
+        Formatters.isCompanyInvoiceEntity(resolvedInvoiceEntity);
+    final signatureName = _resolveSpecialInvoiceSignatureName(
+      item,
+      details: invoiceDetailList,
     );
+    final hideSpecialPersonalBankBox =
+        _isSpecialNumberedPersonalInvoice(item, details: invoiceDetailList);
     final usePortrait = invoiceShouldUsePortraitLayout(
       detailRowCount: invoiceDetailList.length,
       isCompanyInvoice: isCompanyInvoice,
@@ -721,12 +718,22 @@ Future<bool> _printDashboardInvoicePdf(
       );
       const tableRowVPadding = 2.4;
       const tableBodyRowHeight = 16.0;
-      final tableHorizontalBleedLeft =
-          isCompanyInvoice ? (compact ? 1.1 : 31.0) : (compact ? 11.2 : 37.0);
-      final tableHorizontalBleedRight =
-          isCompanyInvoice ? (compact ? 1.5 : 29.0) : (compact ? 12.0 : 35.0);
+      final useExpandedPersonalFullPageTable = !compact && !isCompanyInvoice;
+      final tableHorizontalBleedLeft = isCompanyInvoice
+          ? (compact ? 1.1 : 31.0)
+          : useExpandedPersonalFullPageTable
+              ? 0.0
+              : 11.2;
+      final tableHorizontalBleedRight = isCompanyInvoice
+          ? (compact ? 1.5 : 29.0)
+          : useExpandedPersonalFullPageTable
+              ? 0.0
+              : 12.0;
       final fullPageTableWidthScale =
-          isCompanyInvoice ? (compact ? 1.0 : 0.89) : (compact ? 1.0 : 0.88);
+          compact ? 1.0 : (isCompanyInvoice ? 0.89 : 0.97);
+      final fullPageTableHeightScale = useExpandedPersonalFullPageTable
+          ? (hideSpecialPersonalBankBox ? 1.04 : 1.08)
+          : 1.0;
       final incomeColumnWidths =
           _buildDashboardIncomeTableColumnWidths(printableRows);
       final excelTableImage = excelTableRender?.image;
@@ -1309,18 +1316,20 @@ Future<bool> _printDashboardInvoicePdf(
               final aspectRatio = excelTableRender?.aspectRatio ?? 0;
               final baseTargetWidth = expandedWidth * fullPageTableWidthScale;
               final naturalHeight = aspectRatio > 0 && baseTargetWidth > 0
-                  ? baseTargetWidth / aspectRatio
+                  ? (baseTargetWidth / aspectRatio) * fullPageTableHeightScale
                   : 0.0;
               final maxReservedHeight = showFooterSection
-                  ? (isCompanyInvoice ? 750.0 : 728.0)
-                  : (isCompanyInvoice ? 820.0 : 796.0);
+                  ? (isCompanyInvoice ? 750.0 : 785.0)
+                  : (isCompanyInvoice ? 820.0 : 850.0);
               final shouldScaleDown =
                   naturalHeight > maxReservedHeight && naturalHeight > 0;
               final targetHeight =
                   shouldScaleDown ? maxReservedHeight : max(0.0, naturalHeight);
-              final targetWidth = shouldScaleDown && aspectRatio > 0
-                  ? min(baseTargetWidth, maxReservedHeight * aspectRatio)
-                  : baseTargetWidth;
+              final targetWidth = useExpandedPersonalFullPageTable
+                  ? baseTargetWidth
+                  : shouldScaleDown && aspectRatio > 0
+                      ? min(baseTargetWidth, maxReservedHeight * aspectRatio)
+                      : baseTargetWidth;
 
               return pw.SizedBox(
                 height: targetHeight,
@@ -1620,7 +1629,7 @@ Future<bool> _printDashboardInvoicePdf(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
                 pw.Expanded(
-                  child: isCompanyInvoice
+                  child: isCompanyInvoice || hideSpecialPersonalBankBox
                       ? pw.SizedBox()
                       : pw.Padding(
                           padding:
@@ -1636,7 +1645,7 @@ Future<bool> _printDashboardInvoicePdf(
                                       signatureNameOffset + (compact ? -9 : 17),
                                 ),
                                 child: pw.Text(
-                                  'A N T O K',
+                                  signatureName,
                                   style: pw.TextStyle(
                                     font: pw.Font.helveticaBold(),
                                     fontSize: signatureTextFontSize,
@@ -1677,82 +1686,84 @@ Future<bool> _printDashboardInvoicePdf(
                           ],
                         ),
                       pw.SizedBox(height: summaryBoxGap),
-                      (isCompanyInvoice
-                          ? pw.Transform.translate(
-                              offset: compact
-                                  ? const PdfPoint(-1.8, -5)
-                                  : const PdfPoint(-3.8, -1.5),
-                              child: pw.Column(
-                                crossAxisAlignment:
-                                    pw.CrossAxisAlignment.stretch,
-                                children: [
-                                  pw.Container(
-                                    alignment: pw.Alignment.center,
-                                    padding: const pw.EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    decoration: pw.BoxDecoration(
-                                      border: pw.Border.all(
-                                        color: const PdfColor(
-                                          252 / 255,
-                                          2 / 255,
-                                          0,
+                      if (!hideSpecialPersonalBankBox)
+                        (isCompanyInvoice
+                            ? pw.Transform.translate(
+                                offset: compact
+                                    ? const PdfPoint(-1.8, -5)
+                                    : const PdfPoint(-3.8, -1.5),
+                                child: pw.Column(
+                                  crossAxisAlignment:
+                                      pw.CrossAxisAlignment.stretch,
+                                  children: [
+                                    pw.Container(
+                                      alignment: pw.Alignment.center,
+                                      padding: const pw.EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
+                                      decoration: pw.BoxDecoration(
+                                        border: pw.Border.all(
+                                          color: const PdfColor(
+                                            252 / 255,
+                                            2 / 255,
+                                            0,
+                                          ),
+                                          width: 1.2,
                                         ),
-                                        width: 1.2,
+                                      ),
+                                      child: pw.Text(
+                                        'Rekening BCA a/c 6155345601 a/n CV AS NUSA TRANS\nNPWP 096.775.534.9-617.000',
+                                        textAlign: pw.TextAlign.center,
+                                        style: pw.TextStyle(
+                                          font: pw.Font.helveticaBoldOblique(),
+                                          fontSize: infoFont,
+                                          color: PdfColors.blue700,
+                                          fontWeight: pw.FontWeight.bold,
+                                          fontStyle: pw.FontStyle.italic,
+                                        ),
                                       ),
                                     ),
-                                    child: pw.Text(
-                                      'Rekening BCA a/c 6155345601 a/n CV AS NUSA TRANS\nNPWP 096.775.534.9-617.000',
-                                      textAlign: pw.TextAlign.center,
-                                      style: pw.TextStyle(
-                                        font: pw.Font.helveticaBoldOblique(),
-                                        fontSize: infoFont,
-                                        color: PdfColors.blue700,
-                                        fontWeight: pw.FontWeight.bold,
-                                        fontStyle: pw.FontStyle.italic,
-                                      ),
+                                  ],
+                                ),
+                              )
+                            : pw.Transform.translate(
+                                offset: compact
+                                    ? const PdfPoint(-2.3, -3)
+                                    : const PdfPoint(-4.3, 1),
+                                child: pw.Container(
+                                  alignment: pw.Alignment.center,
+                                  padding: const pw.EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: pw.BoxDecoration(
+                                    border: pw.Border.all(
+                                      color: PdfColors.blue700,
+                                      width: 1.2,
                                     ),
                                   ),
-                                ],
-                              ),
-                            )
-                          : pw.Transform.translate(
-                              offset: compact
-                                  ? const PdfPoint(-2.3, -3)
-                                  : const PdfPoint(-4.3, 1),
-                              child: pw.Container(
-                                alignment: pw.Alignment.center,
-                                padding: const pw.EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
-                                ),
-                                decoration: pw.BoxDecoration(
-                                  border: pw.Border.all(
-                                    color: PdfColors.blue700,
-                                    width: 1.2,
+                                  child: pw.Text(
+                                    'Rekening BCA a/c 1730290001 a/n BUDI SUKAMTO',
+                                    textAlign: pw.TextAlign.center,
+                                    style: pw.TextStyle(
+                                      font: pw.Font.helveticaBoldOblique(),
+                                      fontSize: infoFont,
+                                      color: PdfColors.blue700,
+                                      fontWeight: pw.FontWeight.bold,
+                                      fontStyle: pw.FontStyle.italic,
+                                    ),
                                   ),
                                 ),
-                                child: pw.Text(
-                                  'Rekening BCA a/c 1730290001 a/n BUDI SUKAMTO',
-                                  textAlign: pw.TextAlign.center,
-                                  style: pw.TextStyle(
-                                    font: pw.Font.helveticaBoldOblique(),
-                                    fontSize: infoFont,
-                                    color: PdfColors.blue700,
-                                    fontWeight: pw.FontWeight.bold,
-                                    fontStyle: pw.FontStyle.italic,
-                                  ),
-                                ),
-                              ),
-                            )),
+                              )),
                     ],
                   ),
                 ),
               ],
             ),
           ],
-          if (showFooterSection && isCompanyInvoice)
+          if (showFooterSection &&
+              (isCompanyInvoice || hideSpecialPersonalBankBox))
             pw.LayoutBuilder(
               builder: (context, constraints) {
                 final availableWidth = constraints?.maxWidth ?? 0;
@@ -1799,7 +1810,9 @@ Future<bool> _printDashboardInvoicePdf(
                 final hormatCenterX = renderedLeft +
                     ((leadPrefixWidth + (leftMergeWidth / 2)) * tableScale);
                 final antokWidth = compact ? 100.0 : 112.0;
-                final antokShiftLeft = compact ? 8.0 : 9.0;
+                final antokShiftLeft = hideSpecialPersonalBankBox
+                    ? (compact ? 10.0 : 7.0)
+                    : (compact ? 8.0 : 9.0);
                 final antokTopOffset = compact ? 2.0 : 3.0;
                 final antokLeft = max(
                   0.0,
@@ -1810,7 +1823,11 @@ Future<bool> _printDashboardInvoicePdf(
                 );
 
                 return pw.Padding(
-                  padding: pw.EdgeInsets.only(top: compact ? 3 : 5),
+                  padding: pw.EdgeInsets.only(
+                    top: hideSpecialPersonalBankBox
+                        ? (compact ? 70 : 84)
+                        : (compact ? 3 : 5),
+                  ),
                   child: pw.SizedBox(
                     width: availableWidth,
                     height: signatureTextFontSize + 3,
@@ -1822,7 +1839,7 @@ Future<bool> _printDashboardInvoicePdf(
                           child: pw.SizedBox(
                             width: antokWidth,
                             child: pw.Text(
-                              'A N T O K',
+                              signatureName,
                               textAlign: pw.TextAlign.center,
                               maxLines: 1,
                               style: pw.TextStyle(
@@ -1874,7 +1891,7 @@ Future<bool> _printDashboardInvoicePdf(
       8.5 * PdfPageFormat.inch,
       13.0 * PdfPageFormat.inch,
     );
-    final pdfMarginHorizontal = usePortrait ? 24.0 : 18.0;
+    final pdfMarginHorizontal = usePortrait && isCompanyInvoice ? 24.0 : 18.0;
     final pdfMarginTop = usePortrait ? 12.0 : 6.5;
     final pdfMarginBottom = usePortrait ? 15.0 : 9.0;
     final tableRenderInfo = usePortrait

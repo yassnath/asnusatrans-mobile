@@ -248,11 +248,9 @@ extension _AdminInvoiceListViewStatePrintGroupSupport
     );
     if (subtotal <= 0) return item;
 
-    final customerName = '${item['nama_pelanggan'] ?? ''}'.trim();
-    final normalizedEntity = _resolveInvoiceEntity(
-      invoiceEntity: item['invoice_entity'],
-      invoiceNumber: item['no_invoice'],
-      customerName: customerName,
+    final normalizedEntity = _resolveInvoiceEntityWithSpecialRules(
+      item,
+      details: nextDetails,
     );
     final includePph = Formatters.isCompanyInvoiceEntity(normalizedEntity);
     final pph = includePph ? calculateInvoicePph2Percent(subtotal) : 0.0;
@@ -275,13 +273,19 @@ extension _AdminInvoiceListViewStatePrintGroupSupport
     for (final item in items) {
       final customerName =
           _normalizeInvoicePrintCustomerKey('${item['nama_pelanggan'] ?? ''}');
-      final entity = _resolveInvoiceEntity(
-        invoiceEntity: item['invoice_entity'],
-        invoiceNumber: item['no_invoice'],
-        customerName: item['nama_pelanggan'],
+      final details = _toDetailList(item['rincian']);
+      final entity = _resolveInvoiceEntityWithSpecialRules(
+        item,
+        details: details,
       );
       final key = '$entity|$customerName';
-      groups.putIfAbsent(key, () => <Map<String, dynamic>>[]).add(item);
+      groups.putIfAbsent(key, () => <Map<String, dynamic>>[]).add(
+        <String, dynamic>{
+          ...item,
+          'invoice_entity': entity,
+          if (entity == Formatters.invoiceEntityPersonal) 'pph': 0.0,
+        },
+      );
     }
     return groups.entries
         .map(
@@ -306,17 +310,12 @@ extension _AdminInvoiceListViewStatePrintGroupSupport
   }) {
     final baseItem = Map<String, dynamic>.from(group.baseItem);
     final mergedDetails = _expandInvoicePrintDetails(group.items);
-    final customerName = '${baseItem['nama_pelanggan'] ?? ''}';
-    final resolvedInvoiceEntity = _resolveInvoiceEntity(
-      invoiceEntity: baseItem['invoice_entity'],
-      invoiceNumber: baseItem['no_invoice'],
-      customerName: customerName,
+    final resolvedInvoiceEntity = _resolveInvoiceEntityWithSpecialRules(
+      baseItem,
+      details: mergedDetails,
     );
-    final isCompanyInvoice = _resolveIsCompanyInvoice(
-      invoiceEntity: baseItem['invoice_entity'],
-      invoiceNumber: baseItem['no_invoice'],
-      customerName: customerName,
-    );
+    final isCompanyInvoice =
+        Formatters.isCompanyInvoiceEntity(resolvedInvoiceEntity);
     final subtotal = _resolveInvoiceDetailsExcelSubtotalShared(
       mergedDetails,
       fallbackSubtotal: group.items.fold<double>(
@@ -378,13 +377,33 @@ extension _AdminInvoiceListViewStatePrintGroupSupport
   }) {
     final now = DateTime.now();
     final maxSeqByBucket = <String, int>{};
+    final maxSpecialPersonalSeqByPeriod = <String, int>{};
 
     String invoiceEntity(Map<String, dynamic> item) {
-      return _resolveInvoiceEntity(
-        invoiceEntity: item['invoice_entity'],
-        invoiceNumber: item['no_invoice'],
-        customerName: item['nama_pelanggan'],
+      return _resolveInvoiceEntityWithSpecialRules(
+        item,
+        details: _toDetailList(item['rincian']),
       );
+    }
+
+    bool usesSpecialPersonalSequence(Map<String, dynamic> item) {
+      return _isSpecialNumberedPersonalInvoice(
+        item,
+        details: _toDetailList(item['rincian']),
+      );
+    }
+
+    void consumeSpecialPersonalInvoiceNumber({
+      required String invoiceNumber,
+      required DateTime referenceDate,
+    }) {
+      final seq = extractSpecialPersonalInvoiceSequence(invoiceNumber);
+      if (seq <= 0) return;
+      final key = specialPersonalInvoicePeriodKey(referenceDate);
+      final currentMax = maxSpecialPersonalSeqByPeriod[key] ?? 0;
+      if (seq > currentMax) {
+        maxSpecialPersonalSeqByPeriod[key] = seq;
+      }
     }
 
     String bucketKey({
@@ -429,6 +448,13 @@ extension _AdminInvoiceListViewStatePrintGroupSupport
             income['tanggal_kop'] ?? income['tanggal'] ?? income['created_at'],
           ) ??
           now;
+      if (usesSpecialPersonalSequence(income)) {
+        consumeSpecialPersonalInvoiceNumber(
+          invoiceNumber: rawNumber,
+          referenceDate: issuedDate,
+        );
+        continue;
+      }
       consumeExistingInvoiceNumber(
         invoiceNumber: rawNumber,
         issuedDate: issuedDate,
@@ -442,6 +468,13 @@ extension _AdminInvoiceListViewStatePrintGroupSupport
       if (rawNumber.isEmpty) continue;
       final referenceDate =
           Formatters.parseDate(batch.kopDate ?? batch.createdAt) ?? now;
+      if (extractSpecialPersonalInvoiceSequence(rawNumber) > 0) {
+        consumeSpecialPersonalInvoiceNumber(
+          invoiceNumber: rawNumber,
+          referenceDate: referenceDate,
+        );
+        continue;
+      }
       consumeExistingInvoiceNumber(
         invoiceNumber: rawNumber,
         issuedDate: referenceDate,
@@ -487,6 +520,7 @@ extension _AdminInvoiceListViewStatePrintGroupSupport
           now;
       final generatedIssuedDate = now;
       final resolvedEntity = invoiceEntity(item);
+      final useSpecialPersonalSequence = usesSpecialPersonalSequence(item);
       final normalizedExisting = Formatters.invoiceNumber(
         item['no_invoice'],
         item['tanggal_kop'] ?? item['tanggal'],
@@ -494,8 +528,30 @@ extension _AdminInvoiceListViewStatePrintGroupSupport
         isCompany: Formatters.isCompanyInvoiceEntity(resolvedEntity),
         invoiceEntity: resolvedEntity,
       );
+      final existingNumberEntity = Formatters.invoiceEntityFromInvoiceNumber(
+        '${item['no_invoice'] ?? ''}',
+      );
+      final existingNumberMatchesEntity = existingNumberEntity == null ||
+          Formatters.normalizeInvoiceEntity(existingNumberEntity) ==
+              Formatters.normalizeInvoiceEntity(resolvedEntity);
 
-      if (normalizedExisting != '-') {
+      final existingSpecialSequence =
+          extractSpecialPersonalInvoiceSequence(normalizedExisting);
+      if (useSpecialPersonalSequence && existingSpecialSequence > 0) {
+        final existingSpecialNumber =
+            buildSpecialPersonalInvoiceNumber(existingSpecialSequence);
+        generatedById[group.id] = existingSpecialNumber;
+        consumeSpecialPersonalInvoiceNumber(
+          invoiceNumber: existingSpecialNumber,
+          referenceDate: existingIssuedDate,
+        );
+        continue;
+      }
+
+      if (!useSpecialPersonalSequence &&
+          existingSpecialSequence <= 0 &&
+          normalizedExisting != '-' &&
+          existingNumberMatchesEntity) {
         generatedById[group.id] = normalizedExisting;
         consumeExistingInvoiceNumber(
           invoiceNumber: normalizedExisting,
@@ -503,6 +559,16 @@ extension _AdminInvoiceListViewStatePrintGroupSupport
           invoiceEntity: resolvedEntity,
           referenceDate: existingIssuedDate,
         );
+        continue;
+      }
+
+      if (useSpecialPersonalSequence) {
+        final key = specialPersonalInvoicePeriodKey(generatedIssuedDate);
+        final maxSpecialPersonalSeq =
+            (maxSpecialPersonalSeqByPeriod[key] ?? 0) + 1;
+        maxSpecialPersonalSeqByPeriod[key] = maxSpecialPersonalSeq;
+        generatedById[group.id] =
+            buildSpecialPersonalInvoiceNumber(maxSpecialPersonalSeq);
         continue;
       }
 
@@ -516,6 +582,7 @@ extension _AdminInvoiceListViewStatePrintGroupSupport
         sequence: nextSeq,
         issuedDate: generatedIssuedDate,
         invoiceEntity: resolvedEntity,
+        useSpecialPersonalSequence: false,
       );
     }
 
@@ -531,10 +598,13 @@ extension _AdminInvoiceListViewStatePrintGroupSupport
     final targetDate = issuedDate.toLocal();
     final targetMonth = targetDate.month;
     final targetYearTwoDigits = targetDate.year % 100;
-    final targetEntity = _resolveInvoiceEntity(
-      invoiceEntity: group.baseItem['invoice_entity'],
-      invoiceNumber: group.baseItem['no_invoice'],
-      customerName: group.baseItem['nama_pelanggan'],
+    final targetEntity = _resolveInvoiceEntityWithSpecialRules(
+      group.baseItem,
+      details: _expandInvoicePrintDetails(group.items),
+    );
+    final useSpecialPersonalSequence = _isSpecialNumberedPersonalInvoice(
+      group.baseItem,
+      details: _expandInvoicePrintDetails(group.items),
     );
     final excludedInvoiceIds = group.items
         .map((item) => '${item['id'] ?? ''}'.trim())
@@ -551,6 +621,15 @@ extension _AdminInvoiceListViewStatePrintGroupSupport
       required String invoiceEntity,
       required DateTime referenceDate,
     }) {
+      if (useSpecialPersonalSequence) {
+        if (!isSameSpecialPersonalInvoicePeriod(referenceDate, targetDate)) {
+          return;
+        }
+        final seq = extractSpecialPersonalInvoiceSequence(invoiceNumber);
+        maxSeq = max(maxSeq, seq);
+        return;
+      }
+      if (extractSpecialPersonalInvoiceSequence(invoiceNumber) > 0) return;
       final seq = _extractPrintInvoiceSequence(
         invoiceNumber: invoiceNumber,
         month: targetMonth,
@@ -577,10 +656,9 @@ extension _AdminInvoiceListViewStatePrintGroupSupport
           targetDate;
       consume(
         invoiceNumber: rawNumber,
-        invoiceEntity: _resolveInvoiceEntity(
-          invoiceEntity: income['invoice_entity'],
-          invoiceNumber: income['no_invoice'],
-          customerName: income['nama_pelanggan'],
+        invoiceEntity: _resolveInvoiceEntityWithSpecialRules(
+          income,
+          details: _toDetailList(income['rincian']),
         ),
         referenceDate: referenceDate,
       );
@@ -606,6 +684,7 @@ extension _AdminInvoiceListViewStatePrintGroupSupport
       sequence: maxSeq + 1,
       issuedDate: targetDate,
       invoiceEntity: targetEntity,
+      useSpecialPersonalSequence: useSpecialPersonalSequence,
     );
   }
 
@@ -618,11 +697,11 @@ extension _AdminInvoiceListViewStatePrintGroupSupport
     if (!mounted) return null;
     final item = group.baseItem;
     final customer = '${item['nama_pelanggan'] ?? '-'}';
-    final modeLabel = _resolveInvoiceEntityLabel(
-      invoiceEntity: item['invoice_entity'],
-      invoiceNumber: item['no_invoice'],
-      customerName: item['nama_pelanggan'],
+    final effectiveEntity = _resolveInvoiceEntityWithSpecialRules(
+      item,
+      details: _expandInvoicePrintDetails(group.items),
     );
+    final modeLabel = Formatters.invoiceEntityLabel(effectiveEntity);
     final now = DateTime.now();
     final defaultKopLocation = '${item['lokasi_kop'] ?? ''}'.trim();
     final detailRows = _expandInvoicePrintDetails(group.items);
@@ -828,16 +907,6 @@ extension _AdminInvoiceListViewStatePrintGroupSupport
     } catch (_) {
       return item;
     }
-  }
-
-  Future<List<Map<String, dynamic>>> _resolveLatestInvoiceItems(
-    Iterable<Map<String, dynamic>> items,
-  ) async {
-    final itemList = items.toList();
-    if (itemList.isEmpty) return const [];
-    return Future.wait(
-      itemList.map(_resolveLatestInvoiceItem),
-    );
   }
 
   Future<void> _printSingleInvoiceFromPreview(

@@ -70,7 +70,12 @@ extension _AdminInvoiceListFixedInvoiceCache on _AdminInvoiceListViewState {
     final legacyBatches = legacyIds.isEmpty
         ? const <_FixedInvoiceBatch>[]
         : _buildLegacyFixedInvoiceBatchesFromInvoices(
-            invoices: await widget.repository.fetchInvoicesByIds(legacyIds),
+            invoices: await widget.repository.fetchInvoicesByIds(
+              legacyIds
+                  .map(invoiceFixedSourceId)
+                  .where((id) => id.isNotEmpty)
+                  .toSet(),
+            ),
             fixedIds: legacyIds,
             existingBatches: <_FixedInvoiceBatch>[
               ...localBatches,
@@ -194,8 +199,9 @@ extension _AdminInvoiceListFixedInvoiceCache on _AdminInvoiceListViewState {
   }) async {
     if (preferredBatch != null) return preferredBatch;
     if (invoiceIds.isEmpty) return null;
-    final sourceInvoices =
-        await widget.repository.fetchInvoicesByIds(invoiceIds);
+    final sourceInvoices = await widget.repository.fetchInvoicesByIds(
+      invoiceIds.map(invoiceFixedSourceId).where((id) => id.isNotEmpty).toSet(),
+    );
     final generatedBatches = _buildLegacyFixedInvoiceBatchesFromInvoices(
       invoices: sourceInvoices,
       fixedIds: invoiceIds,

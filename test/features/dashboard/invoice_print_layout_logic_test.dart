@@ -43,11 +43,11 @@ void main() {
     test('computes portrait rows from compact capacity plus extra rows', () {
       expect(
         invoiceRowsPerSheet(compact: false, isCompanyInvoice: true),
-        50,
+        48,
       );
       expect(
         invoiceRowsPerSheet(compact: false, isCompanyInvoice: false),
-        56,
+        51,
       );
     });
   });

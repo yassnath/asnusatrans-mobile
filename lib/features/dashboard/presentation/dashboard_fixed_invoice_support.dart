@@ -39,19 +39,18 @@ extension _AdminFixedInvoiceSupport on _AdminFixedInvoiceViewState {
   }
 
   Color _invoiceEntityAccentColor(Map<String, dynamic> item) {
-    return _resolveInvoiceEntityAccentColorShared(
-      invoiceNumber: item['no_invoice'],
-      customerName: item['nama_pelanggan'],
-      invoiceEntity: item['invoice_entity'],
+    final entity = _resolveInvoiceEntityWithSpecialRules(
+      item,
+      details: _toDetailList(item['rincian']),
     );
+    return AppColors.invoiceEntityAccent(entity);
   }
 
   bool _matchesCustomerKind(Map<String, dynamic> item) {
     if (_customerKind == 'all') return true;
-    final entity = _resolveInvoiceEntityShared(
-      invoiceNumber: item['no_invoice'],
-      customerName: item['nama_pelanggan'],
-      invoiceEntity: item['invoice_entity'],
+    final entity = _resolveInvoiceEntityWithSpecialRules(
+      item,
+      details: _toDetailList(item['rincian']),
     );
     switch (_customerKind) {
       case Formatters.invoiceEntityCvAnt:

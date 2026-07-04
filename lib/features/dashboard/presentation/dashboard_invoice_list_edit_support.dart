@@ -58,6 +58,7 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
         const <Map<String, dynamic>>[];
     int editDetailFieldRefreshToken = 0;
     int editHargaFieldRefreshToken = 0;
+    var editDetailRowKeySeed = 0;
     try {
       armadas = await widget.repository.fetchArmadas();
       hargaPerTonRules = await widget.repository.fetchHargaPerTonRules();
@@ -199,20 +200,23 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
       final driverText = '${row['nama_supir'] ?? ''}'.trim();
       final isDriverManual =
           driverText.isNotEmpty && !_isKnownDriverOption(driverText);
+      final rawMuatan = '${row['muatan'] ?? ''}'.trim();
+      final effectiveMuatan = rawMuatan.isEmpty ? 'Batubara' : rawMuatan;
       final resolvedRule = resolveHargaRule(
         customerName: customer.text.trim(),
         lokasiMuat: muatText,
         lokasiBongkar: '${row['lokasi_bongkar'] ?? ''}',
+        muatan: effectiveMuatan,
       );
       final resolvedHarga = resolveHargaPerTon(
         customerName: customer.text.trim(),
         lokasiMuat: muatText,
         lokasiBongkar: '${row['lokasi_bongkar'] ?? ''}',
-        muatan: '${row['muatan'] ?? ''}',
+        muatan: effectiveMuatan,
       );
       final resolvedSubtotal = _resolveHargaFlatTotalShared(
         resolvedRule,
-        muatan: '${row['muatan'] ?? ''}',
+        muatan: effectiveMuatan,
       );
       final originalHargaText = _formatEditableNumber(row['harga']);
       final keepManualHarga =
@@ -238,11 +242,13 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
               ? ''
               : originalSubtotalText;
       final mappedRow = <String, dynamic>{
+        '__row_key':
+            '${DateTime.now().microsecondsSinceEpoch}-${editDetailRowKeySeed++}',
         'lokasi_muat': muatText,
         'lokasi_muat_manual': muatIsManual ? muatText : '',
         'lokasi_muat_is_manual': muatIsManual,
         'lokasi_bongkar': '${row['lokasi_bongkar'] ?? ''}',
-        'muatan': '${row['muatan'] ?? ''}',
+        'muatan': effectiveMuatan,
         'nama_supir': driverText,
         'nama_supir_manual': isDriverManual ? driverText : '',
         'nama_supir_is_manual': isDriverManual,
@@ -330,6 +336,19 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                 0,
                 (sum, row) => sum + detailSubtotal(row),
               );
+              final effectiveInvoiceEntityMode =
+                  _resolveInvoiceEntityWithSpecialRules(
+                <String, dynamic>{
+                  ...item,
+                  'invoice_entity': invoiceEntityMode,
+                  'nama_pelanggan': customer.text.trim(),
+                  'rincian': details,
+                },
+                details: details,
+              );
+              if (invoiceEntityMode != effectiveInvoiceEntityMode) {
+                invoiceEntityMode = effectiveInvoiceEntityMode;
+              }
               final isCompanyInvoiceMode =
                   Formatters.isCompanyInvoiceEntity(invoiceEntityMode);
               final pph = isCompanyInvoiceMode
@@ -1055,10 +1074,12 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                           onPressed: () => setDialogState(() {
                             details.add(
                               <String, dynamic>{
+                                '__row_key':
+                                    '${DateTime.now().microsecondsSinceEpoch}-${editDetailRowKeySeed++}',
                                 'lokasi_muat': '',
                                 'lokasi_muat_manual': '',
                                 'lokasi_bongkar': '',
-                                'muatan': '',
+                                'muatan': 'Batubara',
                                 'nama_supir': '',
                                 'nama_supir_manual': '',
                                 'nama_supir_is_manual': false,
@@ -1478,45 +1499,77 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                             mergeExpandedEditDetails(
                                           detailsPayload,
                                         );
+                                        final shouldSplitAddedRaid =
+                                            !isExpandedDetailEdit &&
+                                                existingDetails.length <= 1 &&
+                                                updateDetailsPayload.length > 1;
+                                        final updatePersistedDetails =
+                                            shouldSplitAddedRaid
+                                                ? <Map<String, dynamic>>[
+                                                    Map<String, dynamic>.from(
+                                                      updateDetailsPayload
+                                                          .first,
+                                                    ),
+                                                  ]
+                                                : updateDetailsPayload;
                                         final updateSubtotal =
                                             _resolveInvoiceDetailsExcelSubtotalShared(
-                                          updateDetailsPayload,
+                                          updatePersistedDetails,
                                         );
-                                        final updatePph = isCompanyInvoiceMode
+                                        final updateInvoiceEntity =
+                                            _resolveInvoiceEntityWithSpecialRules(
+                                          <String, dynamic>{
+                                            ...item,
+                                            'invoice_entity': invoiceEntityMode,
+                                            'nama_pelanggan':
+                                                customer.text.trim(),
+                                            'rincian': updatePersistedDetails,
+                                          },
+                                          details: updatePersistedDetails,
+                                        );
+                                        final updateIsCompanyInvoice =
+                                            Formatters.isCompanyInvoiceEntity(
+                                          updateInvoiceEntity,
+                                        );
+                                        final updatePph = updateIsCompanyInvoice
                                             ? calculateInvoicePph2Percent(
                                                 updateSubtotal,
                                               )
                                             : 0.0;
                                         final updateTotalBayar =
-                                            isCompanyInvoiceMode
+                                            updateIsCompanyInvoice
                                                 ? calculateInvoiceTotalAfterPph(
                                                     updateSubtotal,
                                                   )
                                                 : updateSubtotal;
                                         final updateFirst =
-                                            updateDetailsPayload.isNotEmpty
-                                                ? updateDetailsPayload.first
+                                            updatePersistedDetails.isNotEmpty
+                                                ? updatePersistedDetails.first
                                                 : detailsPayload.first;
                                         final updateFirstArmadaId =
                                             normalizeNullable(
                                                   updateFirst['armada_id'],
                                                 ) ??
                                                 '';
-                                        final driverNames = updateDetailsPayload
-                                            .map(
-                                              (row) =>
-                                                  '${row['nama_supir'] ?? ''}'
-                                                      .trim(),
-                                            )
-                                            .where((value) => value.isNotEmpty)
-                                            .expand(
-                                              (value) => value
-                                                  .split(RegExp(r'[,;/]'))
-                                                  .map((part) => part.trim()),
-                                            )
-                                            .where((value) => value.isNotEmpty)
-                                            .toSet()
-                                            .join(', ');
+                                        final driverNames =
+                                            updatePersistedDetails
+                                                .map(
+                                                  (row) =>
+                                                      '${row['nama_supir'] ?? ''}'
+                                                          .trim(),
+                                                )
+                                                .where(
+                                                    (value) => value.isNotEmpty)
+                                                .expand(
+                                                  (value) => value
+                                                      .split(RegExp(r'[,;/]'))
+                                                      .map((part) =>
+                                                          part.trim()),
+                                                )
+                                                .where(
+                                                    (value) => value.isNotEmpty)
+                                                .toSet()
+                                                .join(', ');
 
                                         setDialogState(() => saving = true);
                                         try {
@@ -1526,7 +1579,7 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                           );
                                           DateTime? resolveEditedIssueDate() {
                                             for (final row
-                                                in updateDetailsPayload) {
+                                                in updatePersistedDetails) {
                                               final parsed =
                                                   Formatters.parseDate(
                                                 row['armada_start_date'],
@@ -1554,7 +1607,7 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                             totalBiaya: updateSubtotal,
                                             pph: updatePph,
                                             totalBayar: updateTotalBayar,
-                                            invoiceEntity: invoiceEntityMode,
+                                            invoiceEntity: updateInvoiceEntity,
                                             email: email.text,
                                             noTelp: phone.text,
                                             kopDate: kopDate.text.trim().isEmpty
@@ -1612,13 +1665,138 @@ extension _AdminInvoiceListViewStateEditSupport on _AdminInvoiceListViewState {
                                                 ? null
                                                 : driverNames,
                                             noInvoice: null,
-                                            details: updateDetailsPayload,
+                                            details: updatePersistedDetails,
                                             acceptedBy: acceptedBy,
                                             generateAutoSangu:
                                                 !widget.session.isPengurus,
                                             clearApprovedPengurusEditRequest:
                                                 widget.session.isPengurus,
                                           );
+                                          if (shouldSplitAddedRaid) {
+                                            for (final extraDetail
+                                                in updateDetailsPayload
+                                                    .skip(1)) {
+                                              final extraDetails =
+                                                  <Map<String, dynamic>>[
+                                                Map<String, dynamic>.from(
+                                                  extraDetail,
+                                                ),
+                                              ];
+                                              final extraSubtotal =
+                                                  _resolveInvoiceDetailsExcelSubtotalShared(
+                                                extraDetails,
+                                              );
+                                              final extraInvoiceEntity =
+                                                  _resolveInvoiceEntityWithSpecialRules(
+                                                <String, dynamic>{
+                                                  ...item,
+                                                  'invoice_entity':
+                                                      invoiceEntityMode,
+                                                  'nama_pelanggan':
+                                                      customer.text.trim(),
+                                                  'rincian': extraDetails,
+                                                },
+                                                details: extraDetails,
+                                              );
+                                              final extraArmadaId =
+                                                  normalizeNullable(
+                                                        extraDetail[
+                                                            'armada_id'],
+                                                      ) ??
+                                                      '';
+                                              final extraIssueDate =
+                                                  Formatters.parseDate(
+                                                        extraDetail[
+                                                            'armada_start_date'],
+                                                      ) ??
+                                                      effectiveDate;
+                                              await widget.repository
+                                                  .createInvoice(
+                                                customerName:
+                                                    customer.text.trim(),
+                                                total: extraSubtotal,
+                                                invoiceEntity:
+                                                    extraInvoiceEntity,
+                                                includePph: Formatters
+                                                    .isCompanyInvoiceEntity(
+                                                  extraInvoiceEntity,
+                                                ),
+                                                status: status,
+                                                issuedDate: extraIssueDate,
+                                                email: email.text,
+                                                noTelp: phone.text,
+                                                kopDate:
+                                                    kopDate.text.trim().isEmpty
+                                                        ? null
+                                                        : Formatters.parseDate(
+                                                            kopDate.text,
+                                                          ),
+                                                kopLocation:
+                                                    kopLocation.text.trim(),
+                                                dueDate:
+                                                    dueDate.text.trim().isEmpty
+                                                        ? null
+                                                        : Formatters.parseDate(
+                                                            dueDate.text,
+                                                          ),
+                                                pickup: normalizeNullable(
+                                                  extraDetail['lokasi_muat'],
+                                                ),
+                                                destination: normalizeNullable(
+                                                  extraDetail['lokasi_bongkar'],
+                                                ),
+                                                armadaId: extraArmadaId.isEmpty
+                                                    ? null
+                                                    : extraArmadaId,
+                                                armadaStartDate:
+                                                    Formatters.parseDate(
+                                                  extraDetail[
+                                                      'armada_start_date'],
+                                                ),
+                                                armadaEndDate:
+                                                    Formatters.parseDate(
+                                                  extraDetail[
+                                                      'armada_end_date'],
+                                                ),
+                                                tonase: _isOngkosKuliIncomeRow(
+                                                  extraDetail,
+                                                )
+                                                    ? null
+                                                    : _nullableIncomeNumber(
+                                                        extraDetail['tonase'],
+                                                      ),
+                                                harga: _isOngkosKuliIncomeRow(
+                                                  extraDetail,
+                                                )
+                                                    ? null
+                                                    : _nullableIncomeNumber(
+                                                        extraDetail['harga'],
+                                                      ),
+                                                muatan: normalizeNullable(
+                                                  extraDetail['muatan'],
+                                                ),
+                                                namaSupir: normalizeNullable(
+                                                  extraDetail['nama_supir'],
+                                                ),
+                                                acceptedBy: acceptedBy,
+                                                customerId: normalizeNullable(
+                                                  item['customer_id'],
+                                                ),
+                                                orderId: normalizeNullable(
+                                                  item['order_id'],
+                                                ),
+                                                details: extraDetails,
+                                                submissionRole: widget
+                                                    .session.normalizedRole,
+                                                approvalStatus:
+                                                    widget.session.isPengurus
+                                                        ? 'pending'
+                                                        : 'approved',
+                                                generateAutoSangu:
+                                                    !widget.session.isPengurus,
+                                              );
+                                            }
+                                          }
                                           if (!mounted || !context.mounted) {
                                             return;
                                           }

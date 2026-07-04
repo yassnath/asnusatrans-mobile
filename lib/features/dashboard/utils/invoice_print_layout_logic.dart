@@ -1,6 +1,7 @@
 const invoiceCompanyCompactDetailRowLimit = 18;
 const invoicePersonalCompactDetailRowLimit = 21;
-const invoicePortraitExtraRows = 14;
+const invoiceCompanyPortraitExtraRows = 12;
+const invoicePersonalPortraitExtraRows = 9;
 
 int invoiceCompactDetailRowLimit({required bool isCompanyInvoice}) {
   return isCompanyInvoice
@@ -15,7 +16,10 @@ int invoiceRowsPerSheet({
   final compactLimit = invoiceCompactDetailRowLimit(
     isCompanyInvoice: isCompanyInvoice,
   );
-  return compact ? compactLimit : (compactLimit * 2) + invoicePortraitExtraRows;
+  final portraitExtraRows = isCompanyInvoice
+      ? invoiceCompanyPortraitExtraRows
+      : invoicePersonalPortraitExtraRows;
+  return compact ? compactLimit : (compactLimit * 2) + portraitExtraRows;
 }
 
 bool invoiceShouldUsePortraitLayout({

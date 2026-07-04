@@ -1250,16 +1250,9 @@ extension _AdminInvoiceListReportSummary on _AdminInvoiceListViewState {
 
       bool incomeKindAllowed(Map<String, dynamic> source) {
         if (customerKind == 'all') return true;
-        final customerName = useInvoiceListDetail
-            ? '${source['nama_pelanggan'] ?? ''}'.trim()
-            : resolveIncomeReportCustomerName(source);
-        final invoiceNumber = useInvoiceListDetail
-            ? source['no_invoice']
-            : resolveIncomeReportInvoiceNumber(source);
-        final entity = _resolveInvoiceEntity(
-          invoiceNumber: invoiceNumber,
-          customerName: customerName,
-          invoiceEntity: source['invoice_entity'],
+        final entity = _resolveInvoiceEntityWithSpecialRules(
+          source,
+          details: _toDetailList(source['rincian']),
         );
         switch (customerKind) {
           case Formatters.invoiceEntityCvAnt:
@@ -1375,21 +1368,21 @@ extension _AdminInvoiceListReportSummary on _AdminInvoiceListViewState {
             '${invoice['nama_pelanggan'] ?? '-'}'.trim().isEmpty
                 ? '-'
                 : '${invoice['nama_pelanggan'] ?? '-'}'.trim();
+        final reportInvoiceEntity = _resolveInvoiceEntityWithSpecialRules(
+          invoice,
+          details: detailRows,
+        );
         final invoiceNumber = Formatters.invoiceNumber(
           invoice['no_invoice'] ?? parentInvoiceNumber,
           resolveIncomeReportInvoiceDate(invoice),
           customerName: customerName,
-          invoiceEntity: invoice['invoice_entity'],
+          invoiceEntity: reportInvoiceEntity,
         );
         final invoiceSubtotal = resolveSingleInvoiceJumlah(invoice);
-        final invoicePph = _resolveIsCompanyInvoice(
-          invoiceEntity: invoice['invoice_entity'],
-          invoiceNumber: invoiceNumber,
-          customerName: customerName,
-          fallback: false,
-        )
-            ? calculateInvoicePph2Percent(invoiceSubtotal)
-            : 0.0;
+        final invoicePph =
+            Formatters.isCompanyInvoiceEntity(reportInvoiceEntity)
+                ? calculateInvoicePph2Percent(invoiceSubtotal)
+                : 0.0;
         var remainingPph = invoicePph;
 
         for (var detailIndex = 0;
@@ -1421,6 +1414,7 @@ extension _AdminInvoiceListReportSummary on _AdminInvoiceListViewState {
           final rowSource = <String, dynamic>{
             ...invoice,
             ...detail,
+            'invoice_entity': reportInvoiceEntity,
             'nama_pelanggan': customerName,
             'no_invoice': invoiceNumber,
             'status': status,

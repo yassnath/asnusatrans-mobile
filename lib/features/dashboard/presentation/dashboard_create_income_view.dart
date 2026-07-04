@@ -571,14 +571,26 @@ class _AdminCreateIncomeViewState extends State<_AdminCreateIncomeView> {
       if (!proceed) return;
     }
 
+    final invoiceEntityForSave = _resolveInvoiceEntityWithSpecialRules(
+      <String, dynamic>{
+        'invoice_entity': _invoiceEntity,
+        'nama_pelanggan': customer,
+        'lokasi_bongkar': _nullableInputText(first['lokasi_bongkar']),
+        'rincian': detailsPayload,
+      },
+      details: detailsPayload,
+    );
+    final includePphForSave =
+        Formatters.isCompanyInvoiceEntity(invoiceEntityForSave);
+
     setState(() => _loading = true);
     try {
       await widget.repository.createInvoice(
         customerName: customer,
         total: _subtotal,
         noInvoice: null,
-        includePph: _isCompanyInvoice,
-        invoiceEntity: _invoiceEntity,
+        includePph: includePphForSave,
+        invoiceEntity: invoiceEntityForSave,
         status: _status,
         issuedDate: effectiveDate,
         email: _email.text,

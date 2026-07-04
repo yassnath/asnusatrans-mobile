@@ -4,6 +4,11 @@ extension _AdminInvoiceListViewStatePreviewSupport
     on _AdminInvoiceListViewState {
   Future<void> _openInvoicePreview(Map<String, dynamic> item) async {
     final previewItem = await _resolveInvoicePreviewItem(item);
+    final detailList = _toDetailList(previewItem['rincian']);
+    previewItem['invoice_entity'] = _resolveInvoiceEntityWithSpecialRules(
+      previewItem,
+      details: detailList,
+    );
     final latestCustomerName = '${previewItem['nama_pelanggan'] ?? ''}'.trim();
     final latestIsCompanyInvoice = _resolveIsCompanyInvoice(
       invoiceEntity: previewItem['invoice_entity'],
@@ -21,7 +26,6 @@ extension _AdminInvoiceListViewStatePreviewSupport
     final regularHargaPerTonRules = hargaPerTonRules
         .where(isRegularIncomeHargaRule)
         .toList(growable: false);
-    final detailList = _toDetailList(previewItem['rincian']);
 
     String firstText(Iterable<dynamic> values) {
       for (final value in values) {
@@ -397,7 +401,11 @@ extension _AdminInvoiceListViewStatePreviewSupport
     required int sequence,
     required DateTime issuedDate,
     required String invoiceEntity,
+    bool useSpecialPersonalSequence = false,
   }) {
+    if (useSpecialPersonalSequence) {
+      return buildSpecialPersonalInvoiceNumber(sequence);
+    }
     final seq = sequence.toString().padLeft(2, '0');
     final mm = issuedDate.toLocal().month.toString().padLeft(2, '0');
     final yy = (issuedDate.toLocal().year % 100).toString().padLeft(2, '0');

@@ -588,15 +588,30 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     final expanded = <Map<String, dynamic>>[];
     for (final row in rows) {
       final details = _toDetailList(row['rincian']);
+      final sourceRow = _isSpecialNumberedPersonalInvoice(
+        row,
+        details: details,
+      )
+          ? <String, dynamic>{
+              ...row,
+              'invoice_entity': Formatters.invoiceEntityPersonal,
+              'pph': 0.0,
+              'total_bayar': (() {
+                final totalBiaya = _toNum(row['total_biaya']);
+                if (totalBiaya > 0) return totalBiaya;
+                return _toNum(row['total_bayar']);
+              })(),
+            }
+          : row;
       if (details.length <= 1) {
-        expanded.add(row);
+        expanded.add(sourceRow);
         continue;
       }
 
       final entity = Formatters.normalizeInvoiceEntity(
-        row['invoice_entity'],
-        invoiceNumber: row['no_invoice'],
-        customerName: row['nama_pelanggan'],
+        sourceRow['invoice_entity'],
+        invoiceNumber: sourceRow['no_invoice'],
+        customerName: sourceRow['nama_pelanggan'],
       );
       final includePph = Formatters.isCompanyInvoiceEntity(entity);
 
@@ -608,38 +623,41 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
             includePph ? calculateInvoiceTotalAfterPph(subtotal) : subtotal;
         final detailDate = cleanText(detail['armada_start_date']) ??
             cleanText(detail['tanggal']) ??
-            cleanText(row['armada_start_date']) ??
-            cleanText(row['tanggal']);
+            cleanText(sourceRow['armada_start_date']) ??
+            cleanText(sourceRow['tanggal']);
         final useManualArmada =
-            _isManualArmadaRow(detail) || _isManualArmadaRow(row);
+            _isManualArmadaRow(detail) || _isManualArmadaRow(sourceRow);
         final detailArmadaManual = cleanText(detail['armada_manual']) ??
             cleanText(detail['armada_label']) ??
             cleanText(detail['armada']) ??
-            cleanText(row['armada_manual']) ??
-            cleanText(row['armada_label']) ??
-            cleanText(row['armada']);
+            cleanText(sourceRow['armada_manual']) ??
+            cleanText(sourceRow['armada_label']) ??
+            cleanText(sourceRow['armada']);
 
         expanded.add({
-          ...row,
+          ...sourceRow,
           '__invoice_list_expanded_detail': true,
-          '__source_invoice_id': row['id'],
+          '__source_invoice_id': sourceRow['id'],
           '__detail_index': i,
           'rincian': [detail],
-          'tanggal': detailDate ?? row['tanggal'],
-          'armada_start_date': detailDate ?? row['armada_start_date'],
-          'armada_end_date': detailValue(detail, row, 'armada_end_date') ??
-              row['armada_end_date'],
-          'lokasi_muat': detailValue(detail, row, 'lokasi_muat'),
-          'lokasi_bongkar': detailValue(detail, row, 'lokasi_bongkar'),
-          'muatan': detailValue(detail, row, 'muatan'),
-          'nama_supir':
-              useManualArmada ? null : detailValue(detail, row, 'nama_supir'),
-          'armada_id':
-              useManualArmada ? null : detailValue(detail, row, 'armada_id'),
+          'tanggal': detailDate ?? sourceRow['tanggal'],
+          'armada_start_date': detailDate ?? sourceRow['armada_start_date'],
+          'armada_end_date':
+              detailValue(detail, sourceRow, 'armada_end_date') ??
+                  sourceRow['armada_end_date'],
+          'lokasi_muat': detailValue(detail, sourceRow, 'lokasi_muat'),
+          'lokasi_bongkar': detailValue(detail, sourceRow, 'lokasi_bongkar'),
+          'muatan': detailValue(detail, sourceRow, 'muatan'),
+          'nama_supir': useManualArmada
+              ? null
+              : detailValue(detail, sourceRow, 'nama_supir'),
+          'armada_id': useManualArmada
+              ? null
+              : detailValue(detail, sourceRow, 'armada_id'),
           'armada_manual': useManualArmada ? detailArmadaManual : null,
           'armada_label': useManualArmada ? detailArmadaManual : null,
-          'tonase': positiveDetailNumber(detail, row, 'tonase'),
-          'harga': positiveDetailNumber(detail, row, 'harga'),
+          'tonase': positiveDetailNumber(detail, sourceRow, 'tonase'),
+          'harga': positiveDetailNumber(detail, sourceRow, 'harga'),
           'total_biaya': subtotal,
           'pph': pph,
           'total_bayar': totalBayar,
@@ -804,7 +822,11 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         .map((item) => '${item['id'] ?? ''}'.trim())
         .where((id) => id.isNotEmpty)
         .toSet();
-    final missingReturnedIds = returnedIds.difference(rawIncomeIds);
+    final returnedSourceIds = returnedIds
+        .map(invoiceFixedSourceId)
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    final missingReturnedIds = returnedSourceIds.difference(rawIncomeIds);
     if (missingReturnedIds.isNotEmpty) {
       rawIncomes.addAll(
         await widget.repository.fetchInvoicesByIds(missingReturnedIds),
@@ -863,7 +885,10 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
 
     final filteredIncomes = expandedIncomes.where((item) {
       final id = '${item['id'] ?? ''}'.trim();
-      return id.isEmpty || !fixedIds.contains(id);
+      final fixedIdentity = invoiceFixedIdentityForRow(item);
+      return id.isEmpty ||
+          !(fixedIds.contains(id) ||
+              (fixedIdentity.isNotEmpty && fixedIds.contains(fixedIdentity)));
     }).toList();
 
     return [filteredIncomes, scopedExpenses];
@@ -1633,9 +1658,7 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
         '__name': item['nama_pelanggan'],
         '__total': effectiveTotal,
         '__date': resolveIncomeDisplayDate(item),
-        '__sort_date': item['updated_at'] ??
-            item['created_at'] ??
-            resolveIncomeDisplayDate(item),
+        '__sort_date': resolveIncomeDisplayDate(item),
         '__status': item['status'],
         '__recorded_by': item['diterima_oleh'] ?? '-',
         '__route': resolveRoute(item),
@@ -2239,7 +2262,6 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
     final q = _search.text.trim().toLowerCase();
     final now = DateTime.now();
     final incomeHistoryStart = _invoiceListIncomeHistoryStart(now);
-    final currentMonthStart = DateTime(now.year, now.month, 1);
     final expenseVisibleSince = DateTime(now.year, now.month - 1, 1);
     final rowGroups = <List<Map<String, dynamic>>>[];
     List<Map<String, dynamic>>? activeIncomeGroup;
@@ -2276,8 +2298,11 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
       final isIncome = '${item['__type']}' == 'Income';
       final isReturnedIncome = _isReturnedFixedInvoiceRow(item);
       if (isIncome && date.isBefore(incomeHistoryStart)) return false;
-      final visibleSince = isIncome ? currentMonthStart : expenseVisibleSince;
-      if (!isReturnedIncome && date.isBefore(visibleSince)) return false;
+      if (!isIncome &&
+          !isReturnedIncome &&
+          date.isBefore(expenseVisibleSince)) {
+        return false;
+      }
       if (date.isAfter(now)) return false;
       return true;
     }
@@ -2537,7 +2562,6 @@ class _AdminInvoiceListViewState extends State<_AdminInvoiceListView>
                   if (value == null) return;
                   setState(() {
                     _limit = value;
-                    _future = _load();
                   });
                 },
               ),
